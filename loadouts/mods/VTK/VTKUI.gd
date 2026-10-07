@@ -33,7 +33,10 @@ var _side_slots_box: VBoxContainer = null
 var _target_bar: VBoxContainer = null
 var _equip_box: HBoxContainer = null
 var _gear_box: HBoxContainer = null
-var _open_att_path: String = ""
+# Открытая панель обвесов своя у каждой страницы: экран, открытый в
+# Экипировке, не должен появляться в Снаряжении.
+var _open_equip_att: String = ""
+var _open_gear_att: String = ""
 # Предмет, который только что положили в набор: его обвесы открываются сами.
 var _last_placed: String = ""
 # Трёхшаговый выбор предмета. Страницы строятся один раз, переключение - visible,
@@ -63,6 +66,9 @@ var _gear_chips: VBoxContainer = null
 var _gear_facet_key: String = ""
 # Второй уровень фасетов шага 2: подкатегория внутри выбранной категории.
 var _gear_sub_key: String = ""
+# Повторный клик по активной категории сворачивает её подкатегории;
+# категория при этом остаётся выбранным фильтром.
+var _gear_subs_collapsed: bool = false
 var _gear_facets_box: VBoxContainer = null
 var _gear_grid: GridContainer = null
 var _gear_grid_scroll: ScrollContainer = null
@@ -102,7 +108,6 @@ func _tp_section_label(section: String) -> String:
 var game_data: Resource = null
 
 # ui
-var _dark_border: Color = Color("#2a1f14")
 var _gold: Color = Color("#d48a3a")
 
 var _key_ui_toggle: int = 0
@@ -254,13 +259,6 @@ func _load_items() -> void:
 
 # ============== BUILD UI ==============
 
-# Глубина из макета: тень под краем элемента. StyleBoxFlat не умеет внутренние
-# тени, поэтому приём воспроизводим внешним дроп-шейдоу под нижней кромкой.
-func _add_depth(sb: StyleBoxFlat, strong: bool = false) -> void:
-	sb.shadow_color = Color(0, 0, 0, 0.45 if strong else 0.3)
-	sb.shadow_size = 5 if strong else 3
-	sb.shadow_offset = Vector2(0, 2)
-
 # Микро-анимация из макета: scale 1.008 на ховере, 0.986 на нажатии, .14s
 # cubic. Вешается на интерактивные элементы централизованно.
 func _attach_motion(c: Control) -> void:
@@ -297,7 +295,7 @@ func _make_tab_active_style() -> StyleBox:
 	return VTKSurface.surface("normal", true, false, true, 14, 14, 6, 6)
 
 func _make_chip_style(active: bool, hover: bool = false) -> StyleBox:
-	return VTKSurface.surface("hover" if hover else "normal", active, false, false, 8, 12, 4, 4)
+	return VTKSurface.surface("hover" if hover else "normal", active, false, false, 8, 12, 7, 7)
 
 func _build_ui() -> void:
 	var bg = ColorRect.new()
@@ -372,6 +370,7 @@ func _build_ui() -> void:
 
 	_main_vbox = VBoxContainer.new()
 	_main_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_main_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_main_vbox.add_theme_constant_override("separation", 6)
 	_scroll.add_child(_main_vbox)
 
@@ -379,6 +378,7 @@ func _build_ui() -> void:
 		var vb = VBoxContainer.new()
 		vb.name = tname
 		vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		vb.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		vb.hide()
 		_main_vbox.add_child(vb)
 		_tab_containers[tname] = vb
@@ -555,9 +555,10 @@ func _build_stepper() -> Control:
 	return row
 
 # Стиль карточки шага: активный - золотая рамка, как у слотов. Ховер не
-# перебивает активное состояние, чтобы строка выбранного шага не мигала.
+# перебивает активное состояние. Вертикальные поля 9/11 совпадают со
+# style_button, поэтому карточка (~38 px) растёт до высоты «Применить».
 func _make_step_row_style(active: bool, hover: bool = false) -> StyleBox:
-	return VTKSurface.surface("hover" if hover else "normal", active, false, active, 8, 4, 2, 2)
+	return VTKSurface.surface("hover" if hover else "normal", active, false, active, 8, 8, 9, 11)
 
 func _make_step_circle_style(active: bool) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
@@ -642,7 +643,9 @@ func _reset_picker_state() -> void:
 	_gear_search = ""
 	_gear_facet_key = ""
 	_gear_sub_key = ""
-	_open_att_path = ""
+	_gear_subs_collapsed = false
+	_open_equip_att = ""
+	_open_gear_att = ""
 	_last_placed = ""
 
 # У ScrollContainer минимальная высота 0: содержимое скроллится, а сам он
@@ -703,6 +706,7 @@ func _page_columns(title: String, side: Control, main: Control) -> HBoxContainer
 
 	var mv := VBoxContainer.new()
 	mv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mv.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	mv.add_theme_constant_override("separation", 4)
 	mv.add_child(main)
 	h.add_child(mv)
@@ -811,7 +815,7 @@ func _build_page_gear() -> Control:
 func _refresh_page_gear() -> void:
 	_rebuild_gear_chips()
 	_refresh_gear_catalog()
-	_rebuild_att_box(_gear_att_box, _open_att_path)
+	_rebuild_att_box(_gear_att_box, _open_gear_att)
 
 func _rebuild_gear_chips() -> void:
 	if _gear_chips == null:
@@ -896,7 +900,7 @@ func _is_magazine(path: String) -> bool:
 func _make_step_btn(label: String) -> Button:
 	var b := Button.new()
 	b.text = label
-	b.custom_minimum_size = Vector2(20, 20)
+	b.custom_minimum_size = Vector2(24, 24)
 	b.add_theme_font_size_override("font_size", 10)
 	VTKSurface.style_button(b, false, false, 2, 2, 4, 4)
 	return b
@@ -904,8 +908,9 @@ func _make_step_btn(label: String) -> Button:
 func _remove_gear(path: String) -> void:
 	if _draft == null:
 		return
-	if _open_att_path == path:
-		_open_att_path = ""
+	if _open_gear_att == path:
+		_open_equip_att = ""
+		_open_gear_att = ""
 	_draft.remove_gear(path)
 	_refresh_pages()
 
@@ -958,20 +963,18 @@ func _rebuild_gear_facets(facets: Array) -> void:
 		# Подкатегории - второй уровень: они идут сразу под своей категорией и
 		# отступом от неё отличаются. На строке "Все предметы" их нет: список
 		# занял бы полколонки и означал бы третье измерение фильтра.
-		if _gear_facet_key != "" and key == _gear_facet_key:
+		if _gear_facet_key != "" and key == _gear_facet_key and not _gear_subs_collapsed:
 			for s in _gear_subfacets(f.get("items", [])):
 				_gear_facets_box.add_child(_make_facet_row(s, true))
 
-# Строка фасета: точка, название, счётчик. Точка у всех строк одного цвета -
-# она помечает строку как переключатель, а категорию называет текст. Клик по
-# активной строке ничего не меняет: вернуться к «всем предметам» можно только
-# кликом по строке «Все предметы» - случайный повторный клик по своей же
-# строке не должен сбрасывать выбор.
+# Клик по активной строке сворачивает/разворачивает её подкатегории;
+# категория продолжает фильтровать. К возврату ко «Всем предметам» ведёт
+# строка «Все предметы»
 func _make_facet_row(facet: Dictionary, level: bool) -> Control:
 	var key := str(facet.get("key", ""))
 	var active := _gear_sub_key == key if level else _gear_facet_key == key
 	var row := PanelContainer.new()
-	row.custom_minimum_size = Vector2(0, 17 if level else 20)
+	row.custom_minimum_size = Vector2(0, 23 if level else 26)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.mouse_filter = Control.MOUSE_FILTER_STOP
 	row.add_theme_stylebox_override("panel", _make_slot_style(active))
@@ -1041,10 +1044,15 @@ func _set_gear_sub(key: String) -> void:
 # Фасет меняет только набор клеток: предметы из набора не уходят, поэтому
 # открытая панель обвесов остаётся уместной.
 func _set_gear_facet(key: String) -> void:
-	_gear_facet_key = key
-	# Смена категории сбрасывает подкатегорию: иначе после "Винтовки" ->
-	# "Пистолеты" остался бы фильтр "Снайперки" из прошлой ветки.
-	_gear_sub_key = ""
+	if key != "" and key == _gear_facet_key:
+		# Повторный клик по активной категории сворачивает её подкатегории.
+		_gear_subs_collapsed = not _gear_subs_collapsed
+	else:
+		_gear_facet_key = key
+		# Смена категории сбрасывает подкатегорию: иначе после "Винтовки" ->
+		# "Пистолеты" остался бы фильтр "Снайперки" из прошлой ветки.
+		_gear_sub_key = ""
+		_gear_subs_collapsed = false
 	_refresh_gear_catalog()
 
 func _facet_items(facets: Array, key: String) -> Array:
@@ -1195,7 +1203,7 @@ func _refresh_page_done() -> void:
 # плюс. Раньше здесь было только "rnd. N", и по такому хвосту нельзя было
 # понять, какой обвес стоит - проверять набор приходилось, открывая панель.
 func _equip_row_text(slot: String, desc: Dictionary) -> String:
-	var line := slot + " · " + str(desc.get("name", "?"))
+	var line := Loc.txt(slot) + " · " + str(desc.get("name", "?"))
 	var cnt := Draft.shown_count(desc)
 	if cnt > 1:
 		line += " x" + str(cnt)
@@ -1246,7 +1254,7 @@ func _refresh_page_equipment() -> void:
 	_rebuild_target_bar()
 	_refresh_slots()
 	_rebuild_shelves()
-	_rebuild_att_box(_equip_att_box, _open_att_path)
+	_rebuild_att_box(_equip_att_box, _open_equip_att)
 
 func _refresh_slots() -> void:
 	if _side_slots_box == null:
@@ -1280,7 +1288,7 @@ func _make_slot_row(slot: String, desc: Dictionary) -> Control:
 	var row: Control
 	if occupied:
 		var panel := PanelContainer.new()
-		panel.custom_minimum_size = Vector2(0, 22)
+		panel.custom_minimum_size = Vector2(0, 28)
 		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		panel.mouse_filter = Control.MOUSE_FILTER_STOP
 		panel.add_theme_stylebox_override("panel", _make_slot_style(active))
@@ -1292,7 +1300,7 @@ func _make_slot_row(slot: String, desc: Dictionary) -> Control:
 		# Пустой слот - обычная приглушённая строка (пунктир в Godot удел
 		# кастомного _draw, а он не переживает пересборку строки).
 		var box := PanelContainer.new()
-		box.custom_minimum_size = Vector2(0, 22)
+		box.custom_minimum_size = Vector2(0, 28)
 		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		box.mouse_filter = Control.MOUSE_FILTER_STOP
 		box.add_theme_stylebox_override("panel", _make_slot_style(active, false, true))
@@ -1307,7 +1315,7 @@ func _make_slot_row(slot: String, desc: Dictionary) -> Control:
 	row.add_child(hb)
 
 	var tag := Label.new()
-	tag.text = slot
+	tag.text = Loc.txt(slot)
 	tag.add_theme_font_size_override("font_size", 9)
 	tag.add_theme_color_override("font_color", Color("#8a7a6a"))
 	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1456,10 +1464,28 @@ func _rebuild_target_bar() -> void:
 		child.queue_free()
 
 	var tgt := Label.new()
-	tgt.text = Loc.txt("Target: ") + (_target_slot if _target_slot != "" else "-")
+	tgt.text = Loc.txt(_target_slot) if _target_slot != "" else "-"
 	tgt.add_theme_font_size_override("font_size", 10)
 	tgt.add_theme_color_override("font_color", _gold)
 	_target_bar.add_child(tgt)
+
+	# Показываем только когда есть что фильтровать: несколько категорий -
+	# чипы категорий (плюс подкатегории выбранной), одна категория с
+	# несколькими подкатегориями - только подкатегории, единственный
+	# экземпляр и того и другого - не показываем вовсе.
+	var found := _target_filter_items()
+	var cats := _target_cats(found)
+	var show_subs: Array = []
+	var show_line := false
+	if cats.size() > 1:
+		show_line = true
+		if _target_cat != "":
+			show_subs = _target_subs(found, _target_cat)
+	elif cats.size() == 1:
+		show_subs = _target_subs(found, cats[0])
+		show_line = show_subs.size() > 1
+	if not show_line:
+		return
 
 	var line := HFlowContainer.new()
 	line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1472,24 +1498,10 @@ func _rebuild_target_bar() -> void:
 	lbl.add_theme_color_override("font_color", Color("#5f5347"))
 	line.add_child(lbl)
 
-	# Чипы считаются по тому же списку, что и сетка под ними, и уже под
-	# запросом: иначе после "акм" строка фильтров вела бы в пустую сетку.
-	var found := _target_filter_items()
-	var cats: Array = []
-	for e in found:
-		var c := str(e.get("cat", ""))
-		if c != "" and not cats.has(c):
-			cats.append(c)
-	for c in Picker.category_keys():
-		if cats.has(c):
-			cats.erase(c)
+	if cats.size() > 1:
+		for c in cats:
 			line.add_child(_make_filter_chip(c, _target_cat == c))
-	# Категория из данных, которой нет в списке, не теряется.
-	cats.sort()
-	for c in cats:
-		line.add_child(_make_filter_chip(str(c), _target_cat == str(c)))
-
-	for sub in _target_subcategories(found):
+	for sub in show_subs:
 		line.add_child(_make_filter_chip(sub, _target_sub == sub, true))
 
 	var reset := Button.new()
@@ -1556,23 +1568,64 @@ func _target_filter_items() -> Array:
 		})
 	return out
 
-# Подкатегории выбранной категории, встречающиеся в отфильтрованном списке.
-# Порядок - общий SUBCATEGORY_ORDER, чтобы чипы не прыгали между
-# перестроениями; подкатегории из апдейта игры, которых в таблице нет, идут
-# после них по алфавиту.
-func _target_subcategories(items: Array) -> Array:
+# Уникальные категории найденного списка в порядке чипов: сначала известный
+# порядок Picker.category_keys(), затем остальные по алфавиту - строка
+# фильтров и валидация должны считать набор одинаково.
+func _target_cats(found: Array) -> Array:
+	var known := Picker.category_keys()
+	var out: Array = []
+	for c in known:
+		for e in found:
+			if str(e.get("cat", "")) == c and not out.has(c):
+				out.append(c)
+	var extra: Array = []
+	for e in found:
+		var c := str(e.get("cat", ""))
+		if c != "" and not known.has(c) and not extra.has(c):
+			extra.append(c)
+	extra.sort()
+	out.append_array(extra)
+	return out
+
+# Подкатегории одной категории из найденного списка, в общем порядке
+# Picker.order_subcategories, чтобы чипы не прыгали между перестройками.
+func _target_subs(found: Array, cat: String) -> Array:
 	var seen: Array = []
-	for e in items:
-		if str(e.get("cat", "")) == _target_cat:
-			seen.append(str(e.get("sub", "")))
+	for e in found:
+		if str(e.get("cat", "")) == cat:
+			var s := str(e.get("sub", ""))
+			if s != "" and not seen.has(s):
+				seen.append(s)
 	return Picker.order_subcategories(seen)
+
+# Смена запроса меняет набор найденного: под категорию или подкатегорию
+# могло остаться одно или ноль предметов, и фильтр без чипов молча пускал бы
+# пустую сетку. Сбрасываем только то, чего больше нет в данных.
+func _validate_target_filters() -> void:
+	if _target_cat == "" and _target_sub == "":
+		return
+	var found := _target_filter_items()
+	var cats := _target_cats(found)
+	if _target_cat != "":
+		if not cats.has(_target_cat):
+			_target_cat = ""
+			_target_sub = ""
+		elif _target_sub != "" and not _target_subs(found, _target_cat).has(_target_sub):
+			_target_sub = ""
+		return
+	if cats.size() == 1:
+		if _target_sub != "" and not _target_subs(found, cats[0]).has(_target_sub):
+			_target_sub = ""
+	else:
+		_target_sub = ""
 
 func _remove_slot(slot: String) -> void:
 	if _draft == null:
 		return
 	var path_now := str(_draft.equip.get(slot, {}).get("path", ""))
-	if _open_att_path == path_now:
-		_open_att_path = ""
+	if _open_equip_att == path_now:
+		_open_equip_att = ""
+		_open_gear_att = ""
 	if _target_slot == slot:
 		_target_slot = ""
 	_draft.remove_slot(slot)
@@ -1582,7 +1635,8 @@ func _set_target_slot(slot: String) -> void:
 	_target_slot = slot
 	# Цель сбрасывает открытую панель обвесов: она относилась к другому
 	# предмету, и оставить её висеть значило бы врать про набор.
-	_open_att_path = ""
+	_open_equip_att = ""
+	_open_gear_att = ""
 	_last_placed = ""
 	_target_cat = ""
 	_target_sub = ""
@@ -1591,6 +1645,7 @@ func _set_target_slot(slot: String) -> void:
 
 func _set_search(t: String) -> void:
 	_search_text = t
+	_validate_target_filters()
 	# Перестраиваются сетка и шапка фильтров, а не вся страница: набор её
 	# чипов считается из того же списка, что и сетка, поэтому запрос сужает
 	# и их. Поле поиска при этом не пересоздаётся и держит курсор.
@@ -1796,7 +1851,7 @@ func _refresh_loadout_list() -> void:
 				chips.add_child(more)
 				break
 			var ch = Label.new()
-			ch.text = str(slot)
+			ch.text = Loc.txt(str(slot))
 			ch.add_theme_font_size_override("font_size", 8)
 			ch.add_theme_color_override("font_color", Color("#8a7a60"))
 			chips.add_child(ch)
@@ -1860,10 +1915,10 @@ func _bump_gear(path: String, delta: float) -> void:
 	_refresh_draft_ui()
 
 func _toggle_attachment_panel(path: String) -> void:
-	if _open_att_path == path:
-		_open_att_path = ""
+	if _page == 1:
+		_open_gear_att = "" if _open_gear_att == path else path
 	else:
-		_open_att_path = path
+		_open_equip_att = "" if _open_equip_att == path else path
 	_refresh_draft_ui()
 
 # Иконка предмета. У части предметов в данных игры icon пуст, хотя PNG лежит
@@ -1889,7 +1944,8 @@ func _item_icon(res) -> Texture2D:
 func _make_item_cell(item, forced_slot = null) -> Control:
 	var cell = Panel.new()
 	cell.custom_minimum_size = Vector2(96, 132)
-	cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Без SIZE_EXPAND_FILL: HFlowContainer растягивает такие клетки на всю
+	# ширину полосы, пока предметов мало (stretch в flow_container.cpp).
 	cell.mouse_filter = Control.MOUSE_FILTER_STOP
 
 	var normal_style := VTKSurface.surface("normal")
@@ -1904,6 +1960,9 @@ func _make_item_cell(item, forced_slot = null) -> Control:
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	cell.add_child(center)
+	# Panel - не контейнер: без пресета center остаётся нулевым прямоугольником
+	# в левом верхнем углу, и иконка центрируется относительно угла клетки.
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 2)
@@ -2015,7 +2074,7 @@ func _place_into(item, slot: String) -> void:
 			_after_place()
 			return
 		if not Picker.matches_slot(slots, slot):
-			_set_problem(Loc.txt("Does not fit: ") + slot)
+			_set_problem(Loc.txt("Does not fit: ") + Loc.txt(slot))
 			return
 	_draft.add(path, item_name, slots, amt, t, counted)
 	_after_place()
@@ -2027,7 +2086,10 @@ func _after_place() -> void:
 	# У обоймы панели нет - там тумблер заполнения, открывать нечего.
 	if _last_placed != "" and not _is_magazine(_last_placed) \
 			and Picker.has_panel(_item_info(_last_placed)):
-		_open_att_path = _last_placed
+		if _page == 1:
+			_open_gear_att = _last_placed
+		else:
+			_open_equip_att = _last_placed
 	_last_placed = ""
 	_refresh_pages()
 
@@ -2107,8 +2169,8 @@ func _att_entries(desc: Dictionary) -> Array:
 
 # Панель обвесов живёт в правой колонке под каталогом, а не рядом со строкой
 # слота: после переноса слотов в боковую колонку она оказалась бы среди строк.
-# Один _open_att_path на обе страницы - страницы показываются по одной, поэтому
-# открытая панель не дублируется.
+# Своя панель у каждой страницы: экран, открытый в Экипировке, не должен
+# появляться и в Снаряжении. Каждая страница рендерит только своё состояние.
 func _rebuild_att_box(host: VBoxContainer, path: String) -> void:
 	if host == null:
 		return
@@ -2205,6 +2267,9 @@ func _make_att_cell(owner_path: String, grp: String, att_res) -> Control:
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	cell.add_child(center)
+	# Panel - не контейнер: без пресета center остаётся нулевым прямоугольником
+	# в левом верхнем углу, и иконка центрируется относительно угла клетки.
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	var vbox = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 2)
@@ -2300,6 +2365,10 @@ var _kc_node: Control = null
 var _hooks: Node = null
 var _nvg_node: Node = null
 var _kc_active: bool = false
+var _kc_mcm: bool = true
+var _feed_mcm: bool = true
+var _hud_canvas = null
+var _feed_node = null
 var _thermal_active: bool = false
 var _mines_active: bool = true
 var _kc_btn: Node = null
@@ -2367,7 +2436,6 @@ func _restore_toggles() -> void:
 	_thermal_active = bool(d.get("thermal", false))
 	if _kc_btn:
 		_kc_btn.button_pressed = _kc_active
-		_kc_toggle(_kc_active)
 	if _mines_btn:
 		_mines_btn.button_pressed = _mines_active
 		_mines_toggle(_mines_active)
@@ -2399,15 +2467,10 @@ func _make_settings_header(parent: VBoxContainer, text: String) -> void:
 	parent.add_child(h)
 
 func _make_lang_row(parent: VBoxContainer) -> HBoxContainer:
-	var set_row := PanelContainer.new()
-	set_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	set_row.add_theme_stylebox_override("panel", VTKSurface.surface("normal", false, false, false, 10, 10, 7, 7))
-	parent.add_child(set_row)
-
 	var row = HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_theme_constant_override("separation", 10)
-	set_row.add_child(row)
+	parent.add_child(row)
 
 	var box := VBoxContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2439,7 +2502,7 @@ func _make_lang_row(parent: VBoxContainer) -> HBoxContainer:
 		b.text = Loc.code_label(c)
 		b.toggle_mode = true
 		b.button_pressed = (c == Loc.get_lang())
-		b.custom_minimum_size = Vector2(46, 24)
+		b.custom_minimum_size = Vector2(64, 30)
 		b.add_theme_font_size_override("font_size", 11)
 		var seg_btn := _make_seg_btn_style(c == Loc.get_lang())
 		b.add_theme_stylebox_override("normal", seg_btn)
@@ -2452,7 +2515,6 @@ func _make_lang_row(parent: VBoxContainer) -> HBoxContainer:
 		b.pressed.connect(_on_lang_button.bind(c))
 		seg.add_child(b)
 		_lang_btns.append(b)
-	parent.add_child(row)
 	return row
 
 func _make_seg_btn_style(active: bool) -> StyleBox:
@@ -2506,22 +2568,74 @@ func _make_toggle_row(parent: VBoxContainer, label_text: String, hint_text: Stri
 	row.add_child(sw)
 	return sw
 
+# UI-тумблер из вкладки «Настройки»: пишет в json (legacy) и в MCM, затем
+# применяет через общий путь. _save_toggles после _apply_hud, чтобы json
+# получил уже обновлённый _kc_active, а не предыдущее значение.
 func _kc_toggle(on: bool) -> void:
-	_kc_active = on
+	_kc_mcm = on
+	_save_mcm_bool("kill_counter_enabled", on)
+	_apply_hud()
 	_save_toggles()
-	if on:
-		if _kc_node == null or not is_instance_valid(_kc_node):
-			var KC = preload("res://mods/VTK/VTKKillCounter.gd")
-			_kc_node = KC.new()
-			var cl = CanvasLayer.new()
-			cl.name = "VTKKC_Canvas"
-			cl.layer = 9999
-			cl.add_child(_kc_node)
-			get_tree().root.add_child(cl)
+
+# Единая точка применения обоих HUD-виджетов. Зовётся из _mcm_apply и из
+# UI-тумблера; файлы не трогает — запись в MCM делает только _kc_toggle.
+func _apply_hud() -> void:
+	_kc_active = _kc_mcm
+	if _kc_btn != null and is_instance_valid(_kc_btn):
+		_kc_btn.button_pressed = _kc_mcm
+	_set_counter_enabled(_kc_mcm)
+	_set_feed_enabled(_feed_mcm)
+
+func _set_counter_enabled(v: bool) -> void:
+	if v:
+		_ensure_hud()
 		_kc_node.set_enabled(true)
-	else:
-		if _kc_node != null and is_instance_valid(_kc_node):
-			_kc_node.set_enabled(false)
+	elif _kc_node != null and is_instance_valid(_kc_node):
+		_kc_node.set_enabled(false)
+
+func _set_feed_enabled(v: bool) -> void:
+	if v:
+		_ensure_hud()
+		_feed_node.set_enabled(true)
+	elif _feed_node != null and is_instance_valid(_feed_node):
+		_feed_node.set_enabled(false)
+
+# Один CanvasLayer на оба виджета; лениво, пока хотя бы один не включён.
+func _ensure_hud() -> void:
+	if _kc_node != null and is_instance_valid(_kc_node) \
+			and _feed_node != null and is_instance_valid(_feed_node):
+		return
+	if _hud_canvas == null or not is_instance_valid(_hud_canvas):
+		_hud_canvas = CanvasLayer.new()
+		_hud_canvas.name = "VTKKC_Canvas"
+		_hud_canvas.layer = 9999
+		get_tree().root.add_child(_hud_canvas)
+	if _kc_node == null or not is_instance_valid(_kc_node):
+		var KC = preload("res://mods/VTK/VTKKillCounter.gd")
+		_kc_node = KC.new()
+		_hud_canvas.add_child(_kc_node)
+	if _feed_node == null or not is_instance_valid(_feed_node):
+		var Feed = preload("res://mods/VTK/VTKFeed.gd")
+		_feed_node = Feed.new()
+		_hud_canvas.add_child(_feed_node)
+
+# Перезапись значения Bool-ключа в config.ini, чтобы меню MCM показывало
+# то же, что переключил пользователь в настройках мода.
+func _save_mcm_bool(key: String, v: bool) -> void:
+	var cfile := "user://MCM/vostok-toolkit/config.ini"
+	if not FileAccess.file_exists(cfile):
+		return
+	var cf := ConfigFile.new()
+	if cf.load(cfile) != OK:
+		return
+	if not cf.has_section_key("Bool", key):
+		return
+	var d = cf.get_value("Bool", key, {})
+	if typeof(d) != TYPE_DICTIONARY:
+		return
+	d["value"] = v
+	cf.set_value("Bool", key, d)
+	cf.save(cfile)
 
 func _mines_toggle(on: bool) -> void:
 	_mines_active = on
@@ -2563,13 +2677,15 @@ func _apply_nvg_settings() -> void:
 
 func _start_new_draft() -> void:
 	_draft = Draft.new()
-	_open_att_path = ""
+	_open_equip_att = ""
+	_open_gear_att = ""
 	_editing_name = ""
 	_build_editor()
 
 func _cancel_draft() -> void:
 	_draft = null
-	_open_att_path = ""
+	_open_equip_att = ""
+	_open_gear_att = ""
 	_editing_name = ""
 	_build_editor()
 	_refresh_loadout_list()
@@ -2634,7 +2750,8 @@ func _edit_loadout(name: String) -> void:
 	d.load_from(raw)
 	_draft = d
 	_editing_name = name
-	_open_att_path = ""
+	_open_equip_att = ""
+	_open_gear_att = ""
 	_build_editor()
 
 func _delete_loadout(name: String) -> void:
@@ -2684,6 +2801,8 @@ static func _keycode_to_string(kc: int) -> String:
 
 func _register_mcm() -> void:
 	if not ResourceLoader.exists("res://ModConfigurationMenu/Scripts/Doink Oink/MCM_Helpers.tres"):
+		_kc_mcm = _kc_active
+		_apply_hud()
 		return
 	var MCM = load("res://ModConfigurationMenu/Scripts/Doink Oink/MCM_Helpers.tres")
 	if MCM == null or not MCM.has_method("RegisterConfiguration"):
@@ -2702,6 +2821,9 @@ func _register_mcm() -> void:
 	cfg.set_value("Float", "thermal_bot_opacity", {"default": 0.0, "value": 0.0, "minRange": 0.0, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 6, "tooltip": "0 = a bot is drawn in the thermal palette colour for its own heat signature, so it can never introduce an off-palette hue. 1 = flat colour from the Bot colour preset. Cosmetic only; detection is unaffected, so it is safe to change mid-game.", "name": "Bot marker opacity"})
 	var TR := "03. Travel"
 	cfg.set_value("Bool", "tp_unlocked_shelters_only", {"name": "Unlocked shelters only", "default": false, "value": false, "category": TR, "menu_pos": 0, "tooltip": "When enabled, teleporting to a locked shelter is refused."})
+	var KF := "04. KillFeed"
+	cfg.set_value("Bool", "kill_counter_enabled", {"name": "Kill counter", "default": true, "value": true, "category": KF, "menu_pos": 0, "tooltip": "Show the kill counter HUD line (Killed / Enemies / Nomads)."})
+	cfg.set_value("Bool", "kill_feed_enabled", {"name": "Kill feed", "default": true, "value": true, "category": KF, "menu_pos": 1, "tooltip": "Show the kill feed under the counter: killer, weapon/headshot icons, victim."})
 	cfg.set_value("Info", "version", _mod_version())
 	cfg.set_value("Info", "author", "opencode")
 	var path = "user://MCM/vostok-toolkit"
@@ -2745,6 +2867,14 @@ func _register_mcm() -> void:
 	_mcm_apply(ConfigFile.new())
 
 func _mod_version() -> String:
+	var vf = FileAccess.open("res://mods/VTK/version.txt", FileAccess.READ)
+	if vf != null:
+		var v := vf.get_as_text().strip_edges()
+		vf.close()
+		if v != "":
+			return v
+	# Фолбэк для ручной укладки без pack.ps1: res://mod.txt разделяется всеми
+	# модами в рантайме и может оказаться чужим (в заголовке чужая версия).
 	var f = FileAccess.open("res://mod.txt", FileAccess.READ)
 	if f == null:
 		return "unknown"
@@ -2774,6 +2904,9 @@ func _mcm_apply(cfg: ConfigFile) -> void:
 	if cfg.get_sections().is_empty() and FileAccess.file_exists(cpath):
 		cfg.load(cpath)
 	_key_ui_toggle = int(_mcm_key_val(cfg, "Keycode", "key_ui_toggle", 0))
+	_kc_mcm = bool(_mcm_key_val(cfg, "Bool", "kill_counter_enabled", true))
+	_feed_mcm = bool(_mcm_key_val(cfg, "Bool", "kill_feed_enabled", true))
+	_apply_hud()
 	_ensure_travel()
 	if _travel != null and is_instance_valid(_travel):
 		var tp_unlocked = bool(_mcm_key_val(cfg, "Bool", "tp_unlocked_shelters_only", false))
@@ -2958,6 +3091,7 @@ func _build_teleport_tab(parent: VBoxContainer) -> void:
 	_tp_traders_box.add_theme_constant_override("separation", 4)
 
 	var main := VBoxContainer.new()
+	main.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	main.add_theme_constant_override("separation", 6)
 
 	var main_head := HBoxContainer.new()

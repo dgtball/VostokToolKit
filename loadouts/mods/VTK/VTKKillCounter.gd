@@ -39,10 +39,12 @@ func _on_node_added(node: Node) -> void:
 	call_deferred("_deferred_check", node.get_instance_id())
 
 func _deferred_check(node_id: int) -> void:
+	if not _enabled:
+		return
 	var n := instance_from_id(node_id)
 	if n == null or not is_instance_valid(n) or not n.is_inside_tree():
 		return
-	var kind := _agent_kind(n)
+	var kind := agent_kind(n)
 	if kind != "":
 		_agents[node_id] = kind
 
@@ -50,7 +52,7 @@ func _deferred_check(node_id: int) -> void:
 # "AISpawner" group always comes back empty. Match bots by the same
 # signature the NVG node uses instead -- a node with an Activate() entry
 # point and a `dead` flag.
-func _is_agent(n: Node) -> bool:
+static func _is_agent(n: Node) -> bool:
 	return n is Node3D and n.has_method("Activate") and "dead" in n
 
 # Vanilla keeps spawned AI under fixed pools: /root/Map/AI/E_Pool holds the
@@ -68,7 +70,7 @@ const SCRIPTS_ENEMY := ["AI_Bandit", "AI_Guard", "AI_Military"]
 # only ever yields "AI" and never names the variant. The instantiated node name
 # is what actually carries the identity (AI_Nomad, AI_Bandit, ...), and its
 # scene owner carries it too. Test all of them and take the first that matches.
-func _agent_kind(n: Node) -> String:
+static func agent_kind(n: Node) -> String:
 	if not _is_agent(n):
 		return ""
 	for cand in _identities(n):
@@ -80,14 +82,37 @@ func _agent_kind(n: Node) -> String:
 	# Punisher/Bogeyman (B_Pool) and anything else stay uncounted.
 	return ""
 
-func _identities(n: Node) -> Array:
+# Pool instances created without a preset name come out as "@Node3D@N" and
+# carry no "AI_" identity, but the faction model under them is always named
+# (probe: /root/Map/AI/Enemies/@Node3D@1056/Bandit). Used by the kill feed.
+const MODEL_NAMES := ["Bandit", "Guard", "Military", "Nomad", "Punisher", "Bogeyman"]
+
+static func agent_display_name(n: Node) -> String:
+	if n == null or not is_instance_valid(n):
+		return "NPC"
+	if "boss" in n and bool(n.get("boss")):
+		return "Punisher"
+	for cand in _identities(n):
+		var s := String(cand)
+		if s.begins_with("AI_"):
+			return s.substr(3)
+	for c in n.get_children():
+		var cn := String(c.name)
+		if cn in MODEL_NAMES:
+			return cn
+	var kind := agent_kind(n)
+	if kind == "nomad":
+		return "Nomad"
+	return "NPC"
+
+static func _identities(n: Node) -> Array:
 	var out: Array = []
 	var s = n.get_script()
 	if s != null:
 		var path := String(s.resource_path)
 		if path != "":
 			var b := path.get_file().get_basename()
-			if b != "":
+			if b != "" and b != "AI":
 				out.append(b)
 	var nm := String(n.name)
 	if nm != "":
@@ -107,7 +132,7 @@ func _reseed() -> void:
 	_scan(_scene_ref)
 
 func _scan(n: Node) -> void:
-	var kind := _agent_kind(n)
+	var kind := agent_kind(n)
 	if kind != "":
 		_agents[n.get_instance_id()] = kind
 	for c in n.get_children():

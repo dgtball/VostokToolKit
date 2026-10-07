@@ -6,6 +6,15 @@ var _kill_count: int = 0
 var _player_hits: Dictionary = {}
 var _hooks_kc: Array = []
 
+const KC = preload("res://mods/VTK/VTKKillCounter.gd")
+const HIT_WINDOW_MSEC := 15000
+const SEEN_DEATHS_TTL_MSEC := 600000
+
+signal kill_event(ev: Dictionary)
+
+var _last_damager: Dictionary = {}
+var _seen_deaths: Dictionary = {}
+
 var _death_restart_btn = null
 var _death_is_ironman: bool = false
 var _ironman_active: bool = false
@@ -50,79 +59,6 @@ const IRONMAN_MAPS := ["Highway", "School", "Outpost", "Apartments"]
 const IRONMAN_VITAL_MIN := 30.0
 const IRONMAN_VITAL_MAX := 100.0
 
-const PROBE_LOG := "user://loadouts_debug.log"
-var _probe_wd: int = 0
-var _probe_death: int = 0
-var _probe_chain: int = 0
-var _probe_hunt: int = 0
-var _probe_be: int = 0
-var _probe_exp: int = 0
-var _probe_knife: int = 0
-
-func _probe(msg: String) -> void:
-	print("[VTK][probe] " + msg)
-	var f := FileAccess.open(PROBE_LOG, FileAccess.READ_WRITE)
-	if f == null and not FileAccess.file_exists(PROBE_LOG):
-		f = FileAccess.open(PROBE_LOG, FileAccess.WRITE)
-	if f == null:
-		return
-	f.seek(f.get_length())
-	f.store_line(Time.get_time_string_from_system() + " [hook] " + msg)
-	f.close()
-
-func _probe_obj(o) -> String:
-	if o == null:
-		return "null(null)"
-	if not is_instance_valid(o):
-		return str(o) + "(freed)"
-	var s := str(o)
-	if o is Node:
-		s = str(o.get_path())
-	return s + "(" + str(typeof(o)) + ")"
-
-func _probe_wp(n: Node) -> String:
-	var wp := ""
-	for pl in n.get_property_list():
-		var pn := String(pl["name"])
-		if pn.begins_with("_") or pn.contains("script"):
-			continue
-		var low := pn.to_lower()
-		if low.contains("weapon") or low.contains("hand") or low.contains("item") \
-				or low == "slotdata" or low.contains("equip"):
-			var v = n.get(pn)
-			wp += pn + "=" + str(v) + "(" + str(typeof(v)) + ") "
-	return wp
-
-# Охота: все узлы, имя которых совпадает с предметом Database. Показывает,
-# где в дереве лежит узел оружия игрока (у AI это weapon=<RigidBody3D Glock_17>).
-func _probe_weapon_hunt() -> void:
-	var db = get_tree().root.get_node_or_null("Database")
-	if db == null or not ("master" in db):
-		_probe("HUNT no Database")
-		return
-	var master = db.get("master")
-	if master == null or not ("items" in master):
-		_probe("HUNT no items")
-		return
-	var names := {}
-	for item in master.items:
-		if item == null:
-			continue
-		var inm := str(item.name).strip_edges()
-		if inm != "" and String(item.resource_path).contains("/Weapons/"):
-			names[inm] = true
-	var hits: Array = []
-	var stack: Array = [get_tree().root]
-	var visited := 0
-	while not stack.is_empty() and hits.size() < 25 and visited < 20000:
-		var n: Node = stack.pop_back()
-		visited += 1
-		if names.has(String(n.name)):
-			hits.append(str(n.get_path()) + "(" + n.get_class() + ")")
-		for c in n.get_children():
-			stack.push_back(c)
-	_probe("HUNT weapons_named=" + str(names.size()) + " visited=" + str(visited) + " hits=[" + " | ".join(hits) + "]")
-
 func _ready() -> void:
 	name = "VTKHooks"
 	print("[VTK] Hooks node ready, RTVModLib=" + str(Engine.has_meta("RTVModLib")))
@@ -133,6 +69,8 @@ func get_kill_count() -> int:
 func reset_kills() -> void:
 	_kill_count = 0
 	_player_hits.clear()
+	_last_damager.clear()
+	_seen_deaths.clear()
 
 func _process(_delta: float) -> void:
 	if not _registered:
@@ -232,96 +170,27 @@ func _do_register() -> void:
 	_lib.hook("controller-_physics_process-post", _on_controller_process)
 	_hooks_kc.append(_lib.hook("ai-weapondamage-pre", _on_ai_weapon_damage))
 	_hooks_kc.append(_lib.hook("ai-death-pre", _on_ai_death))
-	_lib.hook("weaponrig-bloodeffect-post", _on_probe_bloodeffect)
-	_lib.hook("ai-explosiondamage-pre", _on_probe_explosion)
-	_lib.hook("kniferig-hitcheck-post", _on_probe_knife)
 	_registered = true
 	print("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + 1) + " hooks)")
 
-func _on_probe_bloodeffect(hitCollider, _hit_point, _hit_normal) -> void:
-	if _probe_be >= 15:
-		return
-	_probe_be += 1
-	var rig = _lib._caller if _lib else null
-	var rig_s := "null"
-	var wfile := ""
-	if rig != null and is_instance_valid(rig):
-		rig_s = str(rig.get_path()) + " cls=" + rig.get_class()
-		if "data" in rig and rig.data != null:
-			var d = rig.data
-			wfile = " file=" + str(d.get("file") if "file" in d else "?") + " cls=" + d.get_class()
-	_probe("BE rig=[%s]%s target=[%s]" % [rig_s, wfile, _probe_obj(hitCollider)])
-
-func _on_probe_explosion(_direction, id) -> void:
-	if _probe_exp >= 10:
-		return
-	_probe_exp += 1
-	var ai = _lib._caller if _lib else null
-	var ai_s := "null"
-	if ai != null and is_instance_valid(ai):
-		ai_s = str(ai.get_path())
-	var grp := false
-	if id != null and is_instance_valid(id) and id is Node:
-		grp = id.is_in_group("Player")
-	_probe("EXP caller=[%s] direction=%s id=[%s] grpP=%s" % [ai_s, str(_direction), _probe_obj(id), str(grp)])
-
-func _on_probe_knife() -> void:
-	if _probe_knife >= 5:
-		return
-	_probe_knife += 1
-	var kn = _lib._caller if _lib else null
-	var s := "null"
-	if kn != null and is_instance_valid(kn):
-		s = str(kn.get_path())
-		if "data" in kn and kn.data != null:
-			s += " file=" + str(kn.data.get("file") if "file" in kn.data else "?")
-	_probe("KNIFE " + s)
-
 func _on_ai_weapon_damage(_hitbox, _damage, _vector, id) -> void:
-	if _probe_wd < 40:
-		_probe_wd += 1
-		var ai = _lib._caller if _lib else null
-		var caller_s := "null"
-		var wprops := ""
-		if ai != null and is_instance_valid(ai):
-			caller_s = str(ai.get_path()) + " cls=" + ai.get_class()
-			for p in ["weapon", "currentWeapon", "weaponName", "equippedWeapon", "activeWeapon", "slotData"]:
-				if p in ai:
-					wprops += p + "=" + str(ai.get(p)) + "(" + str(typeof(ai.get(p))) + ") "
-		_probe("WD hitbox=%s damage=%s vector=%s id=[%s] caller=[%s] callerW=[%s]" % [
-			str(_hitbox), str(_damage), str(_vector), _probe_obj(id), caller_s, wprops])
-		if _probe_wd == 1:
-			var gd = _resolve_gamedata()
-			var gds := "gd=null"
-			if gd != null:
-				gds = "gd=" + str(gd.get_class()) + " | "
-				for p in ["currentWeaponName", "currentWeapon", "weaponName", "weapon", "equippedWeapon"]:
-					if p in gd:
-						gds += p + "=" + str(gd.get(p)) + "(" + str(typeof(gd.get(p))) + ") "
-				if "playerVector" in gd:
-					gds += "playerVector=" + str(gd.get("playerVector")) + " "
-			var pl = get_tree().get_first_node_in_group("Player")
-			var pls := " player=null"
-			if pl != null:
-				pls = " player=" + str(pl.get_path()) + " | "
-				for p in ["weapon", "currentWeapon", "activeWeapon", "weaponName", "equippedWeapon", "slotData", "hands", "itemInHands"]:
-					if p in pl:
-						pls += p + "=" + str(pl.get(p)) + "(" + str(typeof(pl.get(p))) + ") "
-			_probe("GD " + gds + pls)
-	if id != null and is_instance_valid(id) and id is Node:
-		if _probe_chain < 10:
-			_probe_chain += 1
-			var parts: Array = []
-			var n: Node = id
-			var depth := 0
-			while n != null and depth < 8:
-				parts.append(str(n.get_path()) + " {" + _probe_wp(n) + "}")
-				n = n.get_parent()
-				depth += 1
-			_probe("CHAIN grpP=" + str(id.is_in_group("Player")) + " " + " >> ".join(parts))
-		if id.is_in_group("Player") and _probe_hunt < 2:
-			_probe_hunt += 1
-			_probe_weapon_hunt()
+	var victim_ai = _lib._caller if _lib else null
+	if victim_ai != null and is_instance_valid(victim_ai) and victim_ai is Node:
+		var rec := {
+			"t": Time.get_ticks_msec(),
+			"hitbox": str(_hitbox),
+			"player": false,
+			"attacker": null,
+			"weapon": "",
+		}
+		if id != null and is_instance_valid(id) and id is Node:
+			if id.is_in_group("Player"):
+				rec["player"] = true
+				rec["weapon"] = _player_weapon_name()
+			else:
+				rec["attacker"] = id
+				rec["weapon"] = _weapon_name_of(id)
+		_last_damager[victim_ai.get_instance_id()] = rec
 	if id == null or not is_instance_valid(id):
 		return
 	if not id.is_in_group("Player"):
@@ -332,24 +201,6 @@ func _on_ai_weapon_damage(_hitbox, _damage, _vector, id) -> void:
 	_player_hits[ai.get_instance_id()] = Time.get_ticks_msec()
 
 func _on_ai_death(_direction, _force) -> void:
-	if _probe_death < 40:
-		_probe_death += 1
-		var ai = _lib._caller if _lib else null
-		var caller_s := "null"
-		if ai != null and is_instance_valid(ai):
-			caller_s = str(ai.get_path()) + " cls=" + ai.get_class() + " dead=" + str(ai.get("dead") if "dead" in ai else "?")
-		var pv = null
-		var gd = _resolve_gamedata()
-		if gd != null and "playerVector" in gd:
-			pv = gd.get("playerVector")
-		var dot := -2.0
-		if _direction is Vector3 and pv is Vector3:
-			var a := (_direction as Vector3).normalized()
-			var b := (pv as Vector3).normalized()
-			if a != Vector3.ZERO and b != Vector3.ZERO:
-				dot = a.dot(b)
-		_probe("DEATH caller=[%s] direction=%s force=%s(%s) playerVector=%s dot=%.4f" % [
-			caller_s, str(_direction), str(_force), str(typeof(_force)), str(pv), dot])
 	var ai = _lib._caller if _lib else null
 	if ai == null or not is_instance_valid(ai):
 		return
@@ -358,6 +209,126 @@ func _on_ai_death(_direction, _force) -> void:
 	if _player_hits.has(iid) and now - int(_player_hits[iid]) < 15000:
 		_kill_count += 1
 	_player_hits.erase(iid)
+	_emit_kill_event(_direction)
+
+func _emit_kill_event(direction) -> void:
+	var ai = _lib._caller if _lib else null
+	if ai == null or not is_instance_valid(ai) or not (ai is Node):
+		return
+	var iid = ai.get_instance_id()
+	if _seen_deaths.has(iid):
+		return
+	_seen_deaths[iid] = Time.get_ticks_msec()
+	var now := Time.get_ticks_msec()
+	var killer_kind := ""
+	var killer_name := ""
+	var weapon := ""
+	var headshot := false
+	var grenade := false
+	var rec = _last_damager.get(iid, null)
+	if rec != null and now - int(rec["t"]) <= HIT_WINDOW_MSEC:
+		weapon = str(rec["weapon"])
+		headshot = str(rec["hitbox"]).to_lower() == "head"
+		if bool(rec["player"]):
+			killer_kind = "player"
+			killer_name = "Player"
+		else:
+			var atk = rec.get("attacker")
+			if atk != null and is_instance_valid(atk) and atk is Node:
+				killer_kind = KC.agent_kind(atk)
+				if killer_kind == "":
+					killer_kind = "enemy"
+				killer_name = KC.agent_display_name(atk)
+		grenade = _is_grenade(weapon)
+	if killer_kind == "" and _direction_is_player(direction):
+		killer_kind = "player"
+		killer_name = "Player"
+		weapon = _player_weapon_name()
+		grenade = _is_grenade(weapon)
+	if killer_kind == "":
+		_last_damager.erase(iid)
+		return
+	kill_event.emit({
+		"killer_kind": killer_kind,
+		"killer_name": killer_name,
+		"victim_kind": KC.agent_kind(ai),
+		"victim_name": KC.agent_display_name(ai),
+		"weapon": weapon,
+		"headshot": headshot,
+		"grenade": grenade,
+		"t": now,
+	})
+	_last_damager.erase(iid)
+
+# Имя оружия игрока: свойства GameData, затем оружие в руках у игрока.
+# Список и порядок — из probe-вывода (Task 1, п.3); лишние свойства просто
+# не найдутся и вернут "".
+func _player_weapon_name() -> String:
+	var gd = _resolve_gamedata()
+	if gd != null:
+		for p in ["currentWeaponName", "weaponName", "currentWeapon", "weapon", "equippedWeapon"]:
+			if p in gd:
+				var s := _weapon_str(gd.get(p))
+				if s != "":
+					return s
+	var pl = get_tree().get_first_node_in_group("Player")
+	if pl != null:
+		for p in ["currentWeapon", "activeWeapon", "weapon", "weaponName", "equippedWeapon"]:
+			if p in pl:
+				var s := _weapon_str(pl.get(p))
+				if s != "":
+					return s
+	return ""
+
+func _weapon_name_of(n: Node) -> String:
+	for p in ["currentWeaponName", "weaponName", "currentWeapon", "weapon", "equippedWeapon", "activeWeapon"]:
+		if p in n:
+			var s := _weapon_str(n.get(p))
+			if s != "":
+				return s
+	return ""
+
+# Значение свойства может быть строкой, именем или ресурсом предмета.
+func _weapon_str(v) -> String:
+	if v is String or v is StringName:
+		return str(v).strip_edges()
+	if v is Object and is_instance_valid(v) and "name" in v:
+		return str(v.get("name")).strip_edges()
+	return ""
+
+# Граната: имя оружия — это предмет из папки Grenades (принадлежность по
+# resource_path, как подкатегории в Picker).
+func _is_grenade(weapon: String) -> bool:
+	if weapon == "":
+		return false
+	var db = get_tree().root.get_node_or_null("Database")
+	if db == null or not ("master" in db):
+		return false
+	var master = db.get("master")
+	if master == null or not ("items" in master):
+		return false
+	for item in master.items:
+		if item == null:
+			continue
+		if str(item.name).strip_edges() != weapon:
+			continue
+		return String(item.resource_path).contains("/Grenades/")
+	return false
+
+func _direction_is_player(direction) -> bool:
+	if not (direction is Vector3):
+		return false
+	var gd = _resolve_gamedata()
+	if gd == null or not ("playerVector" in gd):
+		return false
+	var pv = gd.get("playerVector")
+	if not (pv is Vector3):
+		return false
+	var a := (direction as Vector3).normalized()
+	var b := (pv as Vector3).normalized()
+	if a == Vector3.ZERO or b == Vector3.ZERO:
+		return false
+	return a.dot(b) > 0.985
 
 func _on_controller_process(_delta: float) -> void:
 	var controller = _lib._caller if _lib else null
@@ -379,6 +350,18 @@ func _on_controller_process(_delta: float) -> void:
 			stale.append(iid)
 	for s in stale:
 		_player_hits.erase(s)
+	var stale_seen: Array = []
+	for iid in _seen_deaths:
+		if now - int(_seen_deaths[iid]) > SEEN_DEATHS_TTL_MSEC:
+			stale_seen.append(iid)
+	for s in stale_seen:
+		_seen_deaths.erase(s)
+	var stale_dmg: Array = []
+	for iid in _last_damager:
+		if now - int(_last_damager[iid]["t"]) > HIT_WINDOW_MSEC:
+			stale_dmg.append(iid)
+	for s in stale_dmg:
+		_last_damager.erase(s)
 
 func _handle_death_screen(gd, is_dead: bool, is_ironman: bool) -> void:
 	if not is_dead or not is_ironman:

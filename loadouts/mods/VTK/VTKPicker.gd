@@ -7,8 +7,9 @@ extends RefCounted
 # из данных, которого здесь нет, не теряется, а дописывается в конец. И наоборот -
 # предпочтительного слота, которого в игре нет, в списке не появляется, так что
 # после обновления игры пустых строк не прибавится.
-const SLOT_ORDER := ["Primary", "Secondary", "Melee", "Body", "Head",
-	"Backpack", "Pouches", "Grenade_1", "Grenade_2", "Flashlight", "Radio"]
+const SLOT_ORDER := ["Primary", "Secondary", "Knife", "Grenade_1", "Grenade_2",
+	"Backpack", "Rig", "Helmet", "Head", "Torso", "Legs", "Belt", "Feet",
+	"Hands", "Light", "Time", "Map", "NVG", "Player", "Matches"]
 
 # Полосы категорий: порядок полок и подписи в одной таблице. Ключ -
 # str(item.type).to_lower() после CATEGORY_ALIASES, подпись - что видит игрок.
