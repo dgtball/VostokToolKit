@@ -48,8 +48,8 @@ var _shelves_box: VBoxContainer = null
 var _side_slots_box: VBoxContainer = null
 var _target_bar: VBoxContainer = null
 var _gear_box: HBoxContainer = null
-# Открытая панель обвесов своя у каждой страницы: экран, открытый в
-# Экипировке, не должен появляться в Снаряжении.
+# Какой панелью обвесов занят каждый шаг: путь своя у Экипировки и
+# Снаряжения, оверлей рендерит панель по текущей странице.
 var _open_equip_att: String = ""
 var _open_gear_att: String = ""
 # Предмет, который только что положили в набор: его обвесы открываются сами.
@@ -89,8 +89,11 @@ var _gear_subs_collapsed: bool = false
 var _gear_facets_box: VBoxContainer = null
 var _gear_grid: GridContainer = null
 var _gear_grid_scroll: ScrollContainer = null
-var _equip_att_box: VBoxContainer = null
-var _gear_att_box: VBoxContainer = null
+# Оверлей обвесов поверх всей вкладки: панель под каталогом при узком окне
+# всё равно была бы не видна. Геометрия зеркалит _scroll, тело - подложка
+# для панели предмета, шапка с ✕ рисуется при сборке.
+var _att_overlay: Control = null
+var _att_overlay_body: VBoxContainer = null
 var _done_summary: HBoxContainer = null
 var _done_equip_col: VBoxContainer = null
 var _done_gear_col: VBoxContainer = null
@@ -488,11 +491,18 @@ func _build_ui() -> void:
 func _switch_tab(name: String) -> void:
 	if _current_tab != "" and _tab_containers.has(_current_tab):
 		_tab_containers[_current_tab].hide()
+	# Оверлей живёт на _panel, а не в контейнере таба, поэтому прячется сам:
+	# при уходе с «Сетов» - скрыть, при возврате - вернуть открытую панель.
+	if _att_overlay != null:
+		if _current_tab == Loc.txt("Sets") and name != Loc.txt("Sets"):
+			_att_overlay.visible = false
 	_current_tab = name
 	if name == Loc.txt("Teleport"):
 		_refresh_teleport_tab()
 	if _tab_containers.has(name):
 		_tab_containers[name].show()
+	if name == Loc.txt("Sets"):
+		_refresh_att_overlay()
 	for i in range(_tab_btns.size()):
 		var btn = _tab_btns[i] as Button
 		var is_active = btn.text == name
@@ -679,6 +689,75 @@ func _build_loadouts_tab(parent: VBoxContainer) -> void:
 	_build_editor()
 	_refresh_preview()
 
+	# Оверлей обвесов живёт на _panel и добавляется после _scroll, чтобы
+	# рисоваться поверх вкладки. Геометрия зеркалит _scroll (якоря + отступы
+	# 4/72/-4/-4): карточка центрируется MarginContainer'ом, а не фиксированным
+	# размером - панель теперь на весь экран, и жёсткие 792×800 не подошли бы.
+	_att_overlay = Control.new()
+	_att_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_att_overlay.offset_left = 4
+	_att_overlay.offset_top = 72
+	_att_overlay.offset_right = -4
+	_att_overlay.offset_bottom = -4
+	_att_overlay.visible = false
+	_att_overlay.clip_contents = true
+	var dim := Panel.new()
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var ds := StyleBoxFlat.new()
+	ds.bg_color = Color(0, 0, 0, 0.55)
+	dim.add_theme_stylebox_override("panel", ds)
+	dim.gui_input.connect(func(ev):
+		var mb := ev as InputEventMouseButton
+		if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			_close_att_overlay()
+	)
+	_att_overlay.add_child(dim)
+
+	var margins := MarginContainer.new()
+	margins.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margins.add_theme_constant_override("margin_left", 56)
+	margins.add_theme_constant_override("margin_right", 56)
+	margins.add_theme_constant_override("margin_top", 24)
+	margins.add_theme_constant_override("margin_bottom", 24)
+	margins.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_att_overlay.add_child(margins)
+
+	var card := PanelContainer.new()
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	card.add_theme_stylebox_override("panel", VTKSurface.panel(false, 14))
+	margins.add_child(card)
+
+	var cv := VBoxContainer.new()
+	cv.add_theme_constant_override("separation", 6)
+	cv.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	card.add_child(cv)
+
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 6)
+	var title := Label.new()
+	title.text = Loc.txt("Attachments")
+	title.add_theme_font_size_override("font_size", 12)
+	title.add_theme_color_override("font_color", _gold)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_child(title)
+	var close_btn := Button.new()
+	close_btn.text = "✕"
+	VTKSurface.style_button(close_btn, false, true)
+	close_btn.pressed.connect(_close_att_overlay)
+	head.add_child(close_btn)
+	cv.add_child(head)
+
+	var sc := ScrollContainer.new()
+	sc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_att_overlay_body = VBoxContainer.new()
+	_att_overlay_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(_att_overlay_body)
+	cv.add_child(sc)
+	_panel.add_child(_att_overlay)
+
 func _build_editor() -> void:
 	for child in _editor_panel.get_children():
 		_editor_panel.remove_child(child)
@@ -701,9 +780,6 @@ func _build_editor() -> void:
 	_gear_grid_scroll = null
 	_shelves_box = null
 	_side_slots_box = null
-	_target_bar = null
-	_equip_att_box = null
-	_gear_att_box = null
 	_gear_box = null
 	_page_label = null
 
@@ -874,6 +950,9 @@ func _show_page(n: int) -> void:
 			var chk := _step_checks[i] as Label
 			if chk != null:
 				chk.visible = i < _page
+	# При смене шага оверлей перерисовывается по пути новой страницы:
+	# чужая панель закрывается, своя - открывается.
+	_refresh_att_overlay()
 
 func _set_problem(msg: String) -> void:
 	if _page_label != null:
@@ -998,10 +1077,6 @@ func _build_page_equipment() -> Control:
 	shelves_scroll.add_child(_shelves_box)
 	v.add_child(shelves_scroll)
 
-	_equip_att_box = VBoxContainer.new()
-	_equip_att_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	v.add_child(_equip_att_box)
-
 	# Слоты - та же левая колонка, что категории в Снаряжении: обе страницы
 	# берут каркас у _page_columns, поэтому выглядят одинаково.
 	_side_slots_box = VBoxContainer.new()
@@ -1044,10 +1119,6 @@ func _build_page_gear() -> Control:
 	_gear_grid_scroll.add_child(_gear_grid)
 	main.add_child(_gear_grid_scroll)
 
-	_gear_att_box = VBoxContainer.new()
-	_gear_att_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	main.add_child(_gear_att_box)
-
 	_gear_facets_box = VBoxContainer.new()
 	_gear_facets_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_gear_facets_box.add_theme_constant_override("separation", 3)
@@ -1057,7 +1128,6 @@ func _build_page_gear() -> Control:
 
 func _refresh_page_gear() -> void:
 	_refresh_gear_catalog()
-	_rebuild_att_box(_gear_att_box, _open_gear_att)
 
 # У обоймы единственный "обвес" - совместимый патрон, и он уезжает в
 # slotData.nested, который игра не читает. Число патронов задаёт сам amount,
@@ -1508,12 +1578,12 @@ func _refresh_pages() -> void:
 	_refresh_page_equipment()
 	_refresh_page_gear()
 	_refresh_page_done()
+	_refresh_att_overlay()
 
 func _refresh_page_equipment() -> void:
 	_rebuild_target_bar()
 	_refresh_slots()
 	_rebuild_shelves()
-	_rebuild_att_box(_equip_att_box, _open_equip_att)
 
 func _refresh_slots() -> void:
 	if _side_slots_box == null:
@@ -2166,6 +2236,30 @@ func _toggle_attachment_panel(path: String) -> void:
 		_open_equip_att = "" if _open_equip_att == path else path
 	_refresh_draft_ui()
 
+# Оверлей рендерит панель текущей страницы: путь своя у Экипировки и
+# Снаряжения; при пустом пути или закрытом черновике прячется.
+func _refresh_att_overlay() -> void:
+	if _att_overlay == null or _att_overlay_body == null:
+		return
+	for child in _att_overlay_body.get_children():
+		_att_overlay_body.remove_child(child)
+		child.queue_free()
+	var path := _open_gear_att if _page == 1 else _open_equip_att
+	if _draft == null or path == "":
+		_att_overlay.visible = false
+		return
+	var panel := _build_att_panel(path)
+	if panel == null:
+		_att_overlay.visible = false
+		return
+	_att_overlay_body.add_child(panel)
+	_att_overlay.visible = true
+
+func _close_att_overlay() -> void:
+	_open_equip_att = ""
+	_open_gear_att = ""
+	_refresh_draft_ui()
+
 # Иконка предмета. У части предметов в данных игры icon пуст, хотя PNG лежит
 # рядом в Files/ под именем Icon_<имя файла>.png - так в игре
 # AKS-74U_Magazine. Путь собирается относительно самого предмета, а не по
@@ -2472,22 +2566,6 @@ func _att_entries(desc: Dictionary) -> Array:
 	# второе место, где живёт состояние выбора.
 	return Picker.group_attachments(out)
 
-# Панель обвесов живёт в правой колонке под каталогом, а не рядом со строкой
-# слота: после переноса слотов в боковую колонку она оказалась бы среди строк.
-# Своя панель у каждой страницы: экран, открытый в Экипировке, не должен
-# появляться и в Снаряжении. Каждая страница рендерит только своё состояние.
-func _rebuild_att_box(host: VBoxContainer, path: String) -> void:
-	if host == null:
-		return
-	for child in host.get_children():
-		host.remove_child(child)
-		child.queue_free()
-	if path == "":
-		return
-	var panel := _build_att_panel(path)
-	if panel != null:
-		host.add_child(panel)
-
 # Панель одного предмета. Возвращает null, если панели нет: кнопка RND тогда
 # не показывается вовсе, и незачем создавать пустой блок.
 func _build_att_panel(path: String) -> Control:
@@ -2511,13 +2589,8 @@ func _build_att_panel(path: String) -> Control:
 	vb.add_theme_constant_override("separation", 2)
 	panel.add_child(vb)
 
-	var head := Label.new()
-	head.text = Loc.txt("Attachments")
-	head.add_theme_font_size_override("font_size", 10)
-	head.add_theme_color_override("font_color", Color("#6a5a4a"))
-	vb.add_child(head)
-	# Имя предмета отдельной строкой: панель стоит под каталогом, и без неё
-	# не видно, чьи это обвесы.
+	# Имя предмета первой строкой: заголовок «Attachments» рисует шапка
+	# оверлея, а чьи это обвесы - вопрос отдельный.
 	var owner_lbl := Label.new()
 	owner_lbl.text = str(desc.get("name", "?"))
 	owner_lbl.add_theme_font_size_override("font_size", 11)
