@@ -350,6 +350,23 @@ static func set_quick_key(name: String, keycode: int) -> void:
 			save_all(all)
 			return
 
+# Одна клавиша - один сет: перед назначением чужой бинд на этом коде
+# снимается, иначе get_name_by_quick_key отдала бы первого попавшегося.
+static func set_quick_key_unique(name: String, keycode: int) -> void:
+	var all = get_all()
+	var found := false
+	for i in range(all.size()):
+		if typeof(all[i]) != TYPE_DICTIONARY:
+			continue
+		var nm := str(all[i].get("name"))
+		if nm == name:
+			all[i]["quick_key"] = keycode
+			found = true
+		elif keycode != 0 and int(all[i].get("quick_key", 0)) == keycode:
+			all[i]["quick_key"] = 0
+	if found:
+		save_all(all)
+
 static func get_name_by_quick_key(keycode: int) -> String:
 	if keycode == 0:
 		return ""

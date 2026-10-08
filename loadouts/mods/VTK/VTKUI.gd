@@ -32,6 +32,13 @@ var _preview_box: VBoxContainer = null
 var _editing_name: String = ""
 # Активная карточка рейла: её состав показывает превью справа.
 var _selected_set: String = ""
+# Захват клавиши для хоткея: _bind_target - имя сохранённого сета (превью),
+# _bind_pending - бинд для ещё не сохранённого черновика (страница Готово),
+# _pending_qk применится в _save_loadout после replace_set.
+var _bind_target: String = ""
+var _bind_pending: bool = false
+var _bind_btn: Button = null
+var _pending_qk: int = 0
 var _draft: Draft = null
 var _name_input: LineEdit = null
 # Полосы категорий строятся как VBox из заголовка и HFlow с клетками: у
@@ -240,6 +247,11 @@ func _set_panel_open(open: bool) -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
+		# Захват идёт первым: Esc и клавиша панели во время захвата
+		# отменяют его, а не закрывают панель.
+		if _bind_target != "" or _bind_pending:
+			_handle_bind_key(event)
+			return
 		if _is_toggle_event(event):
 			if get_tree().current_scene == null:
 				return
@@ -247,11 +259,72 @@ func _input(event: InputEvent) -> void:
 			return
 		if get_viewport().gui_get_focus_control() is LineEdit:
 			return
-		if event.keycode == KEY_7 or event.keycode == KEY_8 or event.keycode == KEY_9:
-			var LD = preload("res://mods/VTK/VTKData.gd")
-			var qname = LD.get_name_by_quick_key(event.keycode)
-			if qname != "":
-				LD.load_loadout(qname)
+		var kc := int(event.physical_keycode)
+		if kc == 0:
+			kc = int(event.keycode)
+		var LD = preload("res://mods/VTK/VTKData.gd")
+		var qname = LD.get_name_by_quick_key(kc)
+		if qname == "" and kc != int(event.keycode):
+			qname = LD.get_name_by_quick_key(int(event.keycode))
+		if qname != "":
+			LD.load_loadout(qname)
+
+func _handle_bind_key(event: InputEventKey) -> void:
+	if event.keycode == KEY_ESCAPE:
+		_end_bind()
+		return
+	if _is_toggle_event(event):
+		_end_bind()
+		return
+	var kc := int(event.physical_keycode)
+	if kc == 0:
+		kc = int(event.keycode)
+	if kc == 0:
+		return
+	var LD = preload("res://mods/VTK/VTKData.gd")
+	if _bind_target != "":
+		# Клавиша, занятая другим сетом, забирается: чужой бинд снимается.
+		LD.set_quick_key_unique(_bind_target, kc)
+		_bind_target = ""
+		_bind_btn = null
+		_refresh_loadout_list()
+	else:
+		# Черновик ещё не в файле - бинд копится до сохранения.
+		_pending_qk = kc
+		_bind_pending = false
+		if _bind_btn != null:
+			_bind_btn.text = _keycode_to_string(kc)
+			_bind_btn.add_theme_color_override("font_color", _gold)
+		_bind_btn = null
+
+func _begin_bind(target: String, btn: Button) -> void:
+	_bind_target = target
+	_bind_pending = false
+	_bind_btn = btn
+	if btn != null:
+		btn.text = Loc.txt("Press a key…")
+		btn.add_theme_color_override("font_color", Color("#666666"))
+
+func _begin_bind_pending(btn: Button) -> void:
+	_bind_target = ""
+	_bind_pending = true
+	_bind_btn = btn
+	if btn != null:
+		btn.text = Loc.txt("Press a key…")
+		btn.add_theme_color_override("font_color", Color("#666666"))
+
+func _end_bind() -> void:
+	var btn := _bind_btn
+	var qk := _display_qk()
+	if _bind_target != "":
+		var LD = preload("res://mods/VTK/VTKData.gd")
+		var pack: Dictionary = LD.get_set(_bind_target)
+		qk = int(pack.get("quick_key", 0)) if not pack.is_empty() else 0
+	_bind_target = ""
+	_bind_pending = false
+	_bind_btn = null
+	if btn != null:
+		btn.text = _keycode_to_string(qk)
 
 func _load_items() -> void:
 	_db_items.clear()
@@ -497,7 +570,7 @@ func _refresh_preview() -> void:
 		qk_btn.text = "?"
 		qk_btn.add_theme_color_override("font_color", Color("#444"))
 	VTKSurface.style_button(qk_btn, qk > 0)
-	qk_btn.pressed.connect(func(): _cycle_quick_key_789(_selected_set))
+	qk_btn.pressed.connect(func(): _begin_bind(_selected_set, qk_btn))
 	actions.add_child(qk_btn)
 	var del_btn := Button.new()
 	del_btn.text = "✕"
@@ -584,6 +657,12 @@ func _build_editor() -> void:
 		child.queue_free()
 	_step_btns = []
 	_name_input = null
+	# Переключение или закрытие черновика бросает незавершённый захват
+	# и не применённый бинд: они относились к прошлому состоянию.
+	_bind_target = ""
+	_bind_pending = false
+	_bind_btn = null
+	_pending_qk = 0
 	_done_summary = null
 	_done_equip_col = null
 	_done_gear_col = null
@@ -1260,6 +1339,30 @@ func _build_page_done() -> Control:
 		_name_input.text = _draft.set_name
 	name_row.add_child(_name_input)
 	v.add_child(name_row)
+
+	# Хоткей назначается до сохранения: для нового сета бинд копится в
+	# _pending_qk и применяется в _save_loadout.
+	var hk_row := HBoxContainer.new()
+	hk_row.add_theme_constant_override("separation", 4)
+	var hk_lbl := Label.new()
+	hk_lbl.text = Loc.txt("Hotkey:")
+	hk_lbl.add_theme_font_size_override("font_size", 11)
+	hk_row.add_child(hk_lbl)
+	_bind_btn = Button.new()
+	_bind_btn.custom_minimum_size = Vector2(46, 20)
+	_bind_btn.add_theme_font_size_override("font_size", 10)
+	var hk_qk := _display_qk()
+	if hk_qk > 0:
+		_bind_btn.text = _keycode_to_string(hk_qk)
+		_bind_btn.add_theme_color_override("font_color", _gold)
+		VTKSurface.style_button(_bind_btn, true)
+	else:
+		_bind_btn.text = "?"
+		_bind_btn.add_theme_color_override("font_color", Color("#444"))
+		VTKSurface.style_button(_bind_btn)
+	_bind_btn.pressed.connect(func(): _begin_bind_pending(_bind_btn))
+	hk_row.add_child(_bind_btn)
+	v.add_child(hk_row)
 
 	# Две колонки, как в макете: в плоском списке не видно, где кончается один
 	# раздел и начинается другой.
@@ -2881,6 +2984,13 @@ func _save_loadout() -> void:
 	LD.replace_set(name_new, _draft.equip, _draft.gear)
 	if kept_key != 0:
 		LD.set_quick_key(name_new, kept_key)
+	if _pending_qk != 0:
+		LD.set_quick_key_unique(name_new, _pending_qk)
+		_pending_qk = 0
+		if _bind_btn != null:
+			_bind_btn.text = _keycode_to_string(int(LD.get_set(name_new).get("quick_key", 0)))
+			_bind_btn.add_theme_color_override("font_color", _gold)
+			VTKSurface.style_button(_bind_btn, true)
 	_draft.set_name = name_new
 	_editing_name = name_new
 	_clear_problem()
@@ -2911,42 +3021,22 @@ func _delete_loadout(name: String) -> void:
 	else:
 		_refresh_loadout_list()
 
-func _cycle_quick_key_789(name: String) -> void:
-	var LD = preload("res://mods/VTK/VTKData.gd")
-	var all = LD.get_all()
-	var current = 0
-	for ld in all:
-		if ld["name"] == name:
-			current = ld.get("quick_key") if ld.has("quick_key") else 0
-			break
-	var taken = {}
-	for ld in all:
-		if ld["name"] != name:
-			var k = ld.get("quick_key") if ld.has("quick_key") else 0
-			if k > 0:
-				taken[k] = true
-	var keys = [KEY_7, KEY_8, KEY_9]
-	var next = 0
-	if current > 0:
-		for i in range(keys.size()):
-			if keys[i] == current:
-				next = keys[(i + 1) % keys.size()]
-				break
-		if next == 0 or next == current:
-			next = 0
-	else:
-		for k in keys:
-			if not taken.has(k):
-				next = k
-				break
-	LD.set_quick_key(name, next)
-	_refresh_loadout_list()
+# Бинд, который показывает кнопка на странице Готово: нажатый в захвате,
+# если он есть, иначе сохранённый у редактируемого сета.
+func _display_qk() -> int:
+	if _pending_qk > 0:
+		return _pending_qk
+	if _editing_name != "":
+		var LD = preload("res://mods/VTK/VTKData.gd")
+		var pack: Dictionary = LD.get_set(_editing_name)
+		if not pack.is_empty():
+			return int(pack.get("quick_key", 0))
+	return 0
 
 static func _keycode_to_string(kc: int) -> String:
-	if kc == KEY_7: return "7"
-	if kc == KEY_8: return "8"
-	if kc == KEY_9: return "9"
-	return "?"
+	if kc <= 0:
+		return "?"
+	return OS.get_keycode_string(kc)
 
 func _register_mcm() -> void:
 	if not ResourceLoader.exists("res://ModConfigurationMenu/Scripts/Doink Oink/MCM_Helpers.tres"):

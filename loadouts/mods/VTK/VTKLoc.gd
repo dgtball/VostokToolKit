@@ -42,6 +42,7 @@ const RU := {
 	'Gear': 'Снаряжение',
 	'Grenades': 'Гранаты',
 	'Grips': 'Рукоятки',
+	'Hotkey:': 'Клавиша:',
 	'Interface language': 'Язык интерфейса',
 	'Keys': 'Ключи',
 	'Kill counter': 'Счётчик убийств',
@@ -62,6 +63,7 @@ const RU := {
 	'No saved loadouts': 'Нет сохранённых сетов',
 	'Nothing fits': 'Ничего не подходит',
 	'Optics': 'Оптика',
+	'Press a key…': 'Нажмите клавишу…',
 	'Pouches': 'Подсумки',
 	# Слоты набора: ключи идут из VTKPicker.SLOT_ORDER, отображаются только,
 	# данные игры (item.slots) остаются английскими.
