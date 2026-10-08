@@ -45,7 +45,7 @@ var _name_input: LineEdit = null
 # GridContainer нет растягивания на всю ширину, а полоса во всю ширину
 # нужна, чтобы порядок групп читался сверху вниз.
 var _shelves_box: VBoxContainer = null
-var _slots_flow: HFlowContainer = null
+var _side_slots_box: VBoxContainer = null
 var _target_bar: VBoxContainer = null
 var _gear_box: HBoxContainer = null
 # Открытая панель обвесов своя у каждой страницы: экран, открытый в
@@ -620,10 +620,23 @@ func _build_loadouts_tab(parent: VBoxContainer) -> void:
 	row.add_theme_constant_override("separation", 10)
 	parent.add_child(row)
 
+	# Рейл - та же подложка, что у колонок телепорта/снаряжения: inset-панель
+	# с видимым только правым бордюром-разделителем. Без неё список сетов
+	# висел бы на общей подложке таба и не читался как отдельная зона.
+	var rail_panel := PanelContainer.new()
+	rail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var rp := VTKSurface.panel(true, 6)
+	rp.border_width_left = 0
+	rp.border_width_top = 0
+	rp.border_width_bottom = 0
+	rp.shadow_color = Color(0, 0, 0, 0)
+	rail_panel.add_theme_stylebox_override("panel", rp)
+	row.add_child(rail_panel)
+
 	_rail_box = VBoxContainer.new()
 	_rail_box.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
 	_rail_box.add_theme_constant_override("separation", 6)
-	row.add_child(_rail_box)
+	rail_panel.add_child(_rail_box)
 
 	var list_title = Label.new()
 	list_title.text = Loc.txt("Saved loadouts")
@@ -686,7 +699,7 @@ func _build_editor() -> void:
 	_gear_facet_key = ""
 	_gear_grid_scroll = null
 	_shelves_box = null
-	_slots_flow = null
+	_side_slots_box = null
 	_target_bar = null
 	_equip_att_box = null
 	_gear_att_box = null
@@ -949,29 +962,8 @@ func _page_columns(title: String, side: Control, main: Control) -> HBoxContainer
 func _build_page_equipment() -> Control:
 	var v := _page_wrap()
 
-	# Чипы слотов - панелью фиксированной высоты сверху: чем ниже сетка,
-	# тем меньше внимания слотам, а левая колонка съедала 232px у полок.
-	# Порядок и число чипов постоянны от сета к сету (all_slots считает по
-	# каталогу), поэтому панель не пляшет по высоте.
-	var slots_panel := PanelContainer.new()
-	slots_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	slots_panel.add_theme_stylebox_override("panel", VTKSurface.panel(true, 6))
-	var sv := VBoxContainer.new()
-	sv.add_theme_constant_override("separation", 4)
-	slots_panel.add_child(sv)
-	var slbl := Label.new()
-	slbl.text = Loc.txt("Slots")
-	slbl.add_theme_font_size_override("font_size", 9)
-	slbl.add_theme_color_override("font_color", Color("#5f5347"))
-	sv.add_child(slbl)
-	_slots_flow = HFlowContainer.new()
-	_slots_flow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_slots_flow.add_theme_constant_override("h_separation", 5)
-	_slots_flow.add_theme_constant_override("v_separation", 5)
-	sv.add_child(_slots_flow)
-	v.add_child(slots_panel)
-
-	# Шапка цели: фильтры каталога под выбранной целью.
+	# Шапка цели: чем заполнен слот-цель и сброс на "все предметы". Список
+	# занятых слотов чипами больше не нужен - левая колонка и есть этот список.
 	_target_bar = VBoxContainer.new()
 	_target_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_target_bar.add_theme_constant_override("separation", 2)
@@ -1006,7 +998,13 @@ func _build_page_equipment() -> Control:
 	_equip_att_box = VBoxContainer.new()
 	_equip_att_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	v.add_child(_equip_att_box)
-	return v
+
+	# Слоты - та же левая колонка, что категории в Снаряжении: обе страницы
+	# берут каркас у _page_columns, поэтому выглядят одинаково.
+	_side_slots_box = VBoxContainer.new()
+	_side_slots_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_side_slots_box.add_theme_constant_override("separation", 3)
+	return _page_columns(Loc.txt("Slots"), _side_slots_box, v)
 
 func _build_page_gear() -> Control:
 	var main := _page_wrap()
@@ -1541,15 +1539,15 @@ func _refresh_page_equipment() -> void:
 	_rebuild_att_box(_equip_att_box, _open_equip_att)
 
 func _refresh_slots() -> void:
-	if _slots_flow == null:
+	if _side_slots_box == null:
 		return
-	for child in _slots_flow.get_children():
-		_slots_flow.remove_child(child)
+	for child in _side_slots_box.get_children():
+		_side_slots_box.remove_child(child)
 		child.queue_free()
 	if _draft == null:
 		return
-	# Порядок берём из Picker.all_slots, чтобы ряд был одинаковым от сета к
-	# сету, а не в порядке ключей словаря. Слоты копим из всех предметов
+	# Порядок берём из Picker.all_slots, чтобы столбец был одинаковым от сета
+	# к сету, а не в порядке ключей словаря. Слоты копим из всех предметов
 	# каталога, а не из занятых в этом сете: иначе пустой слот был бы виден
 	# только у того сета, где его уже что-то занимает.
 	var lists: Array = []
@@ -1561,30 +1559,32 @@ func _refresh_slots() -> void:
 		var desc = _draft.equip.get(s, {})
 		if typeof(desc) != TYPE_DICTIONARY:
 			desc = {}
-		_slots_flow.add_child(_make_slot_chip(s, desc))
+		_side_slots_box.add_child(_make_slot_row(s, desc))
 
-# Чип слота: точка занятости, имя слота, снятие предмета. Повторный клик
-# по занятому чипу открывает панель обвесов - обработчик тот же, что был
-# у строки: _on_slot_row_input.
-func _make_slot_chip(slot: String, desc: Dictionary) -> Control:
+# Строка слота в левой колонке: имя, точка занятости, снятие предмета.
+# Тот же приём, что строки фасетов в Снаряжении, - обе колонки выглядят
+# одинаково. Панель обвесов открывается повторным кликом по занятой цели.
+func _make_slot_row(slot: String, desc: Dictionary) -> Control:
 	var occupied := not desc.is_empty()
 	var active := _target_slot == slot
-	var chip := PanelContainer.new()
-	chip.mouse_filter = Control.MOUSE_FILTER_STOP
-	chip.add_theme_stylebox_override("panel", _make_slot_style(active, false, not occupied))
-	_attach_row_hover(chip, func(hv: bool): return _make_slot_style(active, hv, not occupied))
-	_attach_motion(chip)
-	chip.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, desc))
+	var row := PanelContainer.new()
+	row.custom_minimum_size = Vector2(0, 26)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.mouse_filter = Control.MOUSE_FILTER_STOP
+	row.add_theme_stylebox_override("panel", _make_slot_style(active, false, not occupied))
+	_attach_row_hover(row, func(hv: bool): return _make_slot_style(active, hv, not occupied))
+	_attach_motion(row)
+	row.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, desc))
 
 	var hb := HBoxContainer.new()
-	hb.add_theme_constant_override("separation", 5)
+	hb.add_theme_constant_override("separation", 6)
 	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	chip.add_child(hb)
-	hb.add_child(_make_dot(_gold if occupied else Color("#2a1f14")))
+	row.add_child(hb)
 
 	var nm := Label.new()
 	nm.text = Loc.txt(slot)
 	nm.add_theme_font_size_override("font_size", 10)
+	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	nm.add_theme_color_override("font_color", Color("#d8cdbe") if occupied else Color("#4d443a"))
 	if occupied:
@@ -1594,16 +1594,20 @@ func _make_slot_chip(slot: String, desc: Dictionary) -> Control:
 			nm.tooltip_text += " x" + str(cnt)
 	hb.add_child(nm)
 
+	# Точка отвечает на "есть предмет", а не на категорию. Иконок в слотах и
+	# чипах нет: спрайты живут только в ячейках каталога и обвесов.
+	hb.add_child(_make_dot(_gold if occupied else Color("#2a1f14")))
+
 	if occupied:
 		var drop := _make_mini_btn("✕")
 		drop.tooltip_text = Loc.txt("Remove")
 		drop.pressed.connect(func(): _remove_slot(slot))
 		hb.add_child(drop)
-	return chip
+	return row
 
-# Клик по чипу слота: чип становится целью, а клик по текущей цели с
+# Клик по строке слота: строка становится целью, а клик по текущей цели с
 # предметом открывает панель обвесов. Иначе обвесы пришлось бы искать
-# отдельной кнопкой, а в чипе для неё нет места.
+# отдельной кнопкой, а в колонке для неё нет места.
 func _on_slot_row_input(ev: InputEvent, slot: String, desc: Dictionary) -> void:
 	var mb := ev as InputEventMouseButton
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
