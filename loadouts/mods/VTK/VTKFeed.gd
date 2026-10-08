@@ -12,9 +12,9 @@ const MAX_ROWS := 5
 const FEED_DURATION := 5.0
 const FADE_TIME := 0.6
 const FEED_TOP_OFFSET := 72.0
-const FONT_SIZE := 15
-const ROW_HEIGHT := 20.0
-const ICON_SIZE := 14.0
+const FONT_SIZE := 17
+const ROW_HEIGHT := 23.0
+const ICON_SIZE := 16.0
 
 static func kind_color(kind: String) -> Color:
 	if kind == "player" or kind == "nomad":
@@ -142,7 +142,9 @@ func _add_icon(row: HBoxContainer, icon: String, ev: Dictionary) -> void:
 		var w := str(ev.get("weapon", ""))
 		var tex := _weapon_texture(w)
 		if tex != null:
-			_add_tex(row, tex, 2.0)
+			# x4 по ширине: пистолеты упираются в aspect-потолок (icon_w * aspect)
+			# и не растут, а широким винтовкам достаётся вся ширина бокса.
+			_add_tex(row, tex, 4.0)
 			return
 		# Иконка не найдена (имя не сошлось с Database) — имя текстом, иначе
 		# сегмент оружия исчезнет и строка снова будет без оружия.
@@ -184,6 +186,13 @@ func _hs_texture() -> Texture2D:
 
 # Оружие: имя из события -> предмет Database -> иконка предмета (как в сетах).
 # item_art кропит прозрачные поля, иначе иконка оружия едва видна в строке 15px.
+#
+# Имя приходит из data.file рига или имени AI-узла (AKS_74U, AK-12, AKS-74U),
+# а item.name может быть переименован модом RealGunAndAttachmentNames — поэтому
+# сравнение нормализованное и дополнительно по basename resource_path.
+static func norm_weapon(s: String) -> String:
+	return s.strip_edges().to_lower().replace("-", "_").replace(" ", "_")
+
 func _weapon_texture(weapon: String) -> Texture2D:
 	if weapon == "":
 		return null
@@ -193,10 +202,14 @@ func _weapon_texture(weapon: String) -> Texture2D:
 	var master = db.get("master")
 	if master == null or not ("items" in master):
 		return null
+	var w := norm_weapon(weapon)
 	for item in master.items:
 		if item == null:
 			continue
-		if str(item.name).strip_edges() != weapon:
+		var hit := norm_weapon(str(item.name)) == w
+		if not hit and String(item.resource_path) != "":
+			hit = norm_weapon(String(item.resource_path).get_file().get_basename()) == w
+		if not hit:
 			continue
 		var ui = get_node_or_null("/root/VTKUI")
 		var icon = null
