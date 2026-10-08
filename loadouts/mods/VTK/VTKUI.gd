@@ -77,7 +77,9 @@ var _step_circles: Array = []
 var _step_numbers: Array = []
 var _step_checks: Array = []
 var _gear_search_field: LineEdit = null
-var _gear_chips: VBoxContainer = null
+# Пунктирная строка «Только выбранные» в колонке категорий: в сетке
+# остаются только предметы, уже лежащие в сете.
+var _gear_only_selected: bool = false
 var _gear_facet_key: String = ""
 # Второй уровень фасетов шага 2: подкатегория внутри выбранной категории.
 var _gear_sub_key: String = ""
@@ -693,7 +695,6 @@ func _build_editor() -> void:
 	_done_equip_col = null
 	_done_gear_col = null
 	_gear_search_field = null
-	_gear_chips = null
 	_gear_facets_box = null
 	_gear_grid = null
 	_gear_facet_key = ""
@@ -891,6 +892,7 @@ func _reset_picker_state() -> void:
 	_gear_facet_key = ""
 	_gear_sub_key = ""
 	_gear_subs_collapsed = false
+	_gear_only_selected = false
 	_open_equip_att = ""
 	_open_gear_att = ""
 	_last_placed = ""
@@ -908,7 +910,8 @@ func _page_wrap() -> VBoxContainer:
 	return v
 
 # Ширина левой колонки. Осталась только у шага 2 (Снаряжение): шаг 1
-# (Экипировка) переехал на чипы слотов сверху, колонка там больше не нужна.
+# (Экипировка) тоже вернулся к колонкам через _page_columns (T5-откат),
+# но объединение слотов и категорий в одну колонку пока не делали.
 const SIDE_WIDTH := 232
 
 # Сколько клеток влезает в ширину. Константа "_gear_grid.columns = 4" давала
@@ -1009,13 +1012,6 @@ func _build_page_equipment() -> Control:
 func _build_page_gear() -> Control:
 	var main := _page_wrap()
 
-	# Чипы снаряжения идут первыми: это выбранное, его и правят. Поиск ниже
-	# относится к каталогу, а не к этим чипам.
-	_gear_chips = VBoxContainer.new()
-	_gear_chips.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_gear_chips.add_theme_constant_override("separation", 2)
-	main.add_child(_gear_chips)
-
 	# Отдельное поле поиска: запрос шага 1 относится к выбору предмета в слот
 	# и не должен молча фильтровать снаряжение, и наоборот.
 	var search := LineEdit.new()
@@ -1060,82 +1056,8 @@ func _build_page_gear() -> Control:
 	return _gear_box
 
 func _refresh_page_gear() -> void:
-	_rebuild_gear_chips()
 	_refresh_gear_catalog()
 	_rebuild_att_box(_gear_att_box, _open_gear_att)
-
-func _rebuild_gear_chips() -> void:
-	if _gear_chips == null:
-		return
-	for child in _gear_chips.get_children():
-		_gear_chips.remove_child(child)
-		child.queue_free()
-	# Панель обвесов больше не едет чипом: она живёт в _gear_att_box под
-	# каталогом. Здесь только сами чипы, поэтому клик по обвесу на второй
-	# странице открывает панель на текущем чипе, а не на последнем в списке.
-	if _draft == null:
-		return
-	if _draft.gear.is_empty():
-		var note := Label.new()
-		note.text = Loc.txt("No gear")
-		note.add_theme_font_size_override("font_size", 11)
-		note.add_theme_color_override("font_color", Color("#666666"))
-		_gear_chips.add_child(note)
-		return
-	for desc in _draft.gear:
-		_gear_chips.add_child(_make_gear_chip(desc))
-
-# Чип снаряжения: имя, счётчик, обвесы, удаление. У обоймы счётчик живёт в
-# count, поэтому берём shown_count, а не amount: у обоймы amount = 0 по
-# определению и показывать его - значит показать ноль вместо выбранного.
-func _make_gear_chip(desc: Dictionary) -> Control:
-	var path_now := str(desc.get("path", ""))
-	var card := PanelContainer.new()
-	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	card.add_theme_stylebox_override("panel", VTKSurface.surface("normal", false, false, false, 8, 8, 4, 4))
-	_attach_motion(card)
-
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 4)
-	card.add_child(row)
-
-	row.add_child(_make_dot(_gold))
-
-	var nm := Label.new()
-	nm.text = str(desc.get("name", "?"))
-	nm.add_theme_font_size_override("font_size", 12)
-	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	nm.tooltip_text = path_now
-	row.add_child(nm)
-
-	var minus := _make_step_btn("-")
-	minus.pressed.connect(func(): _bump_gear(path_now, -1.0))
-	row.add_child(minus)
-
-	var cnt := Label.new()
-	cnt.text = str(Draft.shown_count(desc))
-	cnt.add_theme_font_size_override("font_size", 11)
-	cnt.custom_minimum_size = Vector2(22, 0)
-	cnt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	row.add_child(cnt)
-
-	var plus := _make_step_btn("+")
-	plus.pressed.connect(func(): _bump_gear(path_now, 1.0))
-	row.add_child(plus)
-
-	# Панель обвесов есть не у всего. У обоймы вместо неё тумблер заполнения,
-	# и решение принимается по предмету, а не по наличию панели: у обоймы
-	# есть и обвесы, и maxAmount, то есть has_panel() тут врёт.
-	if _is_magazine(path_now):
-		row.add_child(_make_full_mag_btn(path_now, desc))
-	elif Picker.has_panel(_item_info(path_now)):
-		row.add_child(_make_att_btn(desc))
-
-	var drop := _make_step_btn("x")
-	drop.tooltip_text = Loc.txt("Remove")
-	drop.pressed.connect(func(): _remove_gear(path_now))
-	row.add_child(drop)
-	return card
 
 # У обоймы единственный "обвес" - совместимый патрон, и он уезжает в
 # slotData.nested, который игра не читает. Число патронов задаёт сам amount,
@@ -1171,18 +1093,23 @@ func _remove_gear(path: String) -> void:
 	_draft.remove_gear(path)
 	_refresh_pages()
 
-func _make_full_mag_btn(path: String, desc: Dictionary) -> Button:
+# compact = true: поля 2/2 вместо 8/8 и шрифт 8 - для рядов клетки шага 2,
+# где на всю ширину 96px приходится ещё и счётчик.
+func _make_full_mag_btn(path: String, desc: Dictionary, compact := false) -> Button:
 	var on := Draft.is_full(desc)
 	var b := Button.new()
 	b.text = Loc.txt("Full magazine") if on else Loc.txt("Empty")
-	b.add_theme_font_size_override("font_size", 9)
+	b.add_theme_font_size_override("font_size", 8 if compact else 9)
 	b.add_theme_color_override("font_color", _gold if on else Color("#777777"))
-	VTKSurface.style_button(b, on, false, 8, 8, 4, 4)
+	if compact:
+		VTKSurface.style_button(b, on, false, 2, 2, 2, 2)
+	else:
+		VTKSurface.style_button(b, on, false, 8, 8, 4, 4)
 	b.pressed.connect(func():
 		if _draft == null:
 			return
 		# Состояние берём с актуального descriptor'а, а не с захваченного
-		# desc: после пересборки чипов он уже может быть не тем объектом.
+		# desc: после пересборки клеток он уже может быть не тем объектом.
 		_draft.set_full_mag(path, not Draft.is_full(_draft.descriptor_of(path)))
 		_refresh_pages()
 	)
@@ -1204,6 +1131,44 @@ func _refresh_gear_catalog() -> void:
 	_rebuild_gear_facets(facets)
 	_rebuild_gear_grid(facets)
 
+# Пунктирная строка «Только выбранные» в колонке фасетов. Как CreateCard:
+# штрих рисуется в _draw, Loc передаётся текстом. Внутреннему классу недоступен
+# _gold внешнего скрипта, поэтому цвет дублируется константой.
+class ChosenRow extends PanelContainer:
+	const S := preload("res://mods/VTK/VTKSurface.gd")
+	const GOLD := Color("#e0b55a")
+
+	var _on := false
+	var _action: Callable
+
+	func _init(on: bool, label: String, action: Callable) -> void:
+		_on = on
+		_action = action
+		custom_minimum_size = Vector2(0, 26)
+		size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		var st := StyleBoxFlat.new()
+		st.bg_color = Color("#1a1510")
+		st.corner_radius_all = 4
+		add_theme_stylebox_override("panel", st)
+		var l := Label.new()
+		l.text = ("✓ " if _on else "") + label
+		l.add_theme_font_size_override("font_size", 10)
+		l.add_theme_color_override("font_color", GOLD if _on else Color("#8a7a6a"))
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		l.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(l)
+		gui_input.connect(func(ev):
+			var mb := ev as InputEventMouseButton
+			if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+				_action.call()
+		)
+
+	func _draw() -> void:
+		S.draw_dashes(self, Rect2(Vector2(2, 2), size - Vector2(4, 4)), Color("#5f5347"))
+
 # Фасеты левой колонки: строки категорий со счётчиками. Цифра считается по
 # текущему запросу, поэтому всегда равна тому, что окажется в сетке после клика.
 func _rebuild_gear_facets(facets: Array) -> void:
@@ -1223,6 +1188,11 @@ func _rebuild_gear_facets(facets: Array) -> void:
 		if _gear_facet_key != "" and key == _gear_facet_key and not _gear_subs_collapsed:
 			for s in _gear_subfacets(f.get("items", [])):
 				_gear_facets_box.add_child(_make_facet_row(s, true))
+	# Пунктирная строка «Только выбранные» - в конце списка категорий.
+	_gear_facets_box.add_child(ChosenRow.new(_gear_only_selected,
+		Loc.txt("Only selected"), func():
+			_gear_only_selected = not _gear_only_selected
+			_refresh_gear_catalog()))
 
 # Клик по активной строке сворачивает/разворачивает её подкатегории;
 # категория продолжает фильтровать. К возврату ко «Всем предметам» ведёт
@@ -1334,6 +1304,13 @@ func _rebuild_gear_grid(facets: Array) -> void:
 			if str(e.get("sub", "")) == _gear_sub_key:
 				only.append(e)
 		found = only
+	if _gear_only_selected and _draft != null:
+		var picked: Array = []
+		for e in found:
+			var res_it = e.get("item")
+			if res_it != null and _draft.has_path(str(res_it.resource_path)):
+				picked.append(e)
+		found = picked
 	if found.is_empty():
 		var note := Label.new()
 		note.text = Loc.txt("Nothing fits")
@@ -1345,7 +1322,7 @@ func _rebuild_gear_grid(facets: Array) -> void:
 		var res = entry.get("item")
 		if res == null:
 			continue
-		_gear_grid.add_child(_make_item_cell(res, ""))
+		_gear_grid.add_child(_make_item_cell(res, "", true))
 
 # Шаг 2 не фильтрует по слоту: слот-цель принадлежит шагу 1, и переносить её
 # сюда значило бы всюду показывать предметы только одного слота. Запрос тоже не
@@ -2171,6 +2148,17 @@ func _bump_gear(path: String, delta: float) -> void:
 	_draft.set_gear_amount(path, _draft.amount_of(path) + delta)
 	_refresh_draft_ui()
 
+# ⚡ в клетке: весь набор предмета (count копий) в инвентарь, без
+# экипировки и без сохранения - так можно проверить предмет на месте.
+func _spawn_gear(path_now: String) -> void:
+	if _draft == null:
+		return
+	var desc := _draft.descriptor_of(path_now)
+	if desc.is_empty():
+		return
+	var LD = preload("res://mods/VTK/VTKData.gd")
+	LD.spawn_gear(desc)
+
 func _toggle_attachment_panel(path: String) -> void:
 	if _page == 1:
 		_open_gear_att = "" if _open_gear_att == path else path
@@ -2198,9 +2186,11 @@ func _item_icon(res) -> Texture2D:
 	_icon_cache[base] = tex
 	return tex
 
-func _make_item_cell(item, forced_slot = null) -> Control:
+func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 	var cell = Panel.new()
-	cell.custom_minimum_size = Vector2(96, 132)
+	# Клетка снаряжения выше: под именем два ряда - счётчик с обвесами и
+	# управление. Каталог шага 1 остаётся 132px.
+	cell.custom_minimum_size = Vector2(96, 150 if gear else 132)
 	# Без SIZE_EXPAND_FILL: HFlowContainer растягивает такие клетки на всю
 	# ширину полосы, пока предметов мало (stretch в flow_container.cpp).
 	cell.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -2248,7 +2238,7 @@ func _make_item_cell(item, forced_slot = null) -> Control:
 
 	var path_now: String = item.resource_path
 	var already := _draft != null and _draft.has_path(path_now)
-	if already:
+	if already and not gear:
 		var cur_slot := _draft.equip_slot_of(path_now)
 		if cur_slot == "":
 			var n := int(_draft.amount_of(path_now))
@@ -2262,11 +2252,69 @@ func _make_item_cell(item, forced_slot = null) -> Control:
 				vbox.add_child(cnt)
 		cell.add_theme_stylebox_override("panel", in_set_style)
 
+	if gear and _draft != null:
+		var gi := _draft.gear_index_of(path_now)
+		if gi >= 0:
+			cell.add_theme_stylebox_override("panel", in_set_style)
+			var desc_g: Dictionary = _draft.gear[gi]
+			var cnt_g := Draft.shown_count(desc_g)
+
+			# Ряд А: счётчик и обвесы. У обоймы - тумблер полной обоймы,
+			# у остальных с панелью - кнопка rnd (открывает панель обвесов).
+			var crow := HBoxContainer.new()
+			crow.add_theme_constant_override("separation", 3)
+			crow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var xl := Label.new()
+			xl.text = "×" + str(cnt_g)
+			xl.add_theme_font_size_override("font_size", 8)
+			xl.add_theme_color_override("font_color", _gold)
+			xl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			xl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			xl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			crow.add_child(xl)
+			if _is_magazine(path_now):
+				var mag_btn := _make_full_mag_btn(path_now, desc_g, true)
+				crow.add_child(mag_btn)
+			elif Picker.has_panel(_item_info(path_now)):
+				crow.add_child(_make_att_btn(desc_g))
+			vbox.add_child(crow)
+
+			# Ряд Б: минус, счётчик, плюс, спавн, удаление. Все микро-
+			# кнопки 15×16, ⚡ золотым - это действие, а не состояние.
+			var brow := HBoxContainer.new()
+			brow.add_theme_constant_override("separation", 3)
+			brow.alignment = BoxContainer.ALIGNMENT_CENTER
+			brow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var minus := _make_mini_btn("−")
+			minus.pressed.connect(func(): _bump_gear(path_now, -1.0))
+			brow.add_child(minus)
+			var cl := Label.new()
+			cl.text = str(cnt_g)
+			cl.add_theme_font_size_override("font_size", 10)
+			cl.custom_minimum_size = Vector2(16, 0)
+			cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			cl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			brow.add_child(cl)
+			var plus := _make_mini_btn("+")
+			plus.pressed.connect(func(): _bump_gear(path_now, 1.0))
+			brow.add_child(plus)
+			var spawn := _make_mini_btn("⚡")
+			spawn.tooltip_text = Loc.txt("Spawn into inventory")
+			spawn.add_theme_color_override("font_color", _gold)
+			spawn.pressed.connect(func(): _spawn_gear(path_now))
+			brow.add_child(spawn)
+			var drop := _make_mini_btn("✕")
+			drop.tooltip_text = Loc.txt("Remove")
+			drop.pressed.connect(func(): _remove_gear(path_now))
+			brow.add_child(drop)
+			vbox.add_child(brow)
+
 	cell.tooltip_text = item.name
 
 	var it = item
 	# Шаг 2 зовёт клетку с пустой целью явно, иначе цель шага 1 переехала бы
-	# на шаг 2 вместе с клеткой.
+	# на шаг 2 вместе с клеткой. Клик по пустой gear-клетке добавляет предмет
+	# тем же _place_into (Draft.add).
 	var slot := _target_slot if forced_slot == null else str(forced_slot)
 	cell.gui_input.connect(func(ev: InputEvent):
 		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
