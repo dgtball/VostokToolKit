@@ -756,6 +756,19 @@ func _build_loadouts_tab(parent: VBoxContainer) -> void:
 	_att_overlay_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sc.add_child(_att_overlay_body)
 	cv.add_child(sc)
+
+	# «Готово» внизу оверлея: изменения применяются живьём в черновик, кнопка
+	# только закрывает панель. Без неё приходилось кликать по пустой области.
+	var done_row := HBoxContainer.new()
+	done_row.size_flags_vertical = Control.SIZE_SHRINK_END
+	var done_btn := Button.new()
+	done_btn.text = Loc.txt("Done")
+	done_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	VTKSurface.style_button(done_btn, true, false, 14, 14, 10, 12)
+	done_btn.pressed.connect(_close_att_overlay)
+	done_row.add_child(done_btn)
+	cv.add_child(done_row)
+
 	_panel.add_child(_att_overlay)
 
 func _build_editor() -> void:
@@ -1144,13 +1157,14 @@ func _make_step_btn(label: String) -> Button:
 	VTKSurface.style_button(b, false, false, 2, 2, 4, 4)
 	return b
 
-# Микро-кнопка 15×16: крестик чипа слота и ряды управления клеткой
-# снаряжения (T6). Обычный _make_step_btn (24×24) в 96px клетке не влезает.
-func _make_mini_btn(label: String) -> Button:
+# Микро-кнопка: крестик чипа слота и ряды управления клеткой снаряжения.
+# Дефолт 15×16/font 8 - слот-строка; клетка шага 2 передаёт размер крупнее,
+# потому что «− n +» там основное управление, а не служебная мелочь.
+func _make_mini_btn(label: String, size := Vector2(15, 16), font := 8) -> Button:
 	var b := Button.new()
 	b.text = label
-	b.custom_minimum_size = Vector2(15, 16)
-	b.add_theme_font_size_override("font_size", 8)
+	b.custom_minimum_size = size
+	b.add_theme_font_size_override("font_size", font)
 	VTKSurface.style_button(b, false, false, 1, 1, 2, 2)
 	return b
 
@@ -1631,15 +1645,27 @@ func _make_slot_row(slot: String, desc: Dictionary) -> Control:
 	var nm := Label.new()
 	nm.text = Loc.txt(slot)
 	nm.add_theme_font_size_override("font_size", 10)
-	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	nm.add_theme_color_override("font_color", Color("#d8cdbe") if occupied else Color("#4d443a"))
 	if occupied:
-		nm.tooltip_text = str(desc.get("name", "?"))
+		# Имя слота сжимается, чтобы освободить место под имя предмета.
+		nm.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		var item_lbl := Label.new()
+		item_lbl.text = str(desc.get("name", "?"))
 		var cnt := Draft.shown_count(desc)
 		if cnt > 1:
-			nm.tooltip_text += " x" + str(cnt)
-	hb.add_child(nm)
+			item_lbl.text += " x" + str(cnt)
+		item_lbl.add_theme_font_size_override("font_size", 9)
+		item_lbl.add_theme_color_override("font_color", Color("#8a7a6a"))
+		item_lbl.clip_text = true
+		item_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		item_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		item_lbl.tooltip_text = item_lbl.text
+		hb.add_child(nm)
+		hb.add_child(item_lbl)
+	else:
+		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hb.add_child(nm)
 
 	# Точка отвечает на "есть предмет", а не на категорию. Иконок в слотах и
 	# чипах нет: спрайты живут только в ячейках каталога и обвесов.
@@ -2218,7 +2244,7 @@ func _bump_gear(path: String, delta: float) -> void:
 	_draft.set_gear_amount(path, _draft.amount_of(path) + delta)
 	_refresh_draft_ui()
 
-# ⚡ в клетке: весь набор предмета (count копий) в инвентарь, без
+# Кнопка «В инвентарь»: весь набор предмета (count копий) в инвентарь, без
 # экипировки и без сохранения - так можно проверить предмет на месте.
 func _spawn_gear(path_now: String) -> void:
 	if _draft == null:
@@ -2281,10 +2307,13 @@ func _item_icon(res) -> Texture2D:
 	return tex
 
 func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
+	var path_now: String = item.resource_path
+	var gi := _draft.gear_index_of(path_now) if (gear and _draft != null) else -1
 	var cell = Panel.new()
-	# Клетка снаряжения выше: под именем два ряда - счётчик с обвесами и
-	# управление. Каталог шага 1 остаётся 132px.
-	cell.custom_minimum_size = Vector2(96, 150 if gear else 132)
+	# Клетка снаряжения выше и шире: под именем три ряда - счётчик с
+	# обвесами, крупные «− n +» и кнопка «В инвентарь»; ✕ живёт в углу.
+	# Каталог шага 1 остаётся ниже - там под именем только счётчик.
+	cell.custom_minimum_size = Vector2(104, 176 if gi >= 0 else (156 if gear else 140))
 	# Без SIZE_EXPAND_FILL: HFlowContainer растягивает такие клетки на всю
 	# ширину полосы, пока предметов мало (stretch в flow_container.cpp).
 	cell.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -2330,7 +2359,6 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(name_lbl)
 
-	var path_now: String = item.resource_path
 	var already := _draft != null and _draft.has_path(path_now)
 	if already and not gear:
 		var cur_slot := _draft.equip_slot_of(path_now)
@@ -2346,62 +2374,77 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 				vbox.add_child(cnt)
 		cell.add_theme_stylebox_override("panel", in_set_style)
 
-	if gear and _draft != null:
-		var gi := _draft.gear_index_of(path_now)
-		if gi >= 0:
-			cell.add_theme_stylebox_override("panel", in_set_style)
-			var desc_g: Dictionary = _draft.gear[gi]
-			var cnt_g := Draft.shown_count(desc_g)
+	if gear and _draft != null and gi >= 0:
+		cell.add_theme_stylebox_override("panel", in_set_style)
+		var desc_g: Dictionary = _draft.gear[gi]
+		var cnt_g := Draft.shown_count(desc_g)
 
-			# Ряд А: счётчик и обвесы. У обоймы - тумблер полной обоймы,
-			# у остальных с панелью - кнопка rnd (открывает панель обвесов).
-			var crow := HBoxContainer.new()
-			crow.add_theme_constant_override("separation", 3)
-			crow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			var xl := Label.new()
-			xl.text = "×" + str(cnt_g)
-			xl.add_theme_font_size_override("font_size", 8)
-			xl.add_theme_color_override("font_color", _gold)
-			xl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			xl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			xl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			crow.add_child(xl)
-			if _is_magazine(path_now):
-				var mag_btn := _make_full_mag_btn(path_now, desc_g, true)
-				crow.add_child(mag_btn)
-			elif Picker.has_panel(_item_info(path_now)):
-				crow.add_child(_make_att_btn(desc_g))
-			vbox.add_child(crow)
+		# Ряд А: счётчик и обвесы. У обоймы - тумблер полной обоймы,
+		# у остальных с панелью - кнопка rnd (открывает панель обвесов).
+		var crow := HBoxContainer.new()
+		crow.add_theme_constant_override("separation", 3)
+		crow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var xl := Label.new()
+		xl.text = "×" + str(cnt_g)
+		xl.add_theme_font_size_override("font_size", 8)
+		xl.add_theme_color_override("font_color", _gold)
+		xl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		xl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		xl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		crow.add_child(xl)
+		if _is_magazine(path_now):
+			var mag_btn := _make_full_mag_btn(path_now, desc_g, true)
+			crow.add_child(mag_btn)
+		elif Picker.has_panel(_item_info(path_now)):
+			crow.add_child(_make_att_btn(desc_g))
+		vbox.add_child(crow)
 
-			# Ряд Б: минус, счётчик, плюс, спавн, удаление. Все микро-
-			# кнопки 15×16, ⚡ золотым - это действие, а не состояние.
-			var brow := HBoxContainer.new()
-			brow.add_theme_constant_override("separation", 3)
-			brow.alignment = BoxContainer.ALIGNMENT_CENTER
-			brow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			var minus := _make_mini_btn("−")
-			minus.pressed.connect(func(): _bump_gear(path_now, -1.0))
-			brow.add_child(minus)
-			var cl := Label.new()
-			cl.text = str(cnt_g)
-			cl.add_theme_font_size_override("font_size", 10)
-			cl.custom_minimum_size = Vector2(16, 0)
-			cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			cl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			brow.add_child(cl)
-			var plus := _make_mini_btn("+")
-			plus.pressed.connect(func(): _bump_gear(path_now, 1.0))
-			brow.add_child(plus)
-			var spawn := _make_mini_btn("⚡")
-			spawn.tooltip_text = Loc.txt("Spawn into inventory")
-			spawn.add_theme_color_override("font_color", _gold)
-			spawn.pressed.connect(func(): _spawn_gear(path_now))
-			brow.add_child(spawn)
-			var drop := _make_mini_btn("✕")
-			drop.tooltip_text = Loc.txt("Remove")
-			drop.pressed.connect(func(): _remove_gear(path_now))
-			brow.add_child(drop)
-			vbox.add_child(brow)
+		# Ряд Б: минус, счётчик, плюс. Основное управление клетки, поэтому
+		# крупнее прежних микро-кнопок 15×16.
+		var brow := HBoxContainer.new()
+		brow.add_theme_constant_override("separation", 4)
+		brow.alignment = BoxContainer.ALIGNMENT_CENTER
+		brow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var minus := _make_mini_btn("−", Vector2(24, 24), 13)
+		minus.pressed.connect(func(): _bump_gear(path_now, -1.0))
+		brow.add_child(minus)
+		var cl := Label.new()
+		cl.text = str(cnt_g)
+		cl.add_theme_font_size_override("font_size", 13)
+		cl.custom_minimum_size = Vector2(26, 0)
+		cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		brow.add_child(cl)
+		var plus := _make_mini_btn("+", Vector2(24, 24), 13)
+		plus.pressed.connect(func(): _bump_gear(path_now, 1.0))
+		brow.add_child(plus)
+		vbox.add_child(brow)
+
+		# Ряд В: «В инвентарь» - спавн набора в инвентарь для проверки.
+		# Прежняя иконка действия читалась как состояние, а не как кнопка.
+		var spawn_btn := Button.new()
+		spawn_btn.text = Loc.txt("Spawn into inventory")
+		spawn_btn.add_theme_font_size_override("font_size", 9)
+		spawn_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		VTKSurface.style_button(spawn_btn, false, false, 6, 6, 4, 4)
+		spawn_btn.pressed.connect(func(): _spawn_gear(path_now))
+		vbox.add_child(spawn_btn)
+
+		# Удаление - крестик в правом верхнем углу клетки, красный: это
+		# уничтожение набора, его не должно быть рядом с «В инвентарь».
+		# Panel - не контейнер, якоря работают; кнопка добавляется после
+		# center и рисуется поверх, клики на себя забирает она.
+		var drop := _make_mini_btn("✕", Vector2(20, 20), 11)
+		VTKSurface.style_button(drop, false, true, 2, 2, 2, 2)
+		drop.add_theme_color_override("font_color", Color("#e05a4a"))
+		drop.tooltip_text = Loc.txt("Remove")
+		drop.pressed.connect(func(): _remove_gear(path_now))
+		cell.add_child(drop)
+		drop.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+		drop.offset_left = -22
+		drop.offset_top = 2
+		drop.offset_right = -2
+		drop.offset_bottom = 22
 
 	cell.tooltip_text = item.name
 
