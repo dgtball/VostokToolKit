@@ -1,1 +1,1 @@
-[mod]name="Vostok Toolkit"id="vostok-toolkit"version="4.8.0"[autoload]VTKUI="res://mods/VTK/VTKUI.gd"
+[mod]name="Vostok Toolkit"id="vostok-toolkit"version="4.8.3"[autoload]VTKUI="res://mods/VTK/VTKUI.gd"

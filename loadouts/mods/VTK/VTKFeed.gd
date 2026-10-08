@@ -53,6 +53,8 @@ const Surface = preload("res://mods/VTK/VTKSurface.gd")
 const Picker = preload("res://mods/VTK/VTKPicker.gd")
 
 const GRENADE_SVG := "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\"><ellipse cx=\"16\" cy=\"20\" rx=\"9\" ry=\"10\" fill=\"#6f7a5a\" stroke=\"#3d4433\" stroke-width=\"2\"/><rect x=\"13\" y=\"6\" width=\"6\" height=\"5\" rx=\"1\" fill=\"#8a8f7a\" stroke=\"#3d4433\" stroke-width=\"1.5\"/><path d=\"M19 8 q7 1 7 7\" fill=\"none\" stroke=\"#c9c2b2\" stroke-width=\"2\"/><path d=\"M26 15 l0 4\" fill=\"none\" stroke=\"#c9c2b2\" stroke-width=\"2\"/></svg>"
+# Перекрестие HS — из утверждённого макета (killfeed-mockup.html), цвет = HS_GOLD.
+const HS_SVG := "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\"><circle cx=\"16\" cy=\"16\" r=\"11\" fill=\"none\" stroke=\"#FFD669\" stroke-width=\"2.5\"/><circle cx=\"16\" cy=\"16\" r=\"3.5\" fill=\"#FFD669\"/><path d=\"M16 1v7M16 24v7M1 16h7M24 16h7\" fill=\"none\" stroke=\"#FFD669\" stroke-width=\"2.5\"/></svg>"
 
 var _enabled: bool = false
 var _rows: Array = []
@@ -60,8 +62,6 @@ var _vbox: VBoxContainer = null
 var _scene_ref: Node = null
 var _was_shelter: bool = false
 var _hooks: Node = null
-var _hs_tex: Texture2D = null
-var _hs_tex_loaded: bool = false
 
 func _ready() -> void:
 	name = "VTKFeed"
@@ -139,10 +139,19 @@ func _add_row(ev: Dictionary) -> void:
 
 func _add_icon(row: HBoxContainer, icon: String, ev: Dictionary) -> void:
 	if icon == "weapon":
-		var tex := _weapon_texture(str(ev.get("weapon", "")))
+		var w := str(ev.get("weapon", ""))
+		var tex := _weapon_texture(w)
 		if tex != null:
-			_add_tex(row, tex)
+			_add_tex(row, tex, 2.0)
 			return
+		# Иконка не найдена (имя не сошлось с Database) — имя текстом, иначе
+		# сегмент оружия исчезнет и строка снова будет без оружия.
+		if w != "":
+			var wl := Label.new()
+			wl.text = w
+			wl.add_theme_font_size_override("font_size", FONT_SIZE)
+			wl.add_theme_color_override("font_color", GREY)
+			row.add_child(wl)
 		return
 	if icon == "grenade":
 		_add_tex(row, Surface.svg_texture(GRENADE_SVG))
@@ -159,24 +168,19 @@ func _add_icon(row: HBoxContainer, icon: String, ev: Dictionary) -> void:
 		lbl.add_theme_color_override("font_color", HS_GOLD)
 		row.add_child(lbl)
 
-func _add_tex(row: HBoxContainer, tex: Texture2D) -> void:
+func _add_tex(row: HBoxContainer, tex: Texture2D, width_mul: float = 1.0) -> void:
 	if tex == null:
 		return
 	var iv := TextureRect.new()
 	iv.texture = tex
 	iv.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	iv.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	iv.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)
+	iv.custom_minimum_size = Vector2(ICON_SIZE * width_mul, ICON_SIZE)
 	iv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(iv)
 
 func _hs_texture() -> Texture2D:
-	if _hs_tex_loaded:
-		return _hs_tex
-	_hs_tex_loaded = true
-	if ResourceLoader.exists("res://mods/VTK/Icon_headshot.webp"):
-		_hs_tex = load("res://mods/VTK/Icon_headshot.webp")
-	return _hs_tex
+	return Surface.svg_texture(HS_SVG)
 
 # Оружие: имя из события -> предмет Database -> иконка предмета (как в сетах).
 # item_art кропит прозрачные поля, иначе иконка оружия едва видна в строке 15px.

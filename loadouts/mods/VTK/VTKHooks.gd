@@ -15,7 +15,6 @@ signal kill_event(ev: Dictionary)
 var _last_damager: Dictionary = {}
 var _seen_deaths: Dictionary = {}
 
-var _death_restart_btn = null
 var _death_is_ironman: bool = false
 var _ironman_active: bool = false
 var _ironman_initialized: bool = false
@@ -24,18 +23,19 @@ var _ironman_pending: bool = false
 # The death screen ships its own "Load Game" button: live in a normal run,
 # greyed out under permadeath. We borrow that button instead of stacking our own
 # panel on top of it, and hand the original text/state/connections back when the
-# screen goes away. A null button here means the fallback panel is in use.
+# screen goes away.
 var _death_load_btn = null
 var _death_load_bound = null
 var _death_load_orig_text: String = ""
 var _death_load_orig_disabled: bool = false
 var _death_load_orig_conns: Array = []
 
-# Death.tscn is mounted asynchronously behind Loader's FadeInLoading, so on the
-# first frames after death there is no button to borrow yet. Give the scene time
-# to appear before committing to the fallback panel.
+# Death.tscn is mounted asynchronously behind Loader's FadeInLoading, so the button
+# may take a few frames to appear. Give it up to DEATH_FIND_TIMEOUT_MS, then
+# leave the vanilla screen alone (single warning) instead of stacking our own UI.
 const DEATH_FIND_TIMEOUT_MS := 20000
 var _death_find_since: int = 0
+var _death_gave_up: bool = false
 var _death_dump_at: int = 0
 var _death_probe_at: int = 0
 
@@ -169,6 +169,7 @@ func _do_register() -> void:
 	print("[VTK] Registering hooks...")
 	_lib.hook("controller-_physics_process-post", _on_controller_process)
 	_hooks_kc.append(_lib.hook("ai-weapondamage-pre", _on_ai_weapon_damage))
+	_hooks_kc.append(_lib.hook("ai-explosiondamage-pre", _on_ai_explosion))
 	_hooks_kc.append(_lib.hook("ai-death-pre", _on_ai_death))
 	_registered = true
 	print("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + 1) + " hooks)")
@@ -188,8 +189,11 @@ func _on_ai_weapon_damage(_hitbox, _damage, _vector, id) -> void:
 				rec["player"] = true
 				rec["weapon"] = _player_weapon_name()
 			else:
-				rec["attacker"] = id
-				rec["weapon"] = _weapon_name_of(id)
+				# Игра отдаёт атакующего как ID-маркер, а не агента:
+				# kind/display/weapon живут на агенте-предке.
+				var atk := _agent_root(id)
+				rec["attacker"] = atk
+				rec["weapon"] = _weapon_name_of(atk)
 		_last_damager[victim_ai.get_instance_id()] = rec
 	if id == null or not is_instance_valid(id):
 		return
@@ -199,6 +203,30 @@ func _on_ai_weapon_damage(_hitbox, _damage, _vector, id) -> void:
 	if ai == null or not is_instance_valid(ai):
 		return
 	_player_hits[ai.get_instance_id()] = Time.get_ticks_msec()
+
+# Гранаты и взрывы идут мимо ai-weapondamage (probe Task 1, п.4):
+# ai-explosiondamage(_direction, id), caller=жертва, id=Area бросившего
+# (grpP=true). Без записи здесь взрывной килл не попадает ни в счётчик
+# (_player_hits), ни в ленту (_last_damager).
+func _on_ai_explosion(_direction, id) -> void:
+	var victim_ai = _lib._caller if _lib else null
+	if victim_ai == null or not is_instance_valid(victim_ai) or not (victim_ai is Node):
+		return
+	var rec := {
+		"t": Time.get_ticks_msec(),
+		"hitbox": "",
+		"player": false,
+		"attacker": null,
+		"weapon": "",
+		"grenade": true,
+	}
+	if id != null and is_instance_valid(id) and id is Node:
+		if id.is_in_group("Player"):
+			rec["player"] = true
+			_player_hits[victim_ai.get_instance_id()] = Time.get_ticks_msec()
+		else:
+			rec["attacker"] = _agent_root(id)
+	_last_damager[victim_ai.get_instance_id()] = rec
 
 func _on_ai_death(_direction, _force) -> void:
 	var ai = _lib._caller if _lib else null
@@ -239,7 +267,7 @@ func _emit_kill_event(direction) -> void:
 				if killer_kind == "":
 					killer_kind = "enemy"
 				killer_name = KC.agent_display_name(atk)
-		grenade = _is_grenade(weapon)
+		grenade = bool(rec.get("grenade", false)) or _is_grenade(weapon)
 	if killer_kind == "" and _direction_is_player(direction):
 		killer_kind = "player"
 		killer_name = "Player"
@@ -278,7 +306,46 @@ func _player_weapon_name() -> String:
 				var s := _weapon_str(pl.get(p))
 				if s != "":
 					return s
-	return ""
+	return _rig_weapon_name()
+
+# Ни GameData, ни узел игрока не несут имени оружия (probe, Task 1): настоящее
+# оружие — WeaponRig под Camera/Manager, у него data.file (AKM, M4A1...).
+func _rig_weapon_name() -> String:
+	var mgr = get_tree().root.get_node_or_null("Map/Core/Camera/Manager")
+	if mgr == null:
+		return ""
+	var first := ""
+	for c in mgr.get_children():
+		if c == null or not ("data" in c):
+			continue
+		var d = c.get("data")
+		if d == null or not (d is Dictionary or d is Object) or not ("file" in d):
+			continue
+		var f := str(d.get("file")).strip_edges()
+		if f == "":
+			continue
+		if "/" in f:
+			f = f.get_file().get_basename()
+		# Если ригов несколько, видимый — текущее оружие.
+		if "visible" in c and c.visible:
+			return f
+		if first == "":
+			first = f
+	return first
+
+# Атакующий приходит как ID-маркер (/root/Map/Core/Camera/ID, .../Identifier/ID):
+# на нём нет ни Activate/dead, ни weapon, ни script-имени модели. Поднимаемся
+# по родителям к ближайшему агенту; если агента нет — исходный узел.
+func _agent_root(n: Node) -> Node:
+	var cur := n
+	for _i in 12:
+		if KC._is_agent(cur):
+			return cur
+		var p := cur.get_parent()
+		if p == null:
+			break
+		cur = p
+	return n
 
 func _weapon_name_of(n: Node) -> String:
 	for p in ["currentWeaponName", "weaponName", "currentWeapon", "weapon", "equippedWeapon", "activeWeapon"]:
@@ -365,18 +432,13 @@ func _on_controller_process(_delta: float) -> void:
 
 func _handle_death_screen(gd, is_dead: bool, is_ironman: bool) -> void:
 	if not is_dead or not is_ironman:
-		if _death_restart_btn != null and is_instance_valid(_death_restart_btn):
-			_death_restart_btn.queue_free()
-			_death_restart_btn = null
 		_restore_load_button()
 		_death_find_since = 0
+		_death_gave_up = false
 		_death_is_ironman = false
 		if not is_ironman and not _ironman_pending:
 			_ironman_active = false
 			_ironman_initialized = false
-		return
-
-	if _death_restart_btn != null and is_instance_valid(_death_restart_btn):
 		return
 
 	if _death_load_btn != null and is_instance_valid(_death_load_btn):
@@ -400,12 +462,15 @@ func _handle_death_screen(gd, is_dead: bool, is_ironman: bool) -> void:
 		_repurpose_load_button(load_btn, gd, root)
 		return
 
-	var waited := now - _death_find_since
-	if waited < DEATH_FIND_TIMEOUT_MS:
-		_dump_death_tree(root, waited, now)
+	if _death_gave_up:
 		return
-	print("[VTK] No 'Load Game' button after " + str(waited) + "ms, using fallback panel")
-	_build_fallback_panel(gd, root)
+
+	var waited := now - _death_find_since
+	if waited >= DEATH_FIND_TIMEOUT_MS:
+		_death_gave_up = true
+		print("[VTK] No 'Load Game' button after " + str(waited) + "ms; leaving vanilla death screen")
+		return
+	_dump_death_tree(root, waited, now)
 
 # The real Death scene, so the search never walks the whole Interface tree.
 # A dump taken over the root for four seconds showed only UI/MCM nodes and no
@@ -490,48 +555,6 @@ func _restore_load_button() -> void:
 	_death_load_bound = null
 	_death_load_orig_conns = []
 
-func _build_fallback_panel(gd, root) -> void:
-	# root is the Death scene node, which is not a Control and has no .size.
-	# Size the panel off the viewport instead.
-	var vp := get_viewport()
-	var vs := vp.get_visible_rect().size if vp != null else Vector2(1920.0, 1080.0)
-	var cl = CanvasLayer.new()
-	cl.layer = 128
-	cl.name = "VTKRestartOverlay"
-	root.add_child(cl)
-
-	var panel = Panel.new()
-	panel.size = Vector2(300, 220)
-	panel.position = Vector2(
-		vs.x / 2.0 - 150.0,
-		vs.y / 2.0 - 110.0
-	)
-	cl.add_child(panel)
-
-	var btn_restart = Button.new()
-	btn_restart.text = "Restart"
-	btn_restart.size = Vector2(260, 50)
-	btn_restart.position = Vector2(20, 20)
-	panel.add_child(btn_restart)
-	btn_restart.pressed.connect(_on_restart_pressed.bind(gd, root))
-
-	var btn_menu = Button.new()
-	btn_menu.text = "Main Menu"
-	btn_menu.size = Vector2(260, 50)
-	btn_menu.position = Vector2(20, 85)
-	panel.add_child(btn_menu)
-	btn_menu.pressed.connect(_on_menu_pressed)
-
-	var btn_quit = Button.new()
-	btn_quit.text = "Quit"
-	btn_quit.size = Vector2(260, 50)
-	btn_quit.position = Vector2(20, 150)
-	panel.add_child(btn_quit)
-	btn_quit.pressed.connect(_on_quit_pressed)
-
-	_death_restart_btn = cl
-	print("[VTK] Death overlay created (ironman)")
-
 func _wipe_saves_for_restart() -> void:
 	var ldr = get_node_or_null("/root/Loader")
 	if ldr != null and ldr.has_method("FormatSave"):
@@ -564,12 +587,10 @@ func _on_restart_pressed(gd, root) -> void:
 	_ironman_pending = _death_is_ironman
 	_death_latched = false
 	_gd_node = null
-	if _death_restart_btn != null and is_instance_valid(_death_restart_btn):
-		_death_restart_btn.queue_free()
-		_death_restart_btn = null
 	_death_load_btn = null
 	_death_load_bound = null
 	_death_load_orig_conns = []
+	_death_gave_up = false
 	if gd == null:
 		print("[VTK] Restart: no GameData, aborting")
 		return
@@ -621,19 +642,3 @@ func _on_restart_pressed(gd, root) -> void:
 		print("[VTK] Restart: loading " + start_map + " ironman=" + str(_death_is_ironman))
 	else:
 		print("[VTK] Restart: ERROR - Loader not found")
-
-func _on_menu_pressed() -> void:
-	print("[VTK] Menu: loading Menu scene...")
-	_ironman_active = false
-	_ironman_initialized = false
-	_ironman_pending = false
-	if _death_restart_btn != null and is_instance_valid(_death_restart_btn):
-		_death_restart_btn.queue_free()
-		_death_restart_btn = null
-	var l = get_node_or_null("/root/Loader")
-	if l != null:
-		l.LoadScene("Menu")
-
-func _on_quit_pressed() -> void:
-	print("[VTK] Quit: exiting game...")
-	get_tree().quit()

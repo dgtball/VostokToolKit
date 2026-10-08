@@ -4,7 +4,7 @@
 
 ![Vostok Toolkit](assets/logo.jpg)
 
-**Версия:** 4.8.0 · **Загрузчик:** Metro Mod Loader 3.4.2 · **Язык:** RU / EN
+**Версия:** 4.8.3 · **Загрузчик:** Metro Mod Loader 3.4.2 · **Язык:** RU / EN
 
 ## Возможности
 
