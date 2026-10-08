@@ -22,10 +22,10 @@ var _main_vbox: VBoxContainer = null
 var _list_container: VBoxContainer = null
 var _cards_grid: GridContainer = null
 var _editor_panel: VBoxContainer = null
-# Гибрид H3: слева рейл сетов, справа превью (когда редактор закрыт) и
-# редактор. Рейл и правая колонка - sibling'ы, чтобы фокус-режим (T4)
-# прятал только рейл.
-const RAIL_WIDTH := 236
+# Ширина рейла сетов. Панель на весь экран, поэтому рейл можно не жать:
+# карточкам хватает воздуха, а редактор справа всё равно забирает большую
+# часть ширины.
+const RAIL_WIDTH := 280
 var _rail_box: VBoxContainer = null
 var _right_box: VBoxContainer = null
 var _preview_box: VBoxContainer = null
@@ -39,10 +39,6 @@ var _bind_target: String = ""
 var _bind_pending: bool = false
 var _bind_btn: Button = null
 var _pending_qk: int = 0
-# Фокус-режим: рейл сетов спрятан, редактор во всю ширину. Состояние
-# сессионное - после перезапуска мод открывается с рейлом.
-var _focus_mode: bool = false
-var _focus_btn: Button = null
 var _draft: Draft = null
 var _name_input: LineEdit = null
 # Полосы категорий строятся как VBox из заголовка и HFlow с клетками: у
@@ -390,8 +386,9 @@ func _build_ui() -> void:
 	_ui_nodes.append(bg)
 
 	_panel = Panel.new()
-	_panel.size = Vector2(800, 880)
-	_panel.position = Vector2(60, 25)
+	# На весь вьюпорт: мастер-деталь (рейл сетов + редактор) тогда тянется
+	# по всей ширине окна, и фокус-кнопка ⛶ больше не нужна.
+	_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var panel_style := VTKSurface.panel(false, 0)
 	panel_style.shadow_color = Color(0, 0, 0, 0.5)
 	panel_style.shadow_size = 12
@@ -412,8 +409,11 @@ func _build_ui() -> void:
 	# КПК-хром: верхний рейл устройства. Только имя и версия: бренд-квадрат,
 	# текущая вкладка и часы из макета убраны.
 	var rail := HBoxContainer.new()
-	rail.position = Vector2(4, 4)
-	rail.size = Vector2(792, 30)
+	rail.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	rail.offset_left = 4
+	rail.offset_top = 4
+	rail.offset_right = -4
+	rail.offset_bottom = 34
 	rail.add_theme_constant_override("separation", 8)
 	_panel.add_child(rail)
 	_ui_nodes.append(rail)
@@ -433,7 +433,11 @@ func _build_ui() -> void:
 	name_box.add_child(rver)
 
 	var tab_bar = HBoxContainer.new()
-	tab_bar.position = Vector2(4, 38)
+	tab_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	tab_bar.offset_left = 4
+	tab_bar.offset_top = 38
+	tab_bar.offset_right = -4
+	tab_bar.offset_bottom = 68
 	_panel.add_child(tab_bar)
 
 	var tabs = [Loc.txt("Sets"), Loc.txt("Settings"), Loc.txt("Teleport")]
@@ -449,8 +453,11 @@ func _build_ui() -> void:
 		_tab_btns.append(btn)
 
 	_scroll = ScrollContainer.new()
-	_scroll.position = Vector2(4, 72)
-	_scroll.size = Vector2(792, 800)
+	_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_scroll.offset_left = 4
+	_scroll.offset_top = 72
+	_scroll.offset_right = -4
+	_scroll.offset_bottom = -4
 	_panel.add_child(_scroll)
 
 	_main_vbox = VBoxContainer.new()
@@ -685,7 +692,6 @@ func _build_editor() -> void:
 	_gear_att_box = null
 	_gear_box = null
 	_page_label = null
-	_focus_btn = null
 
 	var title_row = HBoxContainer.new()
 	title_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -699,11 +705,6 @@ func _build_editor() -> void:
 	ed_title.add_theme_color_override("font_color", _gold)
 	ed_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_row.add_child(ed_title)
-	_focus_btn = Button.new()
-	_focus_btn.add_theme_font_size_override("font_size", 9)
-	VTKSurface.style_button(_focus_btn, true)
-	_focus_btn.pressed.connect(_toggle_focus)
-	title_row.add_child(_focus_btn)
 	_editor_panel.add_child(title_row)
 
 	_editor_panel.add_child(_build_stepper())
@@ -720,26 +721,6 @@ func _build_editor() -> void:
 	_refresh_pages()
 	_editor_panel.visible = _draft != null
 	_refresh_preview()
-	_update_focus_btn()
-	_apply_focus()
-
-# ⛶ в шапке редактора: рейл уезжает, правая колонка занимает всю ширину.
-func _toggle_focus() -> void:
-	_focus_mode = not _focus_mode
-	_update_focus_btn()
-	_apply_focus()
-
-func _update_focus_btn() -> void:
-	if _focus_btn == null:
-		return
-	_focus_btn.text = Loc.txt("◂ Show sets") if _focus_mode else Loc.txt("⛶ Fullscreen")
-	_focus_btn.tooltip_text = _focus_btn.text
-
-func _apply_focus() -> void:
-	# Рейл спрятан только в фокус-режиме при открытом редакторе: превью
-	# без черновика остаётся на месте, иначе его некому вернуть кнопкой.
-	if _rail_box != null:
-		_rail_box.visible = not _focus_mode or _draft == null
 
 # Кнопки шагов строятся один раз, переключение идёт через _show_page.
 # Сообщение живёт в том же ряду: отдельная строка ради ошибки вроде
@@ -879,7 +860,6 @@ func _show_page(n: int) -> void:
 			var chk := _step_checks[i] as Label
 			if chk != null:
 				chk.visible = i < _page
-	_apply_focus()
 
 func _set_problem(msg: String) -> void:
 	if _page_label != null:
