@@ -26,7 +26,6 @@ const RU := {
 	'Categories': 'Категории',
 	'Chest rig': 'Нагрудник',
 	'Clothing': 'Одежда',
-	'Clear': 'Очистить',
 	'Consumables': 'Еда',
 	'Create new loadout': 'Создать новый сет',
 	'Does not fit: ': 'Не подходит: ',

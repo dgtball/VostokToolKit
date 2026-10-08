@@ -546,7 +546,8 @@ func _refresh_preview() -> void:
 	meta.add_theme_color_override("font_color", Color("#666"))
 	_preview_box.add_child(meta)
 
-	# Кнопки бывшей карточки - теперь здесь.
+	# Кнопки бывшей карточки - теперь здесь, под сводкой: иначе состав
+	# обрезается кнопками сверху. Все одной ширины.
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 4)
 	var apply_btn := Button.new()
@@ -557,11 +558,12 @@ func _refresh_preview() -> void:
 	actions.add_child(apply_btn)
 	var edit_btn := Button.new()
 	edit_btn.text = Loc.txt("Edit")
+	edit_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	VTKSurface.style_button(edit_btn)
 	edit_btn.pressed.connect(func(): _edit_loadout(_selected_set))
 	actions.add_child(edit_btn)
 	var qk_btn := Button.new()
-	qk_btn.custom_minimum_size = Vector2(22, 20)
+	qk_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	qk_btn.add_theme_font_size_override("font_size", 9)
 	if qk > 0:
 		qk_btn.text = _keycode_to_string(qk)
@@ -574,10 +576,10 @@ func _refresh_preview() -> void:
 	actions.add_child(qk_btn)
 	var del_btn := Button.new()
 	del_btn.text = "✕"
+	del_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	VTKSurface.style_button(del_btn, false, true)
 	del_btn.pressed.connect(func(): _delete_loadout(_selected_set))
 	actions.add_child(del_btn)
-	_preview_box.add_child(actions)
 
 	# Состав - теми же строками, что страница Done: общий _fill_summary.
 	var cols := HBoxContainer.new()
@@ -595,6 +597,7 @@ func _refresh_preview() -> void:
 	var d = Draft.new()
 	d.load_from(pack)
 	_fill_summary(d, ec, gc)
+	_preview_box.add_child(actions)
 
 # ============== TAB: РЎРµС‚С‹ ==============
 
@@ -1322,6 +1325,22 @@ func _items_for_gear() -> Array:
 func _build_page_done() -> Control:
 	var v := _page_wrap()
 
+	# Порядок из макета: сводка первой, чтобы состав было видно сразу,
+	# строка имени с хоткеем за ней, кнопки в конце.
+	# Две колонки, как в макете: в плоском списке не видно, где кончается один
+	# раздел и начинается другой.
+	_done_summary = HBoxContainer.new()
+	_done_summary.add_theme_constant_override("separation", 8)
+	_done_equip_col = VBoxContainer.new()
+	_done_equip_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_done_equip_col.add_theme_constant_override("separation", 1)
+	_done_gear_col = VBoxContainer.new()
+	_done_gear_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_done_gear_col.add_theme_constant_override("separation", 1)
+	_done_summary.add_child(_done_equip_col)
+	_done_summary.add_child(_done_gear_col)
+	v.add_child(_done_summary)
+
 	var name_row := HBoxContainer.new()
 	name_row.add_theme_constant_override("separation", 4)
 	var name_lbl := Label.new()
@@ -1338,16 +1357,13 @@ func _build_page_done() -> Control:
 	if _draft != null:
 		_name_input.text = _draft.set_name
 	name_row.add_child(_name_input)
-	v.add_child(name_row)
 
 	# Хоткей назначается до сохранения: для нового сета бинд копится в
 	# _pending_qk и применяется в _save_loadout.
-	var hk_row := HBoxContainer.new()
-	hk_row.add_theme_constant_override("separation", 4)
 	var hk_lbl := Label.new()
 	hk_lbl.text = Loc.txt("Hotkey:")
 	hk_lbl.add_theme_font_size_override("font_size", 11)
-	hk_row.add_child(hk_lbl)
+	name_row.add_child(hk_lbl)
 	_bind_btn = Button.new()
 	_bind_btn.custom_minimum_size = Vector2(46, 20)
 	_bind_btn.add_theme_font_size_override("font_size", 10)
@@ -1361,23 +1377,11 @@ func _build_page_done() -> Control:
 		_bind_btn.add_theme_color_override("font_color", Color("#444"))
 		VTKSurface.style_button(_bind_btn)
 	_bind_btn.pressed.connect(func(): _begin_bind_pending(_bind_btn))
-	hk_row.add_child(_bind_btn)
-	v.add_child(hk_row)
+	name_row.add_child(_bind_btn)
+	v.add_child(name_row)
 
-	# Две колонки, как в макете: в плоском списке не видно, где кончается один
-	# раздел и начинается другой.
-	_done_summary = HBoxContainer.new()
-	_done_summary.add_theme_constant_override("separation", 8)
-	_done_equip_col = VBoxContainer.new()
-	_done_equip_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_done_equip_col.add_theme_constant_override("separation", 1)
-	_done_gear_col = VBoxContainer.new()
-	_done_gear_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_done_gear_col.add_theme_constant_override("separation", 1)
-	_done_summary.add_child(_done_equip_col)
-	_done_summary.add_child(_done_gear_col)
-	v.add_child(_done_summary)
-
+	# Две кнопки одного размера. "Очистить" убрано: повторяет Cancel -
+	# оба сбрасывают черновик, разница только в видимости.
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 4)
 	var save_btn := Button.new()
@@ -1386,11 +1390,6 @@ func _build_page_done() -> Control:
 	VTKSurface.style_button(save_btn, true)
 	save_btn.pressed.connect(_save_loadout)
 	actions.add_child(save_btn)
-	var clear_btn := Button.new()
-	clear_btn.text = Loc.txt("Clear")
-	VTKSurface.style_button(clear_btn)
-	clear_btn.pressed.connect(_clear_draft)
-	actions.add_child(clear_btn)
 	var cancel_btn := Button.new()
 	cancel_btn.text = Loc.txt("Cancel")
 	cancel_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2142,7 +2141,7 @@ func _select_set(nm: String) -> void:
 		_refresh_loadout_list()
 
 # Плоский список заменён тремя страницами. Имя оставлено, потому что на него
-# завязаны _bump_gear, _toggle_attachment_panel и _clear_draft; по смыслу это
+# завязаны _bump_gear и _toggle_attachment_panel; по смыслу это
 # теперь "перерисовать то, что сейчас видно".
 func _refresh_draft_ui() -> void:
 	_refresh_pages()
@@ -2941,14 +2940,6 @@ func _cancel_draft() -> void:
 	_editing_name = ""
 	_build_editor()
 	_refresh_loadout_list()
-
-func _clear_draft() -> void:
-	if _draft == null:
-		return
-	_draft.clear()
-	# Цель и поиск относятся к прежнему содержимому, поэтому чистим их тоже.
-	_reset_picker_state()
-	_refresh_draft_ui()
 
 func _save_loadout() -> void:
 	if _draft == null:
