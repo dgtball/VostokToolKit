@@ -1009,12 +1009,16 @@ const SIDE_WIDTH := 232
 # Сколько клеток влезает в ширину. Константа "_gear_grid.columns = 4" давала
 # четыре колонки в любом окне, а HFlowContainer на шаге 1 упирался в
 # собственную ширину и показывал пять клеток вместо всей области.
+# Ширина клетки + зазор задаётся здесь, а не в _make_item_cell: расчёт колонок
+# обязан знать тот же размер, что и вёрстка, иначе сетка переполняется и
+# снизу появляется горизонтальная прокрутка.
+const GEAR_CELL_W := 128.0
+const GEAR_CELL_SEP := 6.0
+
 func _make_grid_columns(width: float) -> int:
 	if width <= 0.0:
 		return 1
-	var cell := 96.0
-	var sep := 5.0
-	return maxi(1, int(floor((width + sep) / (cell + sep))))
+	return maxi(1, int(floor((width + GEAR_CELL_SEP) / (GEAR_CELL_W + GEAR_CELL_SEP))))
 
 
 # Каркас страницы: слева колонка выбора, справа предметы. Ширина колонки
@@ -1080,9 +1084,11 @@ func _build_page_equipment() -> Control:
 	var shelves_scroll := ScrollContainer.new()
 	shelves_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	shelves_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	# Пол, а не высота: EXPAND растягивает область на всё свободное место окна,
-	# а минимум гарантирует, что полки останутся видимыми даже там, где внешний
-	# контейнер игры отдаёт ровно минимальную высоту.
+	# Только вертикальная прокрутка: горизонтальную отключаем явно, иначе
+	# полка упирается в собственную ширину и появляется лишняя полоса снизу.
+	# Пол по высоте гарантирует, что полки останутся видимыми даже там, где
+	# внешний контейнер игры отдаёт ровно минимальную высоту.
+	shelves_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	shelves_scroll.custom_minimum_size = Vector2(0, 240)
 	_shelves_box = VBoxContainer.new()
 	_shelves_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1118,6 +1124,9 @@ func _build_page_gear() -> Control:
 	_gear_grid_scroll = ScrollContainer.new()
 	_gear_grid_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_gear_grid_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# Колонки считаются от ширины (см. _make_grid_columns), поэтому клеткам
+	# незачем прокручиваться вбок - пусть переносятся на новую строку.
+	_gear_grid_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_gear_grid = GridContainer.new()
 	# Колонки считаются от ширины, а не задаются константой. Пересчёт вешается
 	# на resized: на первом показе ширина ещё нулевая, и без обработчика
@@ -1127,8 +1136,8 @@ func _build_page_gear() -> Control:
 		if _gear_grid != null:
 			_gear_grid.columns = _make_grid_columns(_gear_grid_scroll.size.x)
 	)
-	_gear_grid.add_theme_constant_override("h_separation", 5)
-	_gear_grid.add_theme_constant_override("v_separation", 5)
+	_gear_grid.add_theme_constant_override("h_separation", int(GEAR_CELL_SEP))
+	_gear_grid.add_theme_constant_override("v_separation", int(GEAR_CELL_SEP))
 	_gear_grid_scroll.add_child(_gear_grid)
 	main.add_child(_gear_grid_scroll)
 
@@ -1148,6 +1157,15 @@ func _refresh_page_gear() -> void:
 func _is_magazine(path: String) -> bool:
 	var info := _item_info(path)
 	return str(info.get("type")) == "Attachment" and str(info.get("subtype")) == "Magazine"
+
+# Кнопка обвеса нужна только там, где есть что вешать. Picker.has_panel ловит
+# и maxAmount>0, а у патронов он 300 (вместимость стака в инвентаре) - так
+# патроны получали кнопку обвеса без единого совместимого ствола.
+func _att_panel_needed(info: Dictionary) -> bool:
+	var compat = info.get("compatible")
+	if compat is Array and compat.size() > 0:
+		return true
+	return false
 
 func _make_step_btn(label: String) -> Button:
 	var b := Button.new()
@@ -2313,7 +2331,9 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 	# Клетка снаряжения выше и шире: под именем три ряда - счётчик с
 	# обвесами, крупные «− n +» и кнопка «В инвентарь»; ✕ живёт в углу.
 	# Каталог шага 1 остаётся ниже - там под именем только счётчик.
-	cell.custom_minimum_size = Vector2(104, 176 if gi >= 0 else (156 if gear else 140))
+	# Ширина берётся из GEAR_CELL_W: расчёт колонок обязан совпадать с
+	# вёрсткой, иначе сетка переполняется и появляется прокрутка.
+	cell.custom_minimum_size = Vector2(GEAR_CELL_W, 192 if gi >= 0 else (168 if gear else 152))
 	# Без SIZE_EXPAND_FILL: HFlowContainer растягивает такие клетки на всю
 	# ширину полосы, пока предметов мало (stretch в flow_container.cpp).
 	cell.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -2342,7 +2362,7 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 	var tex = TextureRect.new()
 	tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tex.custom_minimum_size = Vector2(84, 48)
+	tex.custom_minimum_size = Vector2(GEAR_CELL_W - 32, 56)
 	var icon := _item_icon(item)
 	if icon:
 		tex.texture = Picker.item_art(icon)
@@ -2395,7 +2415,7 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 		if _is_magazine(path_now):
 			var mag_btn := _make_full_mag_btn(path_now, desc_g, true)
 			crow.add_child(mag_btn)
-		elif Picker.has_panel(_item_info(path_now)):
+		elif _att_panel_needed(_item_info(path_now)):
 			crow.add_child(_make_att_btn(desc_g))
 		vbox.add_child(crow)
 
@@ -2405,17 +2425,17 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 		brow.add_theme_constant_override("separation", 4)
 		brow.alignment = BoxContainer.ALIGNMENT_CENTER
 		brow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var minus := _make_mini_btn("−", Vector2(24, 24), 13)
+		var minus := _make_mini_btn("−", Vector2(28, 28), 15)
 		minus.pressed.connect(func(): _bump_gear(path_now, -1.0))
 		brow.add_child(minus)
 		var cl := Label.new()
 		cl.text = str(cnt_g)
 		cl.add_theme_font_size_override("font_size", 13)
-		cl.custom_minimum_size = Vector2(26, 0)
+		cl.custom_minimum_size = Vector2(30, 0)
 		cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		brow.add_child(cl)
-		var plus := _make_mini_btn("+", Vector2(24, 24), 13)
+		var plus := _make_mini_btn("+", Vector2(28, 28), 15)
 		plus.pressed.connect(func(): _bump_gear(path_now, 1.0))
 		brow.add_child(plus)
 		vbox.add_child(brow)
@@ -2424,9 +2444,9 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 		# Прежняя иконка действия читалась как состояние, а не как кнопка.
 		var spawn_btn := Button.new()
 		spawn_btn.text = Loc.txt("Spawn into inventory")
-		spawn_btn.add_theme_font_size_override("font_size", 9)
+		spawn_btn.add_theme_font_size_override("font_size", 11)
 		spawn_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		VTKSurface.style_button(spawn_btn, false, false, 6, 6, 4, 4)
+		VTKSurface.style_button(spawn_btn, false, false, 6, 6, 6, 7)
 		spawn_btn.pressed.connect(func(): _spawn_gear(path_now))
 		vbox.add_child(spawn_btn)
 
@@ -2457,12 +2477,16 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
 			_place_into(it, slot)
 	)
+	# Рамка набора обязана переживать курсор: при выходе возвращаем ту же
+	# рамку, что стояла до наведения. Прежний общий normal_style гасил её,
+	# и клетка выглядела выбранной ровно до первого наведения.
 	cell.mouse_entered.connect(func():
 		var base_style := in_set_style if already else hover_style
 		cell.add_theme_stylebox_override("panel", base_style)
 	)
 	cell.mouse_exited.connect(func():
-		cell.add_theme_stylebox_override("panel", normal_style)
+		var base_style := in_set_style if already else normal_style
+		cell.add_theme_stylebox_override("panel", base_style)
 	)
 	return cell
 
@@ -2527,7 +2551,7 @@ func _after_place() -> void:
 	# добираться через кнопку в строке слота, о чём мало кто догадывался.
 	# У обоймы панели нет - там тумблер заполнения, открывать нечего.
 	if _last_placed != "" and not _is_magazine(_last_placed) \
-			and Picker.has_panel(_item_info(_last_placed)):
+			and _att_panel_needed(_item_info(_last_placed)):
 		if _page == 1:
 			_open_gear_att = _last_placed
 		else:
@@ -2619,7 +2643,7 @@ func _build_att_panel(path: String) -> Control:
 		return null
 	if _is_magazine(path):
 		return _build_mag_panel(path, desc)
-	if not Picker.has_panel(_item_info(path)):
+	if not _att_panel_needed(_item_info(path)):
 		return null
 
 	var groups := _att_entries(desc)
