@@ -526,10 +526,18 @@ func _refresh_preview() -> void:
 # ============== TAB: РЎРµС‚С‹ ==============
 
 func _build_loadouts_tab(parent: VBoxContainer) -> void:
+	# Рейл и правая колонка - ряд через HBox: сам parent вертикальный (таб),
+	# и без ряда обе колонки легли бы друг под другом.
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 10)
+	parent.add_child(row)
+
 	_rail_box = VBoxContainer.new()
 	_rail_box.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
 	_rail_box.add_theme_constant_override("separation", 6)
-	parent.add_child(_rail_box)
+	row.add_child(_rail_box)
 
 	var list_title = Label.new()
 	list_title.text = Loc.txt("Saved loadouts")
@@ -552,7 +560,7 @@ func _build_loadouts_tab(parent: VBoxContainer) -> void:
 	_right_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_right_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_right_box.add_theme_constant_override("separation", 6)
-	parent.add_child(_right_box)
+	row.add_child(_right_box)
 
 	_preview_box = VBoxContainer.new()
 	_preview_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2023,7 +2031,12 @@ func _refresh_loadout_list() -> void:
 
 func _select_set(nm: String) -> void:
 	_selected_set = nm
-	_refresh_loadout_list()
+	# Клик по сету при открытом редакторе закрывает черновик и открывает
+	# превью: правки не сохранённого черновика теряются, без диалога.
+	if _draft != null:
+		_cancel_draft()
+	else:
+		_refresh_loadout_list()
 
 # Плоский список заменён тремя страницами. Имя оставлено, потому что на него
 # завязаны _bump_gear, _toggle_attachment_panel и _clear_draft; по смыслу это
