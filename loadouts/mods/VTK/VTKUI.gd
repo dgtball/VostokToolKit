@@ -39,6 +39,10 @@ var _bind_target: String = ""
 var _bind_pending: bool = false
 var _bind_btn: Button = null
 var _pending_qk: int = 0
+# Фокус-режим: рейл сетов спрятан, редактор во всю ширину. Состояние
+# сессионное - после перезапуска мод открывается с рейлом.
+var _focus_mode: bool = false
+var _focus_btn: Button = null
 var _draft: Draft = null
 var _name_input: LineEdit = null
 # Полосы категорий строятся как VBox из заголовка и HFlow с клетками: у
@@ -683,7 +687,11 @@ func _build_editor() -> void:
 	_equip_box = null
 	_gear_box = null
 	_page_label = null
+	_focus_btn = null
 
+	var title_row = HBoxContainer.new()
+	title_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_theme_constant_override("separation", 4)
 	var ed_title = Label.new()
 	if _draft != null and _draft.set_name != "":
 		ed_title.text = Loc.txt("Editing: ") + _draft.set_name
@@ -691,7 +699,14 @@ func _build_editor() -> void:
 		ed_title.text = Loc.txt("Create new loadout")
 	ed_title.add_theme_font_size_override("font_size", 12)
 	ed_title.add_theme_color_override("font_color", _gold)
-	_editor_panel.add_child(ed_title)
+	ed_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_child(ed_title)
+	_focus_btn = Button.new()
+	_focus_btn.add_theme_font_size_override("font_size", 9)
+	VTKSurface.style_button(_focus_btn, true)
+	_focus_btn.pressed.connect(_toggle_focus)
+	title_row.add_child(_focus_btn)
+	_editor_panel.add_child(title_row)
 
 	_editor_panel.add_child(_build_stepper())
 
@@ -707,6 +722,26 @@ func _build_editor() -> void:
 	_refresh_pages()
 	_editor_panel.visible = _draft != null
 	_refresh_preview()
+	_update_focus_btn()
+	_apply_focus()
+
+# ⛶ в шапке редактора: рейл уезжает, правая колонка занимает всю ширину.
+func _toggle_focus() -> void:
+	_focus_mode = not _focus_mode
+	_update_focus_btn()
+	_apply_focus()
+
+func _update_focus_btn() -> void:
+	if _focus_btn == null:
+		return
+	_focus_btn.text = Loc.txt("◂ Show sets") if _focus_mode else Loc.txt("⛶ Fullscreen")
+	_focus_btn.tooltip_text = _focus_btn.text
+
+func _apply_focus() -> void:
+	# Рейл спрятан только в фокус-режиме при открытом редакторе: превью
+	# без черновика остаётся на месте, иначе его некому вернуть кнопкой.
+	if _rail_box != null:
+		_rail_box.visible = not _focus_mode or _draft == null
 
 # Кнопки шагов строятся один раз, переключение идёт через _show_page.
 # Сообщение живёт в том же ряду: отдельная строка ради ошибки вроде
@@ -846,6 +881,7 @@ func _show_page(n: int) -> void:
 			var chk := _step_checks[i] as Label
 			if chk != null:
 				chk.visible = i < _page
+	_apply_focus()
 
 func _set_problem(msg: String) -> void:
 	if _page_label != null:
