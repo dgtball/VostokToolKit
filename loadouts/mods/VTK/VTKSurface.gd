@@ -85,6 +85,28 @@ static func panel(inset: bool = false, margin: int = 16) -> StyleBoxFlat:
 	s.shadow_offset = Vector2(0, 3)
 	return s
 
+# Пунктирная рамка для карточек без заливки. StyleBoxFlat штрихов не умеет,
+# а DashedBorder в GONE стенда - рисуем штрихами через CanvasItem. dash/gap
+# в пикселях, width - толщина линии.
+static func draw_dashes(ci: CanvasItem, rect: Rect2, color: Color,
+		dash: float = 4.0, gap: float = 4.0, width: float = 1.0) -> void:
+	var x0 := rect.position.x + width * 0.5
+	var y0 := rect.position.y + width * 0.5
+	var x1 := rect.position.x + rect.size.x - width * 0.5
+	var y1 := rect.position.y + rect.size.y - width * 0.5
+	var x := x0
+	while x < x1:
+		var seg := minf(dash, x1 - x)
+		ci.draw_line(Vector2(x, y0), Vector2(x + seg, y0), color, width)
+		ci.draw_line(Vector2(x, y1), Vector2(x + seg, y1), color, width)
+		x += dash + gap
+	var y := y0
+	while y < y1:
+		var seg := minf(dash, y1 - y)
+		ci.draw_line(Vector2(x0, y), Vector2(x0, y + seg), color, width)
+		ci.draw_line(Vector2(x1, y), Vector2(x1, y + seg), color, width)
+		y += dash + gap
+
 static func focus_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = Color.TRANSPARENT

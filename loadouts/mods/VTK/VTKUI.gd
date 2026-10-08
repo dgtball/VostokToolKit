@@ -30,6 +30,8 @@ var _rail_box: VBoxContainer = null
 var _right_box: VBoxContainer = null
 var _preview_box: VBoxContainer = null
 var _editing_name: String = ""
+# Активная карточка рейла: её состав показывает превью справа.
+var _selected_set: String = ""
 var _draft: Draft = null
 var _name_input: LineEdit = null
 # Полосы категорий строятся как VBox из заголовка и HFlow с клетками: у
@@ -421,8 +423,7 @@ func _refresh_all() -> void:
 	_refresh_draft_ui()
 
 # Превью выбранного сета в правой колонке. Схлопывается при открытом
-# черновике: правая колонка принадлежит редактору. Содержимое (состав,
-# кнопки) появится в T3 - здесь каркас и заглушка.
+# черновике: правая колонка принадлежит редактору.
 func _refresh_preview() -> void:
 	if _preview_box == null:
 		return
@@ -432,11 +433,95 @@ func _refresh_preview() -> void:
 	_preview_box.visible = _draft == null
 	if _draft != null:
 		return
-	var ph := Label.new()
-	ph.text = Loc.txt("Select a set on the left")
-	ph.add_theme_font_size_override("font_size", 11)
-	ph.add_theme_color_override("font_color", Color("#666666"))
-	_preview_box.add_child(ph)
+	var LD = preload("res://mods/VTK/VTKData.gd")
+	var pack: Dictionary = {}
+	if _selected_set != "":
+		pack = LD.get_set(_selected_set)
+	if pack.is_empty():
+		_selected_set = ""
+		var ph := Label.new()
+		ph.text = Loc.txt("Select a set on the left")
+		ph.add_theme_font_size_override("font_size", 11)
+		ph.add_theme_color_override("font_color", Color("#666666"))
+		_preview_box.add_child(ph)
+		return
+
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 6)
+	var nm := Label.new()
+	nm.text = str(pack.get("name", _selected_set))
+	nm.add_theme_font_size_override("font_size", 14)
+	nm.add_theme_color_override("font_color", _gold)
+	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_child(nm)
+	var qk := int(pack.get("quick_key", 0))
+	if qk > 0:
+		var kb := Label.new()
+		kb.text = _keycode_to_string(qk)
+		kb.add_theme_font_size_override("font_size", 10)
+		kb.add_theme_color_override("font_color", _gold)
+		kb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		head.add_child(kb)
+	_preview_box.add_child(head)
+
+	var eq_d: Dictionary = pack.get("equip", {})
+	var gr_a: Array = pack.get("gear", [])
+	var meta := Label.new()
+	meta.text = str(eq_d.size() + gr_a.size()) + Loc.txt(" items · ") + str(eq_d.size()) + Loc.txt(" in equipment")
+	meta.add_theme_font_size_override("font_size", 10)
+	meta.add_theme_color_override("font_color", Color("#666"))
+	_preview_box.add_child(meta)
+
+	# Кнопки бывшей карточки - теперь здесь.
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 4)
+	var apply_btn := Button.new()
+	apply_btn.text = Loc.txt("Apply")
+	apply_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	VTKSurface.style_button(apply_btn, true)
+	apply_btn.pressed.connect(func(): LD.load_loadout(_selected_set))
+	actions.add_child(apply_btn)
+	var edit_btn := Button.new()
+	edit_btn.text = Loc.txt("Edit")
+	VTKSurface.style_button(edit_btn)
+	edit_btn.pressed.connect(func(): _edit_loadout(_selected_set))
+	actions.add_child(edit_btn)
+	var qk_btn := Button.new()
+	qk_btn.custom_minimum_size = Vector2(22, 20)
+	qk_btn.add_theme_font_size_override("font_size", 9)
+	if qk > 0:
+		qk_btn.text = _keycode_to_string(qk)
+		qk_btn.add_theme_color_override("font_color", _gold)
+	else:
+		qk_btn.text = "?"
+		qk_btn.add_theme_color_override("font_color", Color("#444"))
+	VTKSurface.style_button(qk_btn, qk > 0)
+	qk_btn.pressed.connect(func(): _cycle_quick_key_789(_selected_set))
+	actions.add_child(qk_btn)
+	var del_btn := Button.new()
+	del_btn.text = "✕"
+	VTKSurface.style_button(del_btn, false, true)
+	del_btn.pressed.connect(func(): _delete_loadout(_selected_set))
+	actions.add_child(del_btn)
+	_preview_box.add_child(actions)
+
+	# Состав - теми же строками, что страница Done: общий _fill_summary.
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 8)
+	var ec := VBoxContainer.new()
+	ec.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ec.add_theme_constant_override("separation", 1)
+	var gc := VBoxContainer.new()
+	gc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gc.add_theme_constant_override("separation", 1)
+	cols.add_child(ec)
+	cols.add_child(gc)
+	_preview_box.add_child(cols)
+
+	var d = Draft.new()
+	d.load_from(pack)
+	_fill_summary(d, ec, gc)
 
 # ============== TAB: РЎРµС‚С‹ ==============
 
@@ -1214,35 +1299,40 @@ func _refresh_page_done() -> void:
 		for child in col.get_children():
 			col.remove_child(child)
 			child.queue_free()
-	if _draft == null:
+	_fill_summary(_draft, _done_equip_col, _done_gear_col)
+
+# Сводка состава сета в две колонки. Общая для страницы Done и превью:
+# обе читают Draft, чтобы порядок слотов и хвосты обвесов совпадали везде.
+func _fill_summary(d: Draft, equip_col: VBoxContainer, gear_col: VBoxContainer) -> void:
+	if d == null:
 		return
-	_done_equip_col.add_child(_summary_head(Loc.txt("Equipment")))
-	_done_gear_col.add_child(_summary_head(Loc.txt("Gear")))
-	if _draft.item_count() == 0:
-		_done_equip_col.add_child(_summary_line(Loc.txt("Set is empty"), Color("#666666")))
+	equip_col.add_child(_summary_head(Loc.txt("Equipment")))
+	gear_col.add_child(_summary_head(Loc.txt("Gear")))
+	if d.item_count() == 0:
+		equip_col.add_child(_summary_line(Loc.txt("Set is empty"), Color("#666666")))
 		return
 	# Слоты - из каталога, а не из сета: пустой слот в сводке не нужен, но
 	# порядок должен совпадать с левой колонкой шага 1, иначе сверка глазами
 	# по двум экранам не сойдётся.
 	var lists: Array = []
-	for k in _draft.equip.keys():
+	for k in d.equip.keys():
 		lists.append([str(k)])
 	var any_eq := false
 	for slot in Picker.all_slots(lists):
-		var desc = _draft.equip.get(str(slot), {})
+		var desc = d.equip.get(str(slot), {})
 		if typeof(desc) != TYPE_DICTIONARY or desc.is_empty():
 			continue
 		any_eq = true
-		_done_equip_col.add_child(_summary_line(_equip_row_text(str(slot), desc)))
-	for desc in _draft.gear:
-		_done_gear_col.add_child(_summary_line("· " + str(desc.get("name", "?"))
+		equip_col.add_child(_summary_line(_equip_row_text(str(slot), desc)))
+	for desc in d.gear:
+		gear_col.add_child(_summary_line("· " + str(desc.get("name", "?"))
 			+ " x" + str(Draft.shown_count(desc)) + _gear_mag_tail(desc),
 			Color("#a89a80")))
 	if not any_eq:
-		_done_equip_col.add_child(_summary_line(Loc.txt("Empty"), Color("#666666")))
+		equip_col.add_child(_summary_line(Loc.txt("Empty"), Color("#666666")))
 	# Заголовок уже добавлен, поэтому пусто - это когда строк не больше одной.
-	if _done_gear_col.get_child_count() <= 1:
-		_done_gear_col.add_child(_summary_line(Loc.txt("Empty"), Color("#666666")))
+	if gear_col.get_child_count() <= 1:
+		gear_col.add_child(_summary_line(Loc.txt("Empty"), Color("#666666")))
 
 # Строка экипировки в сводке: тег, имя, счётчик и названия надетых обвесов через
 # плюс. Раньше здесь было только "rnd. N", и по такому хвосту нельзя было
@@ -1808,6 +1898,41 @@ func _info_of(res) -> Dictionary:
 		"maxAmount": res.get("maxAmount"),
 	}
 
+# Пунктирная карточка «+ Создать сет». StyleBoxFlat штрихов не умеет, а
+# штатный компонент рамки убран из вёрстки, поэтому рамка рисуется вручную.
+# Loc во внутреннем классе недоступен - текст приходит аргументом.
+class CreateCard extends Panel:
+	const S := preload("res://mods/VTK/VTKSurface.gd")
+
+	var _action: Callable
+
+	func _init(action: Callable, label: String) -> void:
+		_action = action
+		custom_minimum_size = Vector2(0, 46)
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		var st := StyleBoxFlat.new()
+		st.bg_color = Color("#141009")
+		st.corner_radius_all = 4
+		add_theme_stylebox_override("panel", st)
+		var l := Label.new()
+		l.text = label
+		l.add_theme_font_size_override("font_size", 11)
+		l.add_theme_color_override("font_color", Color("#8a7a6a"))
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		l.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(l)
+		gui_input.connect(func(ev):
+			var mb := ev as InputEventMouseButton
+			if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+				_action.call()
+		)
+
+	func _draw() -> void:
+		S.draw_dashes(self,
+			Rect2(Vector2(2, 2), size - Vector2(4, 4)), Color("#5f5347"))
+
 func _refresh_loadout_list() -> void:
 	for child in _list_container.get_children():
 		_list_container.remove_child(child)
@@ -1831,7 +1956,7 @@ func _refresh_loadout_list() -> void:
 		debug.add_theme_font_size_override("font_size", 8)
 		debug.add_theme_color_override("font_color", Color("#444"))
 		_list_container.add_child(debug)
-		_list_container.add_child(_make_create_btn())
+		_list_container.add_child(CreateCard.new(_start_new_draft, Loc.txt("+ Create loadout")))
 		_refresh_preview()
 		return
 
@@ -1840,101 +1965,65 @@ func _refresh_loadout_list() -> void:
 			continue
 		var nm := str(ld.get("name", ""))
 		var pack: Dictionary = LD.get_set(nm)
+		var active := nm == _selected_set
 
+		# Карточка только выбирает: Apply/Edit/клавиша живут в превью справа,
+		# иначе в рейле шириной 236 четыре кнопки не помещаются.
 		var card = PanelContainer.new()
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		card.custom_minimum_size = Vector2(200, 0)
-		card.add_theme_stylebox_override("panel", VTKSurface.surface("normal", false, false, false, 12, 12, 11, 11))
+		card.mouse_filter = Control.MOUSE_FILTER_STOP
+		card.add_theme_stylebox_override("panel", VTKSurface.surface("normal", active, false, active, 12, 12, 11, 11))
+		_attach_row_hover(card, func(hv: bool):
+			return VTKSurface.surface("hover" if hv else "normal", active, false, active, 12, 12, 11, 11))
+		_attach_motion(card)
+		card.gui_input.connect(func(ev):
+			var mb := ev as InputEventMouseButton
+			if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+				_select_set(nm)
+		)
 
 		var box = VBoxContainer.new()
 		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		box.add_theme_constant_override("separation", 7)
+		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_theme_constant_override("separation", 4)
 		card.add_child(box)
 
 		var top = HBoxContainer.new()
 		top.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-		var titles = VBoxContainer.new()
-		titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var name_lbl = Label.new()
 		name_lbl.text = nm
 		name_lbl.add_theme_font_size_override("font_size", 13)
-		titles.add_child(name_lbl)
+		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		top.add_child(name_lbl)
+		var qk := int(ld.get("quick_key", 0))
+		if qk > 0:
+			var kb = Label.new()
+			kb.text = _keycode_to_string(qk)
+			kb.add_theme_font_size_override("font_size", 9)
+			kb.add_theme_color_override("font_color", _gold)
+			kb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			top.add_child(kb)
+		box.add_child(top)
+
 		var eq_d: Dictionary = pack.get("equip", {})
 		var gr_a: Array = pack.get("gear", [])
 		var meta = Label.new()
 		meta.text = str(eq_d.size() + gr_a.size()) + Loc.txt(" items · ") + str(eq_d.size()) + Loc.txt(" in equipment")
 		meta.add_theme_font_size_override("font_size", 10)
 		meta.add_theme_color_override("font_color", Color("#666"))
-		titles.add_child(meta)
-		top.add_child(titles)
-
-		var qk = int(ld.get("quick_key", 0))
-		var qk_btn = Button.new()
-		qk_btn.custom_minimum_size = Vector2(22, 20)
-		qk_btn.add_theme_font_size_override("font_size", 9)
-		if qk > 0:
-			qk_btn.text = _keycode_to_string(qk)
-			qk_btn.add_theme_color_override("font_color", _gold)
-		else:
-			qk_btn.text = "?"
-			qk_btn.add_theme_color_override("font_color", Color("#444"))
-		VTKSurface.style_button(qk_btn, qk > 0)
-		qk_btn.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-		qk_btn.pressed.connect(func(): _cycle_quick_key_789(nm))
-		top.add_child(qk_btn)
-		box.add_child(top)
-
-		var chips = HBoxContainer.new()
-		chips.add_theme_constant_override("separation", 3)
-		var shown := 0
-		for slot in eq_d.keys():
-			if shown >= 4:
-				var more = Label.new()
-				more.text = "+" + str(eq_d.size() - 4)
-				more.add_theme_font_size_override("font_size", 8)
-				more.add_theme_color_override("font_color", _gold)
-				chips.add_child(more)
-				break
-			var ch = Label.new()
-			ch.text = Loc.txt(str(slot))
-			ch.add_theme_font_size_override("font_size", 8)
-			ch.add_theme_color_override("font_color", Color("#8a7a60"))
-			chips.add_child(ch)
-			shown += 1
-		box.add_child(chips)
-
-		var foot = HBoxContainer.new()
-		foot.add_theme_constant_override("separation", 4)
-		var apply_btn = Button.new()
-		apply_btn.text = Loc.txt("Apply")
-		apply_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		VTKSurface.style_button(apply_btn, true)
-		apply_btn.pressed.connect(func(): LD.load_loadout(nm))
-		foot.add_child(apply_btn)
-		var edit_btn = Button.new()
-		edit_btn.text = Loc.txt("Edit")
-		VTKSurface.style_button(edit_btn)
-		edit_btn.pressed.connect(func(): _edit_loadout(nm))
-		foot.add_child(edit_btn)
-		var del_btn = Button.new()
-		del_btn.text = "✕"
-		VTKSurface.style_button(del_btn, false, true)
-		del_btn.pressed.connect(func(): _delete_loadout(nm))
-		foot.add_child(del_btn)
-		box.add_child(foot)
+		meta.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(meta)
 
 		_cards_grid.add_child(card)
 
-	_list_container.add_child(_make_create_btn())
+	_list_container.add_child(CreateCard.new(_start_new_draft, Loc.txt("+ Create loadout")))
 	_refresh_preview()
 
-func _make_create_btn() -> Button:
-	var ghost = Button.new()
-	ghost.text = Loc.txt("+ Create loadout")
-	VTKSurface.style_button(ghost, true)
-	ghost.pressed.connect(_start_new_draft)
-	return ghost
+func _select_set(nm: String) -> void:
+	_selected_set = nm
+	_refresh_loadout_list()
 
 # Плоский список заменён тремя страницами. Имя оставлено, потому что на него
 # завязаны _bump_gear, _toggle_attachment_panel и _clear_draft; по смыслу это
