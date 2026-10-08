@@ -22,6 +22,13 @@ var _main_vbox: VBoxContainer = null
 var _list_container: VBoxContainer = null
 var _cards_grid: GridContainer = null
 var _editor_panel: VBoxContainer = null
+# Гибрид H3: слева рейл сетов, справа превью (когда редактор закрыт) и
+# редактор. Рейл и правая колонка - sibling'ы, чтобы фокус-режим (T4)
+# прятал только рейл.
+const RAIL_WIDTH := 236
+var _rail_box: VBoxContainer = null
+var _right_box: VBoxContainer = null
+var _preview_box: VBoxContainer = null
 var _editing_name: String = ""
 var _draft: Draft = null
 var _name_input: LineEdit = null
@@ -413,33 +420,70 @@ func _refresh_all() -> void:
 	_refresh_loadout_list()
 	_refresh_draft_ui()
 
+# Превью выбранного сета в правой колонке. Схлопывается при открытом
+# черновике: правая колонка принадлежит редактору. Содержимое (состав,
+# кнопки) появится в T3 - здесь каркас и заглушка.
+func _refresh_preview() -> void:
+	if _preview_box == null:
+		return
+	for child in _preview_box.get_children():
+		_preview_box.remove_child(child)
+		child.queue_free()
+	_preview_box.visible = _draft == null
+	if _draft != null:
+		return
+	var ph := Label.new()
+	ph.text = Loc.txt("Select a set on the left")
+	ph.add_theme_font_size_override("font_size", 11)
+	ph.add_theme_color_override("font_color", Color("#666666"))
+	_preview_box.add_child(ph)
+
 # ============== TAB: РЎРµС‚С‹ ==============
 
 func _build_loadouts_tab(parent: VBoxContainer) -> void:
+	_rail_box = VBoxContainer.new()
+	_rail_box.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
+	_rail_box.add_theme_constant_override("separation", 6)
+	parent.add_child(_rail_box)
+
 	var list_title = Label.new()
 	list_title.text = Loc.txt("Saved loadouts")
 	list_title.add_theme_font_size_override("font_size", 13)
 	list_title.add_theme_color_override("font_color", Color("#ddd"))
-	parent.add_child(list_title)
+	_rail_box.add_child(list_title)
 
 	_list_container = VBoxContainer.new()
 	_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	parent.add_child(_list_container)
+	_rail_box.add_child(_list_container)
 
 	_cards_grid = GridContainer.new()
-	_cards_grid.columns = 3
+	_cards_grid.columns = 1
 	_cards_grid.add_theme_constant_override("h_separation", 6)
 	_cards_grid.add_theme_constant_override("v_separation", 6)
 	_cards_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list_container.add_child(_cards_grid)
 
-	parent.add_child(HSeparator.new())
+	_right_box = VBoxContainer.new()
+	_right_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_right_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_right_box.add_theme_constant_override("separation", 6)
+	parent.add_child(_right_box)
 
+	_preview_box = VBoxContainer.new()
+	_preview_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_preview_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_right_box.add_child(_preview_box)
+
+	# Редактор тянется по вертикали, иначе страницы не добирают высоту
+	# таба: счётчики EXPAND форсировали только _page_wrap, а сам
+	# _editor_panel оставался с флагом по умолчанию.
 	_editor_panel = VBoxContainer.new()
 	_editor_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	parent.add_child(_editor_panel)
+	_editor_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_right_box.add_child(_editor_panel)
 
 	_build_editor()
+	_refresh_preview()
 
 func _build_editor() -> void:
 	for child in _editor_panel.get_children():
@@ -487,6 +531,7 @@ func _build_editor() -> void:
 	_show_page(0)
 	_refresh_pages()
 	_editor_panel.visible = _draft != null
+	_refresh_preview()
 
 # Кнопки шагов строятся один раз, переключение идёт через _show_page.
 # Сообщение живёт в том же ряду: отдельная строка ради ошибки вроде
@@ -1768,7 +1813,7 @@ func _refresh_loadout_list() -> void:
 		_list_container.remove_child(child)
 		child.queue_free()
 	_cards_grid = GridContainer.new()
-	_cards_grid.columns = 3
+	_cards_grid.columns = 1
 	_cards_grid.add_theme_constant_override("h_separation", 6)
 	_cards_grid.add_theme_constant_override("v_separation", 6)
 	_cards_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1787,6 +1832,7 @@ func _refresh_loadout_list() -> void:
 		debug.add_theme_color_override("font_color", Color("#444"))
 		_list_container.add_child(debug)
 		_list_container.add_child(_make_create_btn())
+		_refresh_preview()
 		return
 
 	for ld in loadouts:
@@ -1881,6 +1927,7 @@ func _refresh_loadout_list() -> void:
 		_cards_grid.add_child(card)
 
 	_list_container.add_child(_make_create_btn())
+	_refresh_preview()
 
 func _make_create_btn() -> Button:
 	var ghost = Button.new()

@@ -90,6 +90,7 @@ const RU := {
 	'Scene failed to load: ': 'Сцена не загрузилась: ',
 	'Scene loader not found': 'Не найден загрузчик сцен',
 	'Search items...': 'Поиск предметов...',
+	'Select a set on the left': 'Выберите сет слева',
 	'Spawned: ': 'Заспавнено: ',
 	'Sets': 'Сеты',
 	'Set is empty': 'Сет пуст',
