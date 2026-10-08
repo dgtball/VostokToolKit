@@ -466,22 +466,30 @@ static func apply_loadout(name: String, equip: bool) -> void:
 
 # ---------- internals ----------
 
-# Вставить один gear-дескриптор столько раз, сколько задано count. Общая
-# точка для apply_loadout и кнопки ⚡: спавн одного предмета не должен
-# разъезжаться по двум копиям цикла. Возвращает число созданных узлов.
+# Вставить один gear-дескриптор столько раз, сколько задано count (обоймы)
+# или amount (обычное снаряжение). Общая точка для apply_loadout и кнопки
+# «В инвентарь». Нестекуемое с amount=N разбивается на N копий по 1 — игра
+# не умеет показывать 5 банок в одном слоте; стекуемое (аммо) остаётся
+# одной стопкой с amount=N. Возвращает число созданных узлов.
 static func _insert_desc(interface, ig, desc: Dictionary) -> int:
 	var placed := 0
-	for i in range(_instances(desc)):
-		var gsd = _build_slot_data(desc)
+	var n := _instances(desc)
+	var one := desc
+	if n > 1 and not desc.has("count"):
+		one = desc.duplicate()
+		one["amount"] = 1.0
+	for i in range(n):
+		var gsd = _build_slot_data(one)
 		if gsd == null:
 			break
 		_insert(interface, ig, gsd)
 		placed += 1
 	return placed
 
-# Один предмет снаряжения в инвентарь целиком (count копий), без экипировки:
-# кнопка ⚡ в клетке шага 2. Без игрового дерева молча 0, а не ошибка - так
-# же ведёт себя apply_loadout, и headless-тест не должен падать.
+# Один предмет снаряжения в инвентарь целиком (count обойм или amount
+# копий): кнопка «В инвентарь» в клетке шага 2. Без игрового дерева молча
+# 0, а не ошибка - так же ведёт себя apply_loadout, и headless-тест не
+# должен падать.
 static func spawn_gear(desc: Dictionary) -> int:
 	var root = _root_node()
 	if not root:
@@ -522,11 +530,23 @@ static func _mag_unit(res, full: bool) -> int:
 		return int(round(float(d)))
 	return 0
 
-# Сколько отдельных предметов создавать из одного descriptor'а.
+# Сколько отдельных SlotData создавать из одного descriptor'а. Обоймы
+# считаются в count; у обычного снаряжения amount = число копий, но только
+# для нестекуемых предметов — стекуемое (аммо, maxAmount > 1) это одна
+# стопка с amount = N, поэтому ей нужен один SlotData. Ресурс не загрузился
+# — считаем нестекуемым: копий столько, сколько amount, каждая по 1.
 static func _instances(desc: Dictionary) -> int:
-	if not desc.has("count"):
+	if desc.has("count"):
+		return clampi(int(desc.get("count", 1)), 0, 32)
+	var amt := int(round(float(desc.get("amount", 1.0))))
+	if amt <= 1:
 		return 1
-	return clampi(int(desc.get("count", 1)), 0, 32)
+	var path := str(desc.get("path", ""))
+	if path != "":
+		var res = load(path)
+		if res != null and bool(res.get("stackable")):
+			return 1
+	return clampi(amt, 1, 32)
 
 static func _build_slot_data(item_data):
 	if typeof(item_data) != TYPE_DICTIONARY:
