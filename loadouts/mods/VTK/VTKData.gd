@@ -394,7 +394,6 @@ static func apply_loadout(name: String, equip: bool) -> void:
 		will_equip = false
 		equip_root = null
 
-	var own := []
 	var fitted := 0
 	var skipped := 0
 
@@ -406,7 +405,6 @@ static func apply_loadout(name: String, equip: bool) -> void:
 			if sd == null:
 				continue
 			var node := _insert(interface, ig, sd)
-			own.append(sd)
 			var used := _equip_into(interface, ig, equip_root, sd, str(slot_name), node)
 			if used == "":
 				skipped += 1
@@ -418,12 +416,7 @@ static func apply_loadout(name: String, equip: bool) -> void:
 	for desc in gear:
 		if typeof(desc) != TYPE_DICTIONARY:
 			continue
-		for i in range(_instances(desc)):
-			var gsd = _build_slot_data(desc)
-			if gsd == null:
-				break
-			_insert(interface, ig, gsd)
-			own.append(gsd)
+		_insert_desc(interface, ig, desc)
 
 	if loader and loader.has_method("SaveCharacter"):
 		loader.SaveCharacter()
@@ -455,6 +448,45 @@ static func apply_loadout(name: String, equip: bool) -> void:
 	_notify(loader, msg, Color.GREEN)
 
 # ---------- internals ----------
+
+# Вставить один gear-дескриптор столько раз, сколько задано count. Общая
+# точка для apply_loadout и кнопки ⚡: спавн одного предмета не должен
+# разъезжаться по двум копиям цикла. Возвращает число созданных узлов.
+static func _insert_desc(interface, ig, desc: Dictionary) -> int:
+	var placed := 0
+	for i in range(_instances(desc)):
+		var gsd = _build_slot_data(desc)
+		if gsd == null:
+			break
+		_insert(interface, ig, gsd)
+		placed += 1
+	return placed
+
+# Один предмет снаряжения в инвентарь целиком (count копий), без экипировки:
+# кнопка ⚡ в клетке шага 2. Без игрового дерева молча 0, а не ошибка - так
+# же ведёт себя apply_loadout, и headless-тест не должен падать.
+static func spawn_gear(desc: Dictionary) -> int:
+	var root = _root_node()
+	if not root:
+		return 0
+	var interface = root.get_node_or_null("Map/Core/UI/Interface")
+	if not interface:
+		print("[VTK] spawn_gear: no Interface node")
+		return 0
+	var loader = root.get_node_or_null("Loader")
+	var ig = interface.get("inventoryGrid")
+	if ig == null or not is_instance_valid(ig):
+		print("[VTK] spawn_gear: no inventoryGrid")
+		return 0
+	var placed := _insert_desc(interface, ig, desc)
+	if loader and loader.has_method("SaveCharacter"):
+		loader.SaveCharacter()
+	if interface.has_method("UpdateStats"):
+		interface.UpdateStats(true)
+	if placed > 0:
+		_notify(loader, Loc.txt("Spawned: ") + str(desc.get("name", "?"))
+			+ " x" + str(placed), Color.GREEN)
+	return placed
 
 static func _is_magazine(res) -> bool:
 	return res != null and str(res.get("type")) == "Attachment" and str(res.get("subtype")) == "Magazine"
