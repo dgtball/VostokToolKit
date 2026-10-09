@@ -1955,7 +1955,7 @@ func _make_inventory_wall(gear: Array) -> Control:
 			continue
 		var s := _gear_cell_size(desc)
 		if col + s.x > INVEN_COLS:
-			row += float(row_h) + float(INVEN_GAP)
+			row += float(row_h * (INVEN_CELL + INVEN_GAP))
 			col = 0
 			row_h = 0
 		var item := _wall_item(desc)
@@ -1964,7 +1964,7 @@ func _make_inventory_wall(gear: Array) -> Control:
 		wall.add_child(item)
 		col += s.x
 		row_h = maxi(row_h, s.y)
-	wall.custom_minimum_size = Vector2(INVEN_COLS * INVEN_CELL + (INVEN_COLS - 1) * INVEN_GAP, row + float(row_h))
+	wall.custom_minimum_size = Vector2(INVEN_COLS * INVEN_CELL + (INVEN_COLS - 1) * INVEN_GAP, row + float(row_h * INVEN_CELL + (row_h - 1) * INVEN_GAP))
 	return wall
 
 func _make_inventory_panel(gear: Array, meta: String = "") -> Control:
