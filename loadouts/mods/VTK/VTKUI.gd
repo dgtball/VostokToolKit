@@ -1767,7 +1767,14 @@ func _make_equip_preview(title: String, eq: Dictionary) -> Control:
 	head.add_theme_color_override("font_color", Color("#5f5347"))
 	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(head)
-	var layout := Picker.equip_layout(Picker.all_slots([eq.keys()]))
+	# Слоты берём из каталога, как в редакторе (_refresh_slots): превью повторяет
+	# сетку вкладки целиком, включая пустые клетки и силуэт, даже если сет занял
+	# лишь часть слотов.
+	var lists: Array = []
+	for it in _db_items:
+		if it != null:
+			lists.append(it.get("slots"))
+	var layout := Picker.equip_layout(Picker.all_slots(lists))
 	var weap: Array = layout.get("weapons", [])
 	if not weap.is_empty():
 		var wbox := VBoxContainer.new()
@@ -1834,7 +1841,7 @@ func _wall_item(desc: Dictionary) -> Control:
 		var qty := Draft.shown_count(desc)
 		if qty > 1:
 			var q := Label.new()
-			q.text = "x" + str(qty)
+			q.text = "×" + str(qty)
 			q.add_theme_font_size_override("font_size", 9)
 			q.add_theme_color_override("font_color", _gold)
 			q.mouse_filter = Control.MOUSE_FILTER_IGNORE
