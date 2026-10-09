@@ -94,9 +94,7 @@ var _gear_grid_scroll: ScrollContainer = null
 # для панели предмета, шапка с ✕ рисуется при сборке.
 var _att_overlay: Control = null
 var _att_overlay_body: VBoxContainer = null
-var _done_summary: HBoxContainer = null
-var _done_equip_col: VBoxContainer = null
-var _done_gear_col: VBoxContainer = null
+var _done_preview: Control = null
 
 # tabs
 var _tab_btns: Array = []
@@ -521,6 +519,18 @@ func _refresh_all() -> void:
 	_refresh_loadout_list()
 	_refresh_draft_ui()
 
+# Общий билдер превью сета: левая панель - экипировка, правая - груз.
+# Им же собрана страница Done, чтобы состав везде выглядел одинаково.
+func _build_set_preview(title: String, eq: Dictionary, gear: Array) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_child(_make_equip_preview(title, eq))
+	var meta := str(gear.size()) + Loc.txt(" items · ") + Loc.txt("grid 8 columns")
+	row.add_child(_make_inventory_panel(gear, meta))
+	return row
+
 # Превью выбранного сета в правой колонке. Схлопывается при открытом
 # черновике: правая колонка принадлежит редактору.
 func _refresh_preview() -> void:
@@ -566,11 +576,6 @@ func _refresh_preview() -> void:
 
 	var eq_d: Dictionary = pack.get("equip", {})
 	var gr_a: Array = pack.get("gear", [])
-	var meta := Label.new()
-	meta.text = str(eq_d.size() + gr_a.size()) + Loc.txt(" items · ") + str(eq_d.size()) + Loc.txt(" in equipment")
-	meta.add_theme_font_size_override("font_size", 10)
-	meta.add_theme_color_override("font_color", Color("#666"))
-	_preview_box.add_child(meta)
 
 	# Кнопки бывшей карточки - теперь здесь, под сводкой: иначе состав
 	# обрезается кнопками сверху. Все одной ширины.
@@ -607,25 +612,11 @@ func _refresh_preview() -> void:
 	del_btn.pressed.connect(func(): _delete_loadout(_selected_set))
 	actions.add_child(del_btn)
 
-	# Состав - теми же строками, что страница Done: общий _fill_summary.
-	var cols := HBoxContainer.new()
-	cols.add_theme_constant_override("separation", 8)
-	var ec := VBoxContainer.new()
-	ec.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ec.add_theme_constant_override("separation", 1)
-	var gc := VBoxContainer.new()
-	gc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	gc.add_theme_constant_override("separation", 1)
-	cols.add_child(ec)
-	cols.add_child(gc)
-	_preview_box.add_child(cols)
-
-	var d = Draft.new()
-	d.load_from(pack)
-	_fill_summary(d, ec, gc)
+	_preview_box.add_child(_build_set_preview(
+		Loc.txt("Equipment") + " · " + str(pack.get("name", _selected_set)), eq_d, gr_a))
 	_preview_box.add_child(actions)
 
-# ============== TAB: РЎРµС‚С‹ ==============
+# ============== TAB: Сеты ==============
 
 func _build_loadouts_tab(parent: VBoxContainer) -> void:
 	# Рейл и правая колонка - ряд через HBox: сам parent вертикальный (таб),
@@ -787,9 +778,7 @@ func _build_editor() -> void:
 	_bind_pending = false
 	_bind_btn = null
 	_pending_qk = 0
-	_done_summary = null
-	_done_equip_col = null
-	_done_gear_col = null
+	_done_preview = null
 	_gear_search_field = null
 	_gear_facets_box = null
 	_gear_grid = null
@@ -1457,21 +1446,11 @@ func _items_for_gear() -> Array:
 func _build_page_done() -> Control:
 	var v := _page_wrap()
 
-	# Порядок из макета: сводка первой, чтобы состав было видно сразу,
-	# строка имени с хоткеем за ней, кнопки в конце.
-	# Две колонки, как в макете: в плоском списке не видно, где кончается один
-	# раздел и начинается другой.
-	_done_summary = HBoxContainer.new()
-	_done_summary.add_theme_constant_override("separation", 8)
-	_done_equip_col = VBoxContainer.new()
-	_done_equip_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_done_equip_col.add_theme_constant_override("separation", 1)
-	_done_gear_col = VBoxContainer.new()
-	_done_gear_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_done_gear_col.add_theme_constant_override("separation", 1)
-	_done_summary.add_child(_done_equip_col)
-	_done_summary.add_child(_done_gear_col)
-	v.add_child(_done_summary)
+	# Порядок из макета: превью состава первой, чтобы состав было видно сразу,
+	# строка имени с хоткеем за ней, кнопки в конце. Превью пустое до
+	# _refresh_pages сразу после сборки редактора.
+	_done_preview = _build_set_preview("", {}, [])
+	v.add_child(_done_preview)
 
 	var name_row := HBoxContainer.new()
 	name_row.add_theme_constant_override("separation", 4)
@@ -1531,17 +1510,18 @@ func _build_page_done() -> Control:
 	v.add_child(actions)
 	return v
 
-# Сводка перед сохранением: что уйдёт в сет. Текстом, а не теми же блоками с
-# кнопками - второй набор RND на тот же предмет открывал бы ту же панель
-# обвесов дважды.
+# Сводка перед сохранением: что уйдёт в сет. Пересобирается целиком тем же
+# билдером, что и превью сета, - вторая раскладка не нужна.
 func _refresh_page_done() -> void:
-	if _done_summary == null or _done_equip_col == null or _done_gear_col == null:
+	if _done_preview == null:
 		return
-	for col in [_done_equip_col, _done_gear_col]:
-		for child in col.get_children():
-			col.remove_child(child)
-			child.queue_free()
-	_fill_summary(_draft, _done_equip_col, _done_gear_col)
+	for child in _done_preview.get_children():
+		_done_preview.remove_child(child)
+		child.queue_free()
+	_done_preview.add_child(_build_set_preview(
+		Loc.txt("Equipment") + " · " + str(_draft.set_name if _draft else ""),
+		_draft.equip if _draft else {},
+		_draft.gear if _draft else []))
 
 # Сводка состава сета в две колонки. Общая для страницы Done и превью:
 # обе читают Draft, чтобы порядок слотов и хвосты обвесов совпадали везде.
