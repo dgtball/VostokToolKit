@@ -1643,8 +1643,8 @@ func _make_equip_cell(slot: String, min_h: int, desc: Dictionary = {}, interacti
 			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			icon.custom_minimum_size = Vector2(min_h - 12, min_h - 26)
-			icon.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			icon.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			vbx.add_child(icon)
 		else:
