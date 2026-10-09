@@ -1647,13 +1647,14 @@ func _make_equip_cell(slot: String, min_h: int, desc: Dictionary = {}, interacti
 			icon.size_flags_vertical = Control.SIZE_EXPAND_FILL
 			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			vbx.add_child(icon)
-		var nm := Label.new()
-		nm.text = Loc.txt(slot)
-		nm.add_theme_font_size_override("font_size", 8)
-		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		nm.add_theme_color_override("font_color", Color("#d8cdbe") if occupied else Color("#5f5347"))
-		nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		vbx.add_child(nm)
+		else:
+			var nm := Label.new()
+			nm.text = Loc.txt(slot)
+			nm.add_theme_font_size_override("font_size", 8)
+			nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			nm.add_theme_color_override("font_color", Color("#d8cdbe") if occupied else Color("#5f5347"))
+			nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			vbx.add_child(nm)
 		var dot := _make_dot(_gold if occupied else Color("#2a1f14"))
 		dot.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 		dot.offset_left = -9
