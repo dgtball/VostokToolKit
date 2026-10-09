@@ -1599,7 +1599,7 @@ func _equip_cell_style(active: bool, hover: bool = false, occupied: bool = false
 # Клетка слота в сетке: занятая показывает иконку предмета, пустая (или без
 # иконки) - имя слота. Клик - прежний _on_slot_row_input: выбор цели, второй
 # клик по занятой цели открывает панель обвесов.
-func _make_equip_cell(slot: String, min_h: int, desc: Dictionary = {}, interactive := true) -> Control:
+func _make_equip_cell(slot: String, min_h: int, desc: Dictionary = {}, interactive := true, fixed := false) -> Control:
 	var src: Dictionary = desc
 	if src.is_empty() and interactive:
 		if _draft != null:
@@ -1609,61 +1609,100 @@ func _make_equip_cell(slot: String, min_h: int, desc: Dictionary = {}, interacti
 	var occupied := not src.is_empty()
 	var active := interactive and _target_slot == slot
 	var box := Panel.new()
-	box.custom_minimum_size = Vector2(0, min_h)
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.custom_minimum_size = Vector2(min_h, min_h) if fixed else Vector2(0, min_h)
+	box.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN if fixed else Control.SIZE_EXPAND_FILL
 	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.mouse_filter = Control.MOUSE_FILTER_STOP
 	box.clip_contents = true
 	box.tooltip_text = str(src.get("name", Loc.txt(slot))) if occupied else Loc.txt(slot)
-	box.add_theme_stylebox_override("panel", _equip_cell_style(active, false, occupied))
+	if not interactive and src.is_empty():
+		var ds := StyleBoxFlat.new()
+		ds.bg_color = Color("#1e1a15")
+		ds.set_border_width_all(1)
+		ds.border_color = Color("#4a443a")
+		ds.corner_radius_all = 6
+		box.add_theme_stylebox_override("panel", ds)
+	else:
+		box.add_theme_stylebox_override("panel", _equip_cell_style(active, false, occupied))
 	if interactive:
 		_attach_row_hover(box, func(hv: bool): return _equip_cell_style(active, hv, occupied))
 		_attach_motion(box)
 		box.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, src))
 
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(center)
-
-	var tex = _item_icon(_cell_resource(src)) if occupied else null
-	if tex != null:
-		var icon := TextureRect.new()
-		icon.texture = Picker.item_art(tex)
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		var sq := maxi(16, min_h - 16)
-		icon.custom_minimum_size = Vector2(sq, sq)
-		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		center.add_child(icon)
+	var tex := _item_icon(_cell_resource(src)) if occupied else null
+	if fixed:
+		var vbx := VBoxContainer.new()
+		vbx.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		vbx.alignment = BoxContainer.ALIGNMENT_CENTER
+		vbx.add_theme_constant_override("separation", 0)
+		vbx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(vbx)
+		if tex != null:
+			var icon := TextureRect.new()
+			icon.texture = Picker.item_art(tex)
+			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			icon.custom_minimum_size = Vector2(min_h - 12, min_h - 26)
+			icon.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			icon.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			vbx.add_child(icon)
+		var nm := Label.new()
+		nm.text = Loc.txt(slot)
+		nm.add_theme_font_size_override("font_size", 8)
+		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		nm.add_theme_color_override("font_color", Color("#d8cdbe") if occupied else Color("#5f5347"))
+		nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		vbx.add_child(nm)
+		var dot := _make_dot(_gold if occupied else Color("#2a1f14"))
+		dot.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+		dot.offset_left = -9
+		dot.offset_top = 3
+		dot.offset_bottom = 10
+		dot.offset_right = -3
+		box.add_child(dot)
 	else:
-		var lb := Label.new()
-		lb.text = Loc.txt(slot)
-		lb.add_theme_font_size_override("font_size", 9)
-		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lb.add_theme_color_override("font_color", Color("#d8cdbe") if occupied else Color("#5f5347"))
-		lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		center.add_child(lb)
+		var center := CenterContainer.new()
+		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(center)
+		if tex != null:
+			var icon := TextureRect.new()
+			icon.texture = Picker.item_art(tex)
+			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			var sq := maxi(16, min_h - 16)
+			icon.custom_minimum_size = Vector2(sq, sq)
+			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			center.add_child(icon)
+		else:
+			var lb := Label.new()
+			lb.text = Loc.txt(slot)
+			lb.add_theme_font_size_override("font_size", 9)
+			lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			lb.add_theme_color_override("font_color", Color("#d8cdbe") if occupied else Color("#5f5347"))
+			lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			center.add_child(lb)
 
-	var dot := _make_dot(_gold if occupied else Color("#2a1f14"))
-	box.add_child(dot)
-	dot.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	dot.offset_left = -10
-	dot.offset_top = 3
-	dot.offset_right = -3
-	dot.offset_bottom = 10
+		var dot := _make_dot(_gold if occupied else Color("#2a1f14"))
+		box.add_child(dot)
+		dot.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+		dot.offset_left = -10
+		dot.offset_top = 3
+		dot.offset_right = -3
+		dot.offset_bottom = 10
 
-	if interactive and occupied:
-		var drop := _make_mini_btn("✕", Vector2(16, 16), 8)
-		drop.tooltip_text = Loc.txt("Remove")
-		drop.add_theme_color_override("font_color", Color("#e05a4a"))
-		drop.pressed.connect(func(): _remove_slot(slot))
-		box.add_child(drop)
-		drop.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-		drop.offset_left = 2
-		drop.offset_top = 2
-		drop.offset_right = 18
-		drop.offset_bottom = 18
+		if interactive and occupied:
+			var drop := _make_mini_btn("✕", Vector2(16, 16), 8)
+			drop.tooltip_text = Loc.txt("Remove")
+			drop.add_theme_color_override("font_color", Color("#e05a4a"))
+			drop.pressed.connect(func(): _remove_slot(slot))
+			box.add_child(drop)
+			drop.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+			drop.offset_left = 2
+			drop.offset_top = 2
+			drop.offset_right = 18
+			drop.offset_bottom = 18
 	return box
 
 # Широкая клетка слота оружия: иконка слева, имя слота, точка и крестик.
@@ -1734,10 +1773,13 @@ func _make_weapon_cell(slot: String, desc: Dictionary = {}, interactive := true)
 
 # Зона силуэта: прозрачные клетки тела лежат поверх силуэта. Высота зафиксирована
 # (4 ряда), иначе GridContainer схлопнул бы ряды и силуэт разъехался бы с ними.
-func _make_body_zone(slots: Array, eq: Dictionary = {}, interactive := true) -> Control:
+func _make_body_zone(slots: Array, eq: Dictionary = {}, interactive := true, square := false) -> Control:
 	var zone := Control.new()
-	zone.custom_minimum_size = Vector2(0, 4 * EQ_CELL_H + 3 * EQ_GAP)
-	zone.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	zone.custom_minimum_size = Vector2(2 * EQ_CELL_H + EQ_GAP, 4 * EQ_CELL_H + 3 * EQ_GAP) if square else Vector2(0, 4 * EQ_CELL_H + 3 * EQ_GAP)
+	if square:
+		zone.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	else:
+		zone.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	zone.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var silh := BodySilhouette.new()
 	silh.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1749,16 +1791,17 @@ func _make_body_zone(slots: Array, eq: Dictionary = {}, interactive := true) -> 
 	grid.add_theme_constant_override("v_separation", EQ_GAP)
 	for slot in slots:
 		if eq.is_empty():
-			grid.add_child(_make_equip_cell(str(slot), EQ_CELL_H, {}, interactive))
+			grid.add_child(_make_equip_cell(str(slot), EQ_CELL_H, {}, interactive, square))
 		else:
-			grid.add_child(_make_equip_cell(str(slot), EQ_CELL_H, eq.get(str(slot), {}), interactive))
+			grid.add_child(_make_equip_cell(str(slot), EQ_CELL_H, eq.get(str(slot), {}), interactive, square))
 	zone.add_child(grid)
 	return zone
 
 func _make_equip_preview(title: String, eq: Dictionary) -> Control:
 	var panel := VBoxContainer.new()
-	panel.custom_minimum_size = Vector2(318, 0)
+	panel.custom_minimum_size = Vector2(132, 0)
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_stretch_ratio = 0.3
 	panel.add_theme_constant_override("separation", 6)
 	panel.add_theme_stylebox_override("panel", VTKSurface.panel(true, 6))
 	var head := Label.new()
@@ -1785,16 +1828,17 @@ func _make_equip_preview(title: String, eq: Dictionary) -> Control:
 		panel.add_child(wbox)
 	var body: Array = layout.get("body", [])
 	if not body.is_empty():
-		panel.add_child(_make_body_zone(body, eq, false))
+		panel.add_child(_make_body_zone(body, eq, false, true))
 	var small: Array = layout.get("small", [])
 	if not small.is_empty():
 		var sgrid := GridContainer.new()
 		sgrid.columns = 2
-		sgrid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sgrid.custom_minimum_size = Vector2(2 * EQ_SMALL_H + EQ_GAP, 0)
+		sgrid.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		sgrid.add_theme_constant_override("h_separation", EQ_GAP)
 		sgrid.add_theme_constant_override("v_separation", EQ_GAP)
 		for slot in small:
-			sgrid.add_child(_make_equip_cell(str(slot), EQ_SMALL_H, eq.get(str(slot), {}), false))
+			sgrid.add_child(_make_equip_cell(str(slot), EQ_SMALL_H, eq.get(str(slot), {}), false, true))
 		panel.add_child(sgrid)
 	if weap.is_empty() and body.is_empty() and small.is_empty():
 		var ph := Label.new()
@@ -1855,8 +1899,25 @@ func _wall_item(desc: Dictionary) -> Control:
 
 func _make_inventory_wall(gear: Array) -> Control:
 	var wall := Control.new()
+	wall.custom_minimum_size = Vector2(8 * INVEN_CELL + 7 * INVEN_GAP, 8 * INVEN_CELL + 7 * INVEN_GAP)
 	wall.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	wall.clip_contents = true
+	var bg := GridContainer.new()
+	bg.columns = INVEN_COLS
+	bg.custom_minimum_size = wall.custom_minimum_size
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bg.add_theme_constant_override("h_separation", INVEN_GAP)
+	bg.add_theme_constant_override("v_separation", INVEN_GAP)
+	for i in range(8 * INVEN_COLS):
+		var gc := Panel.new()
+		gc.custom_minimum_size = Vector2(INVEN_CELL, INVEN_CELL)
+		gc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var gs := StyleBoxFlat.new()
+		gs.bg_color = Color("#14110c")
+		gs.corner_radius_all = 3
+		gc.add_theme_stylebox_override("panel", gs)
+		bg.add_child(gc)
+	wall.add_child(bg)
 	var col := 0
 	var row := 0.0
 	var row_h := 0
@@ -1874,7 +1935,6 @@ func _make_inventory_wall(gear: Array) -> Control:
 		wall.add_child(item)
 		col += s.x
 		row_h = maxi(row_h, s.y)
-	wall.custom_minimum_size = Vector2(INVEN_COLS * INVEN_CELL + (INVEN_COLS - 1) * INVEN_GAP, row + float(row_h * INVEN_CELL + (row_h - 1) * INVEN_GAP))
 	return wall
 
 func _make_inventory_panel(gear: Array, meta: String = "") -> Control:
@@ -1882,6 +1942,7 @@ func _make_inventory_panel(gear: Array, meta: String = "") -> Control:
 	panel.custom_minimum_size = Vector2(INVEN_COLS * INVEN_CELL + (INVEN_COLS - 1) * INVEN_GAP + 12, 0)
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.size_flags_stretch_ratio = 0.7
 	panel.add_theme_constant_override("separation", 6)
 	var head := HBoxContainer.new()
 	var ttl := Label.new()
