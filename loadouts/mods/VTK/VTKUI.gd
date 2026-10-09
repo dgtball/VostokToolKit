@@ -1693,32 +1693,33 @@ func _equip_cell_style(active: bool, hover: bool = false, occupied: bool = false
 # Клетка слота в сетке: занятая показывает иконку предмета, пустая (или без
 # иконки) - имя слота. Клик - прежний _on_slot_row_input: выбор цели, второй
 # клик по занятой цели открывает панель обвесов.
-func _make_equip_cell(slot: String, min_h: int) -> Control:
-	var desc: Dictionary = {}
-	if _draft != null:
-		var raw = _draft.equip.get(slot)
-		if typeof(raw) == TYPE_DICTIONARY:
-			desc = raw
-	var occupied := not desc.is_empty()
-	var active := _target_slot == slot
+func _make_equip_cell(slot: String, min_h: int, desc: Dictionary = {}, interactive := true) -> Control:
+	var src: Dictionary = desc
+	if src.is_empty() and interactive:
+		if _draft != null:
+			var raw = _draft.equip.get(slot)
+			if typeof(raw) == TYPE_DICTIONARY:
+				src = raw
+	var occupied := not src.is_empty()
 	var box := Panel.new()
 	box.custom_minimum_size = Vector2(0, min_h)
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.mouse_filter = Control.MOUSE_FILTER_STOP
 	box.clip_contents = true
-	box.tooltip_text = str(desc.get("name", Loc.txt(slot))) if occupied else Loc.txt(slot)
-	box.add_theme_stylebox_override("panel", _equip_cell_style(active, false, occupied))
-	_attach_row_hover(box, func(hv: bool): return _equip_cell_style(active, hv, occupied))
-	_attach_motion(box)
-	box.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, desc))
+	box.tooltip_text = str(src.get("name", Loc.txt(slot))) if occupied else Loc.txt(slot)
+	box.add_theme_stylebox_override("panel", _equip_cell_style(false, false, occupied))
+	if interactive:
+		_attach_row_hover(box, func(hv: bool): return _equip_cell_style(false, hv, occupied))
+		_attach_motion(box)
+		box.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, src))
 
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(center)
 
-	var tex = _item_icon(_cell_resource(desc)) if occupied else null
+	var tex = _item_icon(_cell_resource(src)) if occupied else null
 	if tex != null:
 		var icon := TextureRect.new()
 		icon.texture = Picker.item_art(tex)
@@ -1745,7 +1746,7 @@ func _make_equip_cell(slot: String, min_h: int) -> Control:
 	dot.offset_right = -3
 	dot.offset_bottom = 10
 
-	if occupied:
+	if interactive and occupied:
 		var drop := _make_mini_btn("✕", Vector2(16, 16), 8)
 		drop.tooltip_text = Loc.txt("Remove")
 		drop.add_theme_color_override("font_color", Color("#e05a4a"))
@@ -1759,24 +1760,25 @@ func _make_equip_cell(slot: String, min_h: int) -> Control:
 	return box
 
 # Широкая клетка слота оружия: иконка слева, имя слота, точка и крестик.
-func _make_weapon_cell(slot: String) -> Control:
-	var desc: Dictionary = {}
-	if _draft != null:
-		var raw = _draft.equip.get(slot)
-		if typeof(raw) == TYPE_DICTIONARY:
-			desc = raw
-	var occupied := not desc.is_empty()
-	var active := _target_slot == slot
+func _make_weapon_cell(slot: String, desc: Dictionary = {}, interactive := true) -> Control:
+	var src: Dictionary = desc
+	if src.is_empty() and interactive:
+		if _draft != null:
+			var raw = _draft.equip.get(slot)
+			if typeof(raw) == TYPE_DICTIONARY:
+				src = raw
+	var occupied := not src.is_empty()
 	var box := Panel.new()
 	box.custom_minimum_size = Vector2(0, EQ_WEAP_H)
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.mouse_filter = Control.MOUSE_FILTER_STOP
 	box.clip_contents = true
-	box.tooltip_text = str(desc.get("name", Loc.txt(slot))) if occupied else Loc.txt(slot)
-	box.add_theme_stylebox_override("panel", _equip_cell_style(active, false, occupied))
-	_attach_row_hover(box, func(hv: bool): return _equip_cell_style(active, hv, occupied))
-	_attach_motion(box)
-	box.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, desc))
+	box.tooltip_text = str(src.get("name", Loc.txt(slot))) if occupied else Loc.txt(slot)
+	box.add_theme_stylebox_override("panel", _equip_cell_style(false, false, occupied))
+	if interactive:
+		_attach_row_hover(box, func(hv: bool): return _equip_cell_style(false, hv, occupied))
+		_attach_motion(box)
+		box.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, src))
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1792,7 +1794,7 @@ func _make_weapon_cell(slot: String) -> Control:
 	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(hb)
 
-	var tex = _item_icon(_cell_resource(desc)) if occupied else null
+	var tex = _item_icon(_cell_resource(src)) if occupied else null
 	if tex != null:
 		var icon := TextureRect.new()
 		icon.texture = Picker.item_art(tex)
@@ -1814,7 +1816,7 @@ func _make_weapon_cell(slot: String) -> Control:
 
 	hb.add_child(_make_dot(_gold if occupied else Color("#2a1f14")))
 
-	if occupied:
+	if interactive and occupied:
 		var drop := _make_mini_btn("✕", Vector2(16, 16), 8)
 		drop.tooltip_text = Loc.txt("Remove")
 		drop.add_theme_color_override("font_color", Color("#e05a4a"))
@@ -1824,7 +1826,7 @@ func _make_weapon_cell(slot: String) -> Control:
 
 # Зона силуэта: прозрачные клетки тела лежат поверх силуэта. Высота зафиксирована
 # (4 ряда), иначе GridContainer схлопнул бы ряды и силуэт разъехался бы с ними.
-func _make_body_zone(slots: Array) -> Control:
+func _make_body_zone(slots: Array, eq: Dictionary = {}, interactive := true) -> Control:
 	var zone := Control.new()
 	zone.custom_minimum_size = Vector2(0, 4 * EQ_CELL_H + 3 * EQ_GAP)
 	zone.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1838,7 +1840,10 @@ func _make_body_zone(slots: Array) -> Control:
 	grid.add_theme_constant_override("h_separation", EQ_GAP)
 	grid.add_theme_constant_override("v_separation", EQ_GAP)
 	for slot in slots:
-		grid.add_child(_make_equip_cell(str(slot), EQ_CELL_H))
+		if eq.is_empty():
+			grid.add_child(_make_equip_cell(str(slot), EQ_CELL_H, {}, interactive))
+		else:
+			grid.add_child(_make_equip_cell(str(slot), EQ_CELL_H, eq.get(str(slot), {}), interactive))
 	zone.add_child(grid)
 	return zone
 
