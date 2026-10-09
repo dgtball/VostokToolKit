@@ -1849,6 +1849,49 @@ func _make_body_zone(slots: Array, eq: Dictionary = {}, interactive := true) -> 
 	zone.add_child(grid)
 	return zone
 
+func _make_equip_preview(title: String, eq: Dictionary) -> Control:
+	var panel := VBoxContainer.new()
+	panel.custom_minimum_size = Vector2(318, 0)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_theme_constant_override("separation", 6)
+	panel.add_theme_stylebox_override("panel", VTKSurface.panel(true, 6))
+	var head := Label.new()
+	head.text = title
+	head.add_theme_font_size_override("font_size", 9)
+	head.add_theme_color_override("font_color", Color("#5f5347"))
+	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(head)
+	var layout := Picker.equip_layout(Picker.all_slots([eq.keys()]))
+	var weap: Array = layout.get("weapons", [])
+	if not weap.is_empty():
+		var wbox := VBoxContainer.new()
+		wbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		wbox.add_theme_constant_override("separation", EQ_GAP)
+		for slot in weap:
+			wbox.add_child(_make_weapon_cell(str(slot), eq.get(str(slot), {}), false))
+		panel.add_child(wbox)
+	var body: Array = layout.get("body", [])
+	if not body.is_empty():
+		panel.add_child(_make_body_zone(body, eq, false))
+	var small: Array = layout.get("small", [])
+	if not small.is_empty():
+		var sgrid := GridContainer.new()
+		sgrid.columns = 2
+		sgrid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sgrid.add_theme_constant_override("h_separation", EQ_GAP)
+		sgrid.add_theme_constant_override("v_separation", EQ_GAP)
+		for slot in small:
+			sgrid.add_child(_make_equip_cell(str(slot), EQ_SMALL_H, eq.get(str(slot), {}), false))
+		panel.add_child(sgrid)
+	if weap.is_empty() and body.is_empty() and small.is_empty():
+		var ph := Label.new()
+		ph.text = Loc.txt("Set is empty")
+		ph.add_theme_font_size_override("font_size", 11)
+		ph.add_theme_color_override("font_color", Color("#666666"))
+		ph.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		panel.add_child(ph)
+	return panel
+
 # Ресурс предмета слота для иконки. Пустой дескриптор - null.
 func _cell_resource(desc: Dictionary) -> Variant:
 	return _item_info(str(desc.get("path", ""))).get("resource")
