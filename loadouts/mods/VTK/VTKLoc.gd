@@ -96,7 +96,6 @@ const RU := {
 	'Spawned: ': 'Заспавнено: ',
 	'Sets': 'Сеты',
 	'Set is empty': 'Сет пуст',
-	'Slots': 'Слоты',
 	'Settings': 'Настройки',
 	'Shelter not unlocked yet: ': 'Убежище ещё не открыто: ',
 	'Shelters': 'Убежища',
