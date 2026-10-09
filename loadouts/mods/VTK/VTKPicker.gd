@@ -11,6 +11,15 @@ const SLOT_ORDER := ["Primary", "Secondary", "Knife", "Grenade_1", "Grenade_2",
 	"Backpack", "Rig", "Helmet", "Head", "Torso", "Legs", "Belt", "Feet",
 	"Hands", "Light", "Time", "Map", "NVG", "Player", "Matches"]
 
+# Раскладка сетки экипировки (вариант S1). Порядок в списках = порядок
+# заполнения GridContainer'а по строкам (тело - 2 колонки, мелкие - 2 колонки).
+# Это презентация, но живёт рядом с SLOT_ORDER: UI читает раскладку отсюда, а не
+# держит свою копию списка слотов, и раскладка тестируется headless.
+const EQUIP_WEAPONS := ["Primary", "Secondary"]
+const EQUIP_BODY := ["Head", "Helmet", "Torso", "Rig", "Legs", "Backpack", "Feet", "Belt"]
+const EQUIP_SMALL := ["Hands", "Knife", "Light", "Time", "Map", "NVG",
+	"Grenade_1", "Grenade_2", "Player", "Matches"]
+
 # Полосы категорий: порядок полок и подписи в одной таблице. Ключ -
 # str(item.type).to_lower() после CATEGORY_ALIASES, подпись - что видит игрок.
 # Раньше порядок жил здесь, а подписи в VTKUI.gd как CATEGORY_LABELS, и они
@@ -276,6 +285,23 @@ static func all_slots(slot_lists) -> Array:
 	rest.sort()
 	for s in rest:
 		out.append(str(s))
+	return out
+
+# Раскладка сетки экипировки, отфильтрованная по каталогу: present - результат
+# all_slots. Слот, которого нет в предметах игры, из раскладки выпадает, иначе
+# после обновления игры появилась бы пустая неинтерактивная клетка.
+static func equip_layout(present: Array) -> Dictionary:
+	return {
+		"weapons": _keep_slots(EQUIP_WEAPONS, present),
+		"body": _keep_slots(EQUIP_BODY, present),
+		"small": _keep_slots(EQUIP_SMALL, present),
+	}
+
+static func _keep_slots(order: Array, present: Array) -> Array:
+	var out: Array = []
+	for s in order:
+		if present.has(str(s)):
+			out.append(str(s))
 	return out
 
 # Подходит ли предмет под выбранный слот-цель. Пустая цель - фильтр выключен,
