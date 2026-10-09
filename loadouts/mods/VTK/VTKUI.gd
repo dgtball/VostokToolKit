@@ -1018,6 +1018,9 @@ const EQ_CELL_H := 58
 const EQ_WEAP_H := 48
 const EQ_SMALL_H := 48
 const EQ_GAP := 4
+const INVEN_CELL := 48
+const INVEN_COLS := 8
+const INVEN_GAP := 3
 
 # Сколько клеток влезает в ширину. Константа "_gear_grid.columns = 4" давала
 # четыре колонки в любом окне, а HFlowContainer на шаге 1 упирался в
@@ -1890,6 +1893,111 @@ func _make_equip_preview(title: String, eq: Dictionary) -> Control:
 		ph.add_theme_color_override("font_color", Color("#666666"))
 		ph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		panel.add_child(ph)
+	return panel
+
+func _gear_cell_size(desc: Dictionary) -> Vector2i:
+	if desc.is_empty():
+		return Vector2i(1, 1)
+	var res: Variant = _cell_resource(desc)
+	if res == null:
+		return Vector2i(1, 1)
+	var sz: Variant = res.get("size")
+	if typeof(sz) == TYPE_VECTOR2:
+		var s: Vector2 = sz
+		return Vector2i(clampi(roundi(s.x), 1, 8), maxi(1, roundi(s.y)))
+	return Vector2i(1, 1)
+
+func _wall_item(desc: Dictionary) -> Control:
+	var sz := _gear_cell_size(desc)
+	var w := sz.x
+	var h := sz.y
+	var box := Panel.new()
+	box.custom_minimum_size = Vector2(w * INVEN_CELL + (w - 1) * INVEN_GAP, h * INVEN_CELL + (h - 1) * INVEN_GAP)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.mouse_filter = Control.MOUSE_FILTER_STOP
+	box.clip_contents = true
+	box.tooltip_text = str(desc.get("name", "?"))
+	box.add_theme_stylebox_override("panel", VTKSurface.surface("normal"))
+	var tex := _item_icon(_cell_resource(desc))
+	if tex != null:
+		var img := TextureRect.new()
+		img.texture = Picker.item_art(tex)
+		img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		img.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(img)
+		var qty := Draft.shown_count(desc)
+		if qty > 1:
+			var q := Label.new()
+			q.text = "x" + str(qty)
+			q.add_theme_font_size_override("font_size", 9)
+			q.add_theme_color_override("font_color", _gold)
+			q.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			q.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+			q.offset_left = -20
+			q.offset_top = -14
+			q.offset_right = -2
+			q.offset_bottom = -2
+			box.add_child(q)
+	return box
+
+func _make_inventory_wall(gear: Array) -> Control:
+	var wall := Control.new()
+	wall.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wall.clip_contents = true
+	var col := 0
+	var row := 0.0
+	var row_h := 0
+	for desc in gear:
+		if typeof(desc) != TYPE_DICTIONARY:
+			continue
+		var s := _gear_cell_size(desc)
+		if col + s.x > INVEN_COLS:
+			row += float(row_h) + float(INVEN_GAP)
+			col = 0
+			row_h = 0
+		var item := _wall_item(desc)
+		item.position = Vector2(col * (INVEN_CELL + INVEN_GAP), row)
+		item.size = Vector2(s.x * INVEN_CELL + (s.x - 1) * INVEN_GAP, s.y * INVEN_CELL + (s.y - 1) * INVEN_GAP)
+		wall.add_child(item)
+		col += s.x
+		row_h = maxi(row_h, s.y)
+	wall.custom_minimum_size = Vector2(INVEN_COLS * INVEN_CELL + (INVEN_COLS - 1) * INVEN_GAP, row + float(row_h))
+	return wall
+
+func _make_inventory_panel(gear: Array, meta: String = "") -> Control:
+	var panel := VBoxContainer.new()
+	panel.custom_minimum_size = Vector2(INVEN_COLS * INVEN_CELL + (INVEN_COLS - 1) * INVEN_GAP + 12, 0)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_theme_constant_override("separation", 6)
+	var head := HBoxContainer.new()
+	var ttl := Label.new()
+	ttl.text = Loc.txt("Inventory")
+	ttl.add_theme_font_size_override("font_size", 9)
+	ttl.add_theme_color_override("font_color", _gold)
+	ttl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_child(ttl)
+	var meta_lbl := Label.new()
+	meta_lbl.text = meta
+	meta_lbl.add_theme_font_size_override("font_size", 9)
+	meta_lbl.add_theme_color_override("font_color", Color("#5f5347"))
+	meta_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	meta_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	meta_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_child(meta_lbl)
+	panel.add_child(head)
+	var pad := MarginContainer.new()
+	pad.add_theme_constant_override("margin_left", 6)
+	pad.add_theme_constant_override("margin_top", 6)
+	pad.add_theme_constant_override("margin_right", 6)
+	pad.add_theme_constant_override("margin_bottom", 6)
+	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var wall := _make_inventory_wall(gear)
+	pad.add_child(wall)
+	panel.add_child(pad)
 	return panel
 
 # Ресурс предмета слота для иконки. Пустой дескриптор - null.
