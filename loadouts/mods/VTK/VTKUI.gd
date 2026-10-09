@@ -1701,6 +1701,7 @@ func _make_equip_cell(slot: String, min_h: int, desc: Dictionary = {}, interacti
 			if typeof(raw) == TYPE_DICTIONARY:
 				src = raw
 	var occupied := not src.is_empty()
+	var active := interactive and _target_slot == slot
 	var box := Panel.new()
 	box.custom_minimum_size = Vector2(0, min_h)
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1708,9 +1709,9 @@ func _make_equip_cell(slot: String, min_h: int, desc: Dictionary = {}, interacti
 	box.mouse_filter = Control.MOUSE_FILTER_STOP
 	box.clip_contents = true
 	box.tooltip_text = str(src.get("name", Loc.txt(slot))) if occupied else Loc.txt(slot)
-	box.add_theme_stylebox_override("panel", _equip_cell_style(false, false, occupied))
+	box.add_theme_stylebox_override("panel", _equip_cell_style(active, false, occupied))
 	if interactive:
-		_attach_row_hover(box, func(hv: bool): return _equip_cell_style(false, hv, occupied))
+		_attach_row_hover(box, func(hv: bool): return _equip_cell_style(active, hv, occupied))
 		_attach_motion(box)
 		box.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, src))
 
@@ -1768,15 +1769,16 @@ func _make_weapon_cell(slot: String, desc: Dictionary = {}, interactive := true)
 			if typeof(raw) == TYPE_DICTIONARY:
 				src = raw
 	var occupied := not src.is_empty()
+	var active := interactive and _target_slot == slot
 	var box := Panel.new()
 	box.custom_minimum_size = Vector2(0, EQ_WEAP_H)
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.mouse_filter = Control.MOUSE_FILTER_STOP
 	box.clip_contents = true
 	box.tooltip_text = str(src.get("name", Loc.txt(slot))) if occupied else Loc.txt(slot)
-	box.add_theme_stylebox_override("panel", _equip_cell_style(false, false, occupied))
+	box.add_theme_stylebox_override("panel", _equip_cell_style(active, false, occupied))
 	if interactive:
-		_attach_row_hover(box, func(hv: bool): return _equip_cell_style(false, hv, occupied))
+		_attach_row_hover(box, func(hv: bool): return _equip_cell_style(active, hv, occupied))
 		_attach_motion(box)
 		box.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, src))
 
