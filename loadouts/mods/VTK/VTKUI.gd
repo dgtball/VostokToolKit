@@ -1658,6 +1658,10 @@ func _refresh_slots() -> void:
 	var body: Array = layout.get("body", [])
 	if not body.is_empty():
 		_equip_grid_box.add_child(_make_body_zone(body))
+		var pad := Control.new()
+		pad.custom_minimum_size = Vector2(0, 8)
+		pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_equip_grid_box.add_child(pad)
 	var small: Array = layout.get("small", [])
 	if not small.is_empty():
 		var sgrid := GridContainer.new()
@@ -1720,7 +1724,8 @@ func _make_equip_cell(slot: String, min_h: int) -> Control:
 		icon.texture = Picker.item_art(tex)
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.custom_minimum_size = Vector2(0, maxi(16, min_h - 16))
+		var sq := maxi(16, min_h - 16)
+		icon.custom_minimum_size = Vector2(sq, sq)
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		center.add_child(icon)
 	else:
@@ -1841,31 +1846,36 @@ func _make_body_zone(slots: Array) -> Control:
 func _cell_resource(desc: Dictionary) -> Variant:
 	return _item_info(str(desc.get("path", ""))).get("resource")
 
-# Силуэт тела под прозрачными клетками одежды: голова, торс, ноги. Части
-# центрируются якорем 0.5 по X, поэтому силуэт остаётся по центру при любой
-# ширине колонки. Рисуется Panel'ами со StyleBoxFlat - без внешних текстур.
+# Силуэт тела под прозрачными клетками одежды: круг головы, торс со скруглёнными
+# плечами, две ноги. Части центрируются якорем 0.5 по X, поэтому силуэт остаётся
+# по центру при любой ширине колонки. Рисуется Panel'ами со StyleBoxFlat - без
+# внешних текстур.
 class BodySilhouette extends Control:
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		modulate = Color(1, 1, 1, 0.6)
-		_part(6.0, 46.0, 46.0, 23)
-		_part(62.0, 96.0, 118.0, 16)
-		_part(186.0, 76.0, 56.0, 16)
+		_part(4.0, 44.0, 44.0, 22, 22, 22, 22)
+		_part(56.0, 100.0, 120.0, 28, 28, 16, 16)
+		_part(178.0, 34.0, 60.0, 14, 14, 14, 14, -21.0)
+		_part(178.0, 34.0, 60.0, 14, 14, 14, 14, 21.0)
 
-	func _part(top: float, w: float, h: float, radius: int) -> void:
+	func _part(top: float, w: float, h: float, tl: int, tr: int, bl: int, br: int, cx := 0.0) -> void:
 		var p := Panel.new()
 		p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		p.anchor_left = 0.5
 		p.anchor_right = 0.5
-		p.offset_left = -w * 0.5
-		p.offset_right = w * 0.5
+		p.offset_left = -w * 0.5 + cx
+		p.offset_right = w * 0.5 + cx
 		p.offset_top = top
 		p.offset_bottom = top + h
 		var s := StyleBoxFlat.new()
 		s.bg_color = Color("#1a1510")
 		s.border_color = Color("#2a1f14")
 		s.set_border_width_all(1)
-		s.corner_radius_all = radius
+		s.corner_radius_top_left = tl
+		s.corner_radius_top_right = tr
+		s.corner_radius_bottom_left = bl
+		s.corner_radius_bottom_right = br
 		p.add_theme_stylebox_override("panel", s)
 		add_child(p)
 
