@@ -430,7 +430,7 @@ func _build_ui() -> void:
 	ui_theme.set_font_size("font_size", "TooltipLabel", 10)
 	_panel.theme = ui_theme
 
-	# КПК-хром: верхний рейл устройства: плашка `_rail_brand` + имя, версия справа.
+	# КПК-хром: верхний рейл устройства: плашка «V», имя и версия в одну строку.
 	# Только имя и версия: бренд-квадрат,
 	# текущая вкладка и часы из макета убраны.
 	# Отступ сверху не 4, а 24: счётчик убийств - отдельный CanvasLayer слоем
@@ -1508,15 +1508,11 @@ func _items_for_gear() -> Array:
 func _build_page_done() -> Control:
 	var v := _page_wrap()
 
-	# Порядок из макета: трёхколоночный каркас состава (экипировка, инвентарь,
-	# управление) первым, чтобы состав было видно сразу, строка имени с хоткеем
-	# и подписью счётчика за ним. Превью пустое до _refresh_pages сразу после
-	# сборки редактора. Превью без вертикального растягивания: строка полей идёт
-	# сразу под ним, а не у нижнего края.
-	_done_preview = _build_set_preview({}, [], false,
-		_make_control_column(Loc.txt("Controls").to_upper(), []))
-	v.add_child(_done_preview)
-
+	# Порядок из макета D2: строка имени с хоткеем и подписью счётчика идёт
+	# над карточкой, карточка — трёхколоночный каркас состава — под ней.
+	# Превью пустое до _refresh_pages сразу после сборки редактора. Превью без
+	# вертикального растягивания: карточка идёт по содержимому, а не до нижнего
+	# края.
 	var name_row := HBoxContainer.new()
 	name_row.add_theme_constant_override("separation", 4)
 	var name_lbl := Label.new()
@@ -1559,6 +1555,10 @@ func _build_page_done() -> Control:
 	_done_meta.add_theme_color_override("font_color", Color("#5f5347"))
 	_done_meta.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(_done_meta)
+
+	_done_preview = _build_set_preview({}, [], false,
+		_make_control_column(Loc.txt("Controls").to_upper(), []))
+	v.add_child(_done_preview)
 	return v
 
 # Сводка перед сохранением: что уйдёт в сет. Пересобирается целиком тем же
