@@ -30,6 +30,8 @@ const RU := {
 	'Clothing': 'Одежда',
 	'Consumables': 'Еда',
 	'Create new loadout': 'Создать новый сет',
+	'Deposit': 'Внести',
+	'Deposit selected items toward this task': 'Внести выбранные предметы в счёт задачи',
 	'Does not fit: ': 'Не подходит: ',
 	'Done': 'Готово',
 	'Editing: ': 'Редактирование: ',

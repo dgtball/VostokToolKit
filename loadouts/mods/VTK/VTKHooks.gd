@@ -6,9 +6,12 @@ var _kill_count: int = 0
 var _player_hits: Dictionary = {}
 var _hooks_kc: Array = []
 var _hooks_notes: Array = []
+var _hooks_deposits: Array = []
 
 const KC = preload("res://mods/VTK/VTKKillCounter.gd")
 const Notes = preload("res://mods/VTK/VTKNotes.gd")
+const VTKDeposits = preload("res://mods/VTK/VTKDeposits.gd")
+const Loc = preload("res://mods/VTK/VTKLoc.gd")
 const HIT_WINDOW_MSEC := 15000
 const SEEN_DEATHS_TTL_MSEC := 600000
 
@@ -151,9 +154,13 @@ func _do_register() -> void:
 	_hooks_kc.append(_lib.hook("ai-death-pre", _on_ai_death))
 	_hooks_notes.append(_lib.hook("trader-completetask-post", _on_task_completed))
 	_hooks_notes.append(_lib.hook("interface-initializenotes-post", _on_notes_rendered))
+	_hooks_deposits.append(_lib.hook("interface-initializetasks-post", _on_tasks_rendered))
+	_hooks_deposits.append(_lib.hook("interface-startinput-post", _on_tasks_startinput))
+	_hooks_deposits.append(_lib.hook("task-cancomplete", _on_task_cancomplete))
+	_hooks_deposits.append(_lib.hook("task-_on_complete_pressed", _on_task_complete_pressed))
 	_lib.hook("loader-newgame-post", _on_newgame_post)
 	_registered = true
-	print("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + _hooks_notes.size() + 1) + " hooks)")
+	print("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + _hooks_notes.size() + _hooks_deposits.size() + 1) + " hooks)")
 
 # Late Start (and any mod that saves the world from its own loader-newgame-post
 # handler) writes world.difficulty from gameData.difficulty. That value is stale:
@@ -472,6 +479,185 @@ func _on_notes_rendered() -> void:
 			card.queue_free()
 		else:
 			Notes.augment_note(card)
+
+const TRADERS_RES := "user://Traders.tres"
+const DEPOSITS_META := "vtk_deposits"
+
+func _traders() -> Variant:
+	if not FileAccess.file_exists("user://Traders.tres"):
+		return null
+	return load("user://Traders.tres")
+
+func _ledger() -> Dictionary:
+	var traders = _traders()
+	if traders == null:
+		return {}
+	var m = traders.get_meta("vtk_deposits", {})
+	return m if typeof(m) == TYPE_DICTIONARY else {}
+
+func _ledger_set(data: Dictionary) -> void:
+	var traders = _traders()
+	if traders == null:
+		return
+	traders.set_meta("vtk_deposits", data)
+	ResourceSaver.save(traders, "user://Traders.tres")
+
+func _key_of(task_data) -> String:
+	return VTKDeposits.task_key(str(task_data.get("resource_path")), str(task_data.get("name")), str(task_data.get("trader")))
+
+func _clear_ledger_key(task_data) -> void:
+	if task_data == null:
+		return
+	var key := _key_of(task_data)
+	var ledger := _ledger()
+	if not ledger.has(key):
+		return
+	_ledger_set(VTKDeposits.clear_task(ledger, key))
+
+func _slots_from_grid(grid) -> Array:
+	var entries: Array = []
+	for cell in grid.get_children():
+		var file := ""
+		var nm := ""
+		var amount := 1
+		if cell != null and is_instance_valid(cell):
+			var sd = cell.get("slotData")
+			if sd != null:
+				var item = sd.get("itemData")
+				if item != null:
+					file = str(item.get("file"))
+					nm = str(item.get("name"))
+				amount = int(sd.get("amount", 1))
+		entries.append({"file": file, "name": nm, "amount": amount})
+	return VTKDeposits.normalize_slots(entries)
+
+func _card_covered(card) -> bool:
+	if card == null or not is_instance_valid(card):
+		return false
+	var task_data = card.get("taskData")
+	var grid = card.get("inputGrid")
+	if task_data == null or grid == null or not (grid is Node):
+		return false
+	var slots := _slots_from_grid(grid)
+	if slots.is_empty():
+		return false
+	var key := _key_of(task_data)
+	return VTKDeposits.is_covered(VTKDeposits.coverage(_ledger(), key, slots))
+
+func _on_tasks_rendered() -> void:
+	var iface = _lib._caller if _lib else null
+	if iface == null or not is_instance_valid(iface):
+		return
+	_render_all_tasks(iface)
+
+func _on_tasks_startinput() -> void:
+	var iface = _lib._caller if _lib else null
+	if iface == null or not is_instance_valid(iface):
+		return
+	_render_all_tasks(iface)
+
+func _render_all_tasks(iface) -> void:
+	var list = iface.get("taskList")
+	if list == null or not (list is Node):
+		return
+	for card in list.get_children():
+		_render_task_card(iface, card)
+
+func _card_completed(card) -> bool:
+	if card == null or not is_instance_valid(card):
+		return false
+	var task_data = card.get("taskData")
+	if task_data == null:
+		return false
+	return Notes.is_completed(task_data, Notes.completed_lists(_traders()))
+
+func _render_task_card(iface, card) -> void:
+	if card == null or not is_instance_valid(card):
+		return
+	var grid = card.get("inputGrid")
+	var task_data = card.get("taskData")
+	if grid == null or not (grid is Node) or task_data == null:
+		return
+	var btn := _find_deposit_button(card)
+	if _card_completed(card):
+		_clear_badges(grid)
+		if btn != null:
+			btn.queue_free()
+		return
+	var slots := _slots_from_grid(grid)
+	if slots.is_empty():
+		return
+	var key := _key_of(task_data)
+	var cov := VTKDeposits.coverage(_ledger(), key, slots)
+	for s in cov["slots"]:
+		_paint_slot(grid, s)
+	if btn == null:
+		btn = _make_deposit_button(card)
+	if btn != null:
+		# Deposit доступен только для карточки, выбранной в режиме Input,
+		# и пока задача не покрыта (иначе сдавать через Complete).
+		btn.disabled = iface.get("inputTarget") != card or VTKDeposits.is_covered(cov)
+
+func _find_deposit_button(card) -> Button:
+	var buttons = card.get_node_or_null("Margin/Elements/Buttons")
+	if buttons == null or not (buttons is Node):
+		return null
+	var b = buttons.get_node_or_null("VTKDepositButton")
+	return b if (b != null and b is Button) else null
+
+func _make_deposit_button(card) -> Button:
+	var buttons = card.get_node_or_null("Margin/Elements/Buttons")
+	if buttons == null or not (buttons is Node):
+		return null
+	var btn := Button.new()
+	btn.name = "VTKDepositButton"
+	btn.text = Loc.txt("Deposit")
+	btn.tooltip_text = Loc.txt("Deposit selected items toward this task")
+	buttons.add_child(btn)
+	return btn
+
+func _paint_slot(grid, s) -> void:
+	var idx := int(s["index"])
+	if idx < 0 or idx >= grid.get_child_count():
+		return
+	var cell = grid.get_child(idx)
+	if cell == null or not is_instance_valid(cell):
+		return
+	var amount_lbl = cell.get_node_or_null("Details/Amount")
+	if amount_lbl != null and amount_lbl is Node:
+		amount_lbl.visible = false
+	var badge = cell.get_node_or_null("VTKDepositBadge")
+	if badge == null or not (badge is Label):
+		badge = Label.new()
+		badge.name = "VTKDepositBadge"
+		badge.anchor_left = 0.0
+		badge.anchor_top = 0.5
+		badge.anchor_right = 1.0
+		badge.anchor_bottom = 1.0
+		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		badge.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+		badge.add_theme_font_size_override("font_size", 11)
+		cell.add_child(badge)
+	if bool(s["satisfied"]):
+		badge.text = "✓"
+		if cell.has_method("State"):
+			cell.call("State", "Selected")
+	else:
+		badge.text = VTKDeposits.badge_text(int(s["deposited"]), int(s["required"]))
+
+func _clear_badges(grid) -> void:
+	for cell in grid.get_children():
+		if cell == null or not is_instance_valid(cell):
+			continue
+		var badge = cell.get_node_or_null("VTKDepositBadge")
+		if badge != null:
+			badge.queue_free()
+
+func _on_task_cancomplete() -> bool:
+	return false
+
+func _on_task_complete_pressed() -> void:
+	pass
 
 func _handle_death_screen(gd, is_dead: bool, is_ironman: bool) -> void:
 	if not is_dead or not is_ironman:
