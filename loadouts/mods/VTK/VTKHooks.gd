@@ -156,7 +156,6 @@ func _do_register() -> void:
 	_hooks_notes.append(_lib.hook("interface-initializenotes-post", _on_notes_rendered))
 	_hooks_deposits.append(_lib.hook("interface-initializetasks-post", _on_tasks_rendered))
 	_hooks_deposits.append(_lib.hook("interface-startinput-post", _on_tasks_startinput))
-	_hooks_deposits.append(_lib.hook("task-cancomplete", _on_task_cancomplete))
 	_hooks_deposits.append(_lib.hook("task-_on_complete_pressed", _on_task_complete_pressed))
 	_lib.hook("loader-newgame-post", _on_newgame_post)
 	_registered = true
@@ -441,6 +440,7 @@ func _on_controller_process(_delta: float) -> void:
 func _on_task_completed(task_data) -> void:
 	if task_data == null:
 		return
+	_clear_ledger_key(task_data)
 	var ldr = get_node_or_null("/root/Loader")
 	if ldr == null or not ldr.has_method("LoadTaskNotes") or not ldr.has_method("SaveTaskNotes"):
 		return
@@ -514,9 +514,18 @@ func _clear_ledger_key(task_data) -> void:
 		return
 	_ledger_set(VTKDeposits.clear_task(ledger, key))
 
+func _live_children(grid) -> Array:
+	var out: Array = []
+	if grid == null or not (grid is Node):
+		return out
+	for c in grid.get_children():
+		if c != null and is_instance_valid(c) and not c.is_queued_for_deletion():
+			out.append(c)
+	return out
+
 func _slots_from_grid(grid) -> Array:
 	var entries: Array = []
-	for cell in grid.get_children():
+	for cell in _live_children(grid):
 		var file := ""
 		var nm := ""
 		var amount := 1
@@ -560,7 +569,7 @@ func _render_all_tasks(iface) -> void:
 	var list = iface.get("taskList")
 	if list == null or not (list is Node):
 		return
-	for card in list.get_children():
+	for card in _live_children(list):
 		_render_task_card(iface, card)
 
 func _card_completed(card) -> bool:
@@ -584,19 +593,21 @@ func _render_task_card(iface, card) -> void:
 		if btn != null:
 			btn.queue_free()
 		return
+	var cells := _live_children(grid)
 	var slots := _slots_from_grid(grid)
 	if slots.is_empty():
 		return
 	var key := _key_of(task_data)
 	var cov := VTKDeposits.coverage(_ledger(), key, slots)
 	for s in cov["slots"]:
-		_paint_slot(grid, s)
+		_paint_cell(cells, s)
 	if btn == null:
 		btn = _make_deposit_button(card)
 	if btn != null:
-		# Deposit доступен только для карточки, выбранной в режиме Input,
-		# и пока задача не покрыта (иначе сдавать через Complete).
 		btn.disabled = iface.get("inputTarget") != card or VTKDeposits.is_covered(cov)
+	var cbtn = card.get_node_or_null("Margin/Elements/Buttons/Complete")
+	if cbtn != null and cbtn is Button and VTKDeposits.is_covered(cov):
+		cbtn.disabled = false
 
 func _find_deposit_button(card) -> Button:
 	var buttons = card.get_node_or_null("Margin/Elements/Buttons")
@@ -617,11 +628,11 @@ func _make_deposit_button(card) -> Button:
 	buttons.add_child(btn)
 	return btn
 
-func _paint_slot(grid, s) -> void:
+func _paint_cell(cells: Array, s) -> void:
 	var idx := int(s["index"])
-	if idx < 0 or idx >= grid.get_child_count():
+	if idx < 0 or idx >= cells.size():
 		return
-	var cell = grid.get_child(idx)
+	var cell = cells[idx]
 	if cell == null or not is_instance_valid(cell):
 		return
 	var amount_lbl = cell.get_node_or_null("Details/Amount")
@@ -647,7 +658,7 @@ func _paint_slot(grid, s) -> void:
 		badge.text = VTKDeposits.badge_text(int(s["deposited"]), int(s["required"]))
 
 func _clear_badges(grid) -> void:
-	for cell in grid.get_children():
+	for cell in _live_children(grid):
 		if cell == null or not is_instance_valid(cell):
 			continue
 		var badge = cell.get_node_or_null("VTKDepositBadge")
@@ -729,16 +740,35 @@ func _on_deposit_pressed(card) -> void:
 	if card.has_method("CanComplete"):
 		card.CanComplete()
 
-func _on_task_cancomplete() -> bool:
-	var card = _lib._caller if _lib else null
-	if card != null and is_instance_valid(card) and _card_covered(card):
-		if _lib != null:
-			_lib.skip_super()
-		return true
-	return false
-
 func _on_task_complete_pressed() -> void:
-	pass
+	var card = _lib._caller if _lib else null
+	if card == null or not is_instance_valid(card) or not _card_covered(card):
+		return
+	var iface = card.get("interface")
+	var trader = iface.get("trader") if iface != null else null
+	var task_data = card.get("taskData") if card != null else null
+	if iface == null or trader == null or task_data == null:
+		return
+	if card.has_method("Completed"):
+		card.Completed()
+	if trader.has_method("CompleteTask"):
+		trader.call("CompleteTask", task_data)
+	if iface.has_method("UpdateTraderInfo"):
+		iface.call("UpdateTraderInfo")
+	# Награды — ванильным GetOutputItems, который читает inputTarget.outputGrid.
+	var prev_target = iface.get("inputTarget")
+	var prev_inputting = iface.get("isInputting")
+	iface.set("inputTarget", card)
+	iface.set("isInputting", true)
+	if iface.has_method("GetOutputItems"):
+		iface.call("GetOutputItems")
+	iface.set("inputTarget", prev_target)
+	iface.set("isInputting", prev_inputting)
+	if iface.has_method("ResetInput"):
+		iface.call("ResetInput")
+	if _lib != null:
+		_lib.skip_super()
+	_render_task_card(iface, card)
 
 func _handle_death_screen(gd, is_dead: bool, is_ironman: bool) -> void:
 	if not is_dead or not is_ironman:
