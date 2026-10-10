@@ -168,7 +168,7 @@ func _do_register() -> void:
 # from a previous save. Left alone, a difficulty-3 run is persisted back as 1 and
 # LoadWorld no longer restores permadeath. Sync the live value and patch the saved
 # world so the chosen difficulty survives regardless of hook order.
-func _on_newgame_post(difficulty, _season) -> void:
+func _on_newgame_post(difficulty, _season, _result) -> void:
 	var diff := int(difficulty)
 	var gd = _resolve_gamedata()
 	if gd != null:
@@ -411,7 +411,7 @@ func _direction_is_player(direction) -> bool:
 		return false
 	return a.dot(b) > 0.985
 
-func _on_controller_process(_delta: float) -> void:
+func _on_controller_process(_delta: float, _result) -> void:
 	var controller = _lib._caller if _lib else null
 	if not is_instance_valid(controller):
 		return
@@ -437,7 +437,7 @@ func _on_controller_process(_delta: float) -> void:
 
 # Сдача задачи во вкладке торговца: убираем её заметку из Notes сразу.
 # Notes в этот момент закрыт, поэтому чистим только данные (Loader).
-func _on_task_completed(task_data) -> void:
+func _on_task_completed(task_data, _result) -> void:
 	if task_data == null:
 		return
 	_clear_ledger_key(task_data)
@@ -451,7 +451,7 @@ func _on_task_completed(task_data) -> void:
 # Отрисовка вкладки Notes: сданные заметки убираем, у остальных меняем текст
 # списка предметов на ряд иконок. Страховка для задач, сданных в обход
 # Trader.CompleteTask, и заметок из сессий до установки мода.
-func _on_notes_rendered() -> void:
+func _on_notes_rendered(_result) -> void:
 	var iface = _lib._caller if _lib else null
 	if iface == null or not is_instance_valid(iface):
 		return
@@ -553,13 +553,13 @@ func _card_covered(card) -> bool:
 	var key := _key_of(task_data)
 	return VTKDeposits.is_covered(VTKDeposits.coverage(_ledger(), key, slots))
 
-func _on_tasks_rendered() -> void:
+func _on_tasks_rendered(_result) -> void:
 	var iface = _lib._caller if _lib else null
 	if iface == null or not is_instance_valid(iface):
 		return
 	_render_all_tasks(iface)
 
-func _on_tasks_startinput() -> void:
+func _on_tasks_startinput(_target, _result) -> void:
 	var iface = _lib._caller if _lib else null
 	if iface == null or not is_instance_valid(iface):
 		return
@@ -635,10 +635,15 @@ func _paint_cell(cells: Array, s) -> void:
 	var cell = cells[idx]
 	if cell == null or not is_instance_valid(cell):
 		return
+	var satisfied := bool(s["satisfied"])
 	var amount_lbl = cell.get_node_or_null("Details/Amount")
 	if amount_lbl != null and amount_lbl is Node:
-		amount_lbl.visible = false
+		amount_lbl.visible = not satisfied
 	var badge = cell.get_node_or_null("VTKDepositBadge")
+	if not satisfied:
+		if badge != null:
+			badge.queue_free()
+		return
 	if badge == null or not (badge is Label):
 		badge = Label.new()
 		badge.name = "VTKDepositBadge"
@@ -650,12 +655,9 @@ func _paint_cell(cells: Array, s) -> void:
 		badge.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 		badge.add_theme_font_size_override("font_size", 11)
 		cell.add_child(badge)
-	if bool(s["satisfied"]):
-		badge.text = "✓"
-		if cell.has_method("State"):
-			cell.call("State", "Selected")
-	else:
-		badge.text = VTKDeposits.badge_text(int(s["deposited"]), int(s["required"]))
+	badge.text = "✓"
+	if cell.has_method("State"):
+		cell.call("State", "Selected")
 
 func _clear_badges(grid) -> void:
 	for cell in _live_children(grid):
