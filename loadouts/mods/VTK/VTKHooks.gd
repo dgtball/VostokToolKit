@@ -613,6 +613,7 @@ func _make_deposit_button(card) -> Button:
 	btn.name = "VTKDepositButton"
 	btn.text = Loc.txt("Deposit")
 	btn.tooltip_text = Loc.txt("Deposit selected items toward this task")
+	btn.pressed.connect(_on_deposit_pressed.bind(card))
 	buttons.add_child(btn)
 	return btn
 
@@ -653,7 +654,87 @@ func _clear_badges(grid) -> void:
 		if badge != null:
 			badge.queue_free()
 
+func _selected_stacks(iface) -> Array:
+	var out: Array = []
+	var grid = iface.get("inventoryGrid")
+	if grid == null or not (grid is Node):
+		return out
+	for cell in grid.get_children():
+		if cell == null or not is_instance_valid(cell):
+			continue
+		if not bool(cell.get("selected")):
+			continue
+		var sd = cell.get("slotData")
+		if sd == null:
+			continue
+		var item = sd.get("itemData")
+		if item == null:
+			continue
+		out.append({
+			"file": str(item.get("file")),
+			"name": str(item.get("name")),
+			"amount": int(sd.get("amount", 0)),
+			"ref": cell,
+		})
+	return out
+
+func _consume(take: Array) -> void:
+	for t in take:
+		if t == null or typeof(t) != TYPE_DICTIONARY:
+			continue
+		var node = t.get("ref")
+		var amt := int(t.get("amount", 0))
+		if node == null or not is_instance_valid(node) or amt <= 0:
+			continue
+		var sd = node.get("slotData")
+		if sd == null:
+			continue
+		var left := int(sd.get("amount", 0)) - amt
+		if left <= 0:
+			var grid = node.get_parent()
+			if grid != null and grid.has_method("Pick"):
+				grid.Pick(node)
+			node.queue_free()
+		else:
+			sd.set("amount", left)
+			node.call("UpdateDetails")
+			node.call("State", "Static")
+
+func _on_deposit_pressed(card) -> void:
+	if card == null or not is_instance_valid(card):
+		return
+	var iface = card.get("interface")
+	if iface == null or not is_instance_valid(iface):
+		return
+	if iface.get("inputTarget") != card:
+		return
+	var task_data = card.get("taskData")
+	var grid = card.get("inputGrid")
+	if task_data == null or grid == null or not (grid is Node):
+		return
+	var slots := _slots_from_grid(grid)
+	if slots.is_empty():
+		return
+	var offered := _selected_stacks(iface)
+	if offered.is_empty():
+		return
+	var key := _key_of(task_data)
+	var res := VTKDeposits.apply(_ledger(), key, slots, offered)
+	var take: Array = res.get("take", [])
+	if take.is_empty():
+		return
+	_consume(take)
+	_ledger_set(res.get("ledger", {}))
+	_render_task_card(iface, card)
+	if card.has_method("CanComplete"):
+		card.CanComplete()
+
 func _on_task_cancomplete() -> bool:
+	var card = _lib._caller if _lib else null
+	if card != null and is_instance_valid(card) and _card_covered(card):
+		if _lib != null:
+			_lib.skip_super()
+		return true
 	return false
 
 func _on_task_complete_pressed() -> void:
