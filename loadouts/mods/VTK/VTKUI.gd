@@ -998,18 +998,17 @@ func _page_wrap() -> VBoxContainer:
 	v.add_theme_constant_override("separation", 4)
 	return v
 
-# Ширина левой колонки. Осталась только у шага 2 (Снаряжение): шаг 1
-# (Экипировка) тоже вернулся к колонкам через _page_columns (T5-откат),
-# но объединение слотов и категорий в одну колонку пока не делали.
+# Ширина левой колонки по умолчанию (шаг 2 «Снаряжение» и «Точки»). Шаг 1
+# «Экипировка» идёт под колонку 330 (EQ_COL_W): укладка 6×8 шире 232.
 const SIDE_WIDTH := 232
 
-# Размеры сетки экипировки (вариант S1): широкие клетки оружия, затем зона
-# силуэта (4 ряда по EQ_CELL_H), мелкие слоты. Высота зоны силуэта запечена в
-# _make_body_zone - GridContainer без неё схлопнул бы ряды, и силуэт разъехался
-# бы с клетками.
-const EQ_CELL_H := 58
-const EQ_WEAP_H := 48
-const EQ_SMALL_H := 48
+# Размеры сетки экипировки (вариант E): фиксированная сетка 6 колонок × 8 рядов,
+# клетка EQ_CELL, зазор EQ_GAP. Колонка экипировки - 330: 6·48 + 5·4 = 308 плюс
+# поля панели. Раскладка слотов живёт в Picker.EQUIP_GRID; здесь только
+# геометрия. Прежних высот оружия/тела/мелочи больше нет - все клетки одного
+# размера, разный только размах (2×6, 2×2, 1×1).
+const EQ_COL_W := 330
+const EQ_CELL := 48
 const EQ_GAP := 4
 const INVEN_CELL := 48
 const INVEN_COLS := 8
@@ -1031,16 +1030,16 @@ func _make_grid_columns(width: float) -> int:
 
 
 # Каркас страницы: слева колонка выбора, справа предметы. Ширина колонки
-# задаётся здесь единожды, иначе шаги разъедутся на пиксель и перестанут
-# выглядеть одной сеткой. Использует только шаг 2.
-func _page_columns(title: String, side: Control, main: Control) -> HBoxContainer:
+# задаётся единожды (по умолчанию SIDE_WIDTH): у экипировки она шире - 330,
+# чтобы встала укладка 6×8.
+func _page_columns(title: String, side: Control, main: Control, width := SIDE_WIDTH) -> HBoxContainer:
 	var h := HBoxContainer.new()
 	h.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	h.add_theme_constant_override("separation", 6)
 
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(SIDE_WIDTH, 0)
+	panel.custom_minimum_size = Vector2(width, 0)
 	var ps := VTKSurface.panel(true, 6)
 	ps.border_width_left = 0
 	ps.border_width_top = 0
@@ -1105,12 +1104,12 @@ func _build_page_equipment() -> Control:
 	shelves_scroll.add_child(_shelves_box)
 	v.add_child(shelves_scroll)
 
-	# Левая колонка шага 1 - сетка экипировки (T2): оружие, силуэт тела,
-	# мелкие слоты. Каркас тот же _page_columns, что у категорий Снаряжения.
+	# Левая колонка шага 1 - укладка экипировки (вариант E): фиксированная
+	# сетка 6×8 с стволами в рост. Колонка шире прочих - 330.
 	_equip_grid_box = VBoxContainer.new()
 	_equip_grid_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_equip_grid_box.add_theme_constant_override("separation", 6)
-	return _page_columns(Loc.txt("Equipment"), _equip_grid_box, v)
+	return _page_columns(Loc.txt("Equipment"), _equip_grid_box, v, EQ_COL_W)
 
 func _build_page_gear() -> Control:
 	var main := _page_wrap()
@@ -1557,31 +1556,10 @@ func _refresh_slots() -> void:
 		if it != null:
 			lists.append(it.get("slots"))
 	var layout := Picker.equip_layout(Picker.all_slots(lists))
-	var weap: Array = layout.get("weapons", [])
-	if not weap.is_empty():
-		var wbox := VBoxContainer.new()
-		wbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		wbox.add_theme_constant_override("separation", EQ_GAP)
-		for slot in weap:
-			wbox.add_child(_make_weapon_cell(str(slot)))
-		_equip_grid_box.add_child(wbox)
-	var body: Array = layout.get("body", [])
-	if not body.is_empty():
-		_equip_grid_box.add_child(_make_body_zone(body))
-		var pad := Control.new()
-		pad.custom_minimum_size = Vector2(0, 8)
-		pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_equip_grid_box.add_child(pad)
-	var small: Array = layout.get("small", [])
-	if not small.is_empty():
-		var sgrid := GridContainer.new()
-		sgrid.columns = 2
-		sgrid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		sgrid.add_theme_constant_override("h_separation", EQ_GAP)
-		sgrid.add_theme_constant_override("v_separation", EQ_GAP)
-		for slot in small:
-			sgrid.add_child(_make_equip_cell(str(slot), EQ_SMALL_H))
-		_equip_grid_box.add_child(sgrid)
+	var cells: Array = layout.get("cells", [])
+	if cells.is_empty():
+		return
+	_equip_grid_box.add_child(_make_equip_grid(cells, int(layout.get("cols", 6)), int(layout.get("rows", 8))))
 
 # Стиль клетки сетки экипировки: прозрачная заливка, только рамка - силуэт
 # тела обязан просвечивать сквозь клетки одежды. Активная цель - золото.
@@ -1600,10 +1578,10 @@ func _equip_cell_style(active: bool, hover: bool = false, occupied: bool = false
 		s.border_color = Color("#2a1f14")
 	return s
 
-# Клетка слота в сетке: занятая показывает иконку предмета, пустая (или без
-# иконки) - имя слота. Клик - прежний _on_slot_row_input: выбор цели, второй
-# клик по занятой цели открывает панель обвесов.
-func _make_equip_cell(slot: String, min_h: int, desc: Dictionary = {}, interactive := true) -> Control:
+# Клетка слота в укладке: w×h ячеек, занятая показывает иконку предмета, пустая
+# (или без иконки) - имя слота. Клик - прежний _on_slot_row_input: выбор цели,
+# второй клик по занятой цели открывает панель обвесов.
+func _make_equip_cell(slot: String, w: int, h: int, desc: Dictionary = {}, interactive := true) -> Control:
 	var src: Dictionary = desc
 	if src.is_empty() and interactive:
 		if _draft != null:
@@ -1613,9 +1591,7 @@ func _make_equip_cell(slot: String, min_h: int, desc: Dictionary = {}, interacti
 	var occupied := not src.is_empty()
 	var active := interactive and _target_slot == slot
 	var box := Panel.new()
-	box.custom_minimum_size = Vector2(0, min_h)
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.custom_minimum_size = Vector2(w * EQ_CELL + (w - 1) * EQ_GAP, h * EQ_CELL + (h - 1) * EQ_GAP)
 	box.mouse_filter = Control.MOUSE_FILTER_STOP
 	box.clip_contents = true
 	box.tooltip_text = str(src.get("name", Loc.txt(slot))) if occupied else Loc.txt(slot)
@@ -1643,7 +1619,7 @@ func _make_equip_cell(slot: String, min_h: int, desc: Dictionary = {}, interacti
 		icon.texture = Picker.item_art(tex)
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		var sq := maxi(16, min_h - 16)
+		var sq := maxi(16, mini(w * EQ_CELL, h * EQ_CELL) - 16)
 		icon.custom_minimum_size = Vector2(sq, sq)
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		center.add_child(icon)
@@ -1677,99 +1653,55 @@ func _make_equip_cell(slot: String, min_h: int, desc: Dictionary = {}, interacti
 		drop.offset_bottom = 18
 	return box
 
-# Широкая клетка слота оружия: иконка слева, имя слота, точка и крестик.
-func _make_weapon_cell(slot: String, desc: Dictionary = {}, interactive := true) -> Control:
-	var src: Dictionary = desc
-	if src.is_empty() and interactive:
-		if _draft != null:
-			var raw = _draft.equip.get(slot)
-			if typeof(raw) == TYPE_DICTIONARY:
-				src = raw
-	var occupied := not src.is_empty()
-	var active := interactive and _target_slot == slot
-	var box := Panel.new()
-	box.custom_minimum_size = Vector2(0, EQ_WEAP_H)
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	box.mouse_filter = Control.MOUSE_FILTER_STOP
-	box.clip_contents = true
-	box.tooltip_text = str(src.get("name", Loc.txt(slot))) if occupied else Loc.txt(slot)
-	box.add_theme_stylebox_override("panel", _equip_cell_style(active, false, occupied))
-	if interactive:
-		_attach_row_hover(box, func(hv: bool): return _equip_cell_style(active, hv, occupied))
-		_attach_motion(box)
-		box.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, src))
-
-	var margin := MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 8)
-	margin.add_theme_constant_override("margin_right", 8)
-	margin.add_theme_constant_override("margin_top", 4)
-	margin.add_theme_constant_override("margin_bottom", 4)
-	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(margin)
-
-	var hb := HBoxContainer.new()
-	hb.add_theme_constant_override("separation", 6)
-	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	margin.add_child(hb)
-
-	var tex = _item_icon(_cell_resource(src)) if occupied else null
-	if tex != null:
-		var icon := TextureRect.new()
-		icon.texture = Picker.item_art(tex)
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.custom_minimum_size = Vector2(96, 0)
-		icon.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		hb.add_child(icon)
-
-	var nm := Label.new()
-	nm.text = Loc.txt(slot)
-	nm.add_theme_font_size_override("font_size", 10)
-	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	nm.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	nm.add_theme_color_override("font_color", Color("#d8cdbe") if occupied else Color("#5f5347"))
-	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hb.add_child(nm)
-
-	hb.add_child(_make_dot(_gold if occupied else Color("#2a1f14")))
-
-	if interactive and occupied:
-		var drop := _make_mini_btn("✕", Vector2(16, 16), 8)
-		drop.tooltip_text = Loc.txt("Remove")
-		drop.add_theme_color_override("font_color", Color("#e05a4a"))
-		drop.pressed.connect(func(): _remove_slot(slot))
-		hb.add_child(drop)
-	return box
-
-# Зона силуэта: прозрачные клетки тела лежат поверх силуэта. Высота зафиксирована
-# (4 ряда), иначе GridContainer схлопнул бы ряды и силуэт разъехался бы с ними.
-func _make_body_zone(slots: Array, eq: Dictionary = {}, interactive := true) -> Control:
+# Укладка экипировки (вариант E): фоновая сетка cols×rows рисуется всегда -
+# раскладка читается и на пустом сете; клетки слотов ложатся поверх по
+# координатам из Picker.equip_layout. Отдельных секций оружия/тела/мелочи и
+# силуэта больше нет: положение слота задаёт раскладка. Шаг сетки
+# (EQ_CELL + EQ_GAP) держит клетки на одной линии с фоном.
+func _make_equip_grid(cells: Array, cols: int, rows: int, eq: Dictionary = {}, interactive := true) -> Control:
+	var gw := cols * EQ_CELL + (cols - 1) * EQ_GAP
+	var gh := rows * EQ_CELL + (rows - 1) * EQ_GAP
 	var zone := Control.new()
-	zone.custom_minimum_size = Vector2(0, 4 * EQ_CELL_H + 3 * EQ_GAP)
-	zone.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	zone.custom_minimum_size = Vector2(gw, gh)
+	zone.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	zone.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var silh := BodySilhouette.new()
-	silh.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	zone.add_child(silh)
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	grid.add_theme_constant_override("h_separation", EQ_GAP)
-	grid.add_theme_constant_override("v_separation", EQ_GAP)
-	for slot in slots:
-		if eq.is_empty():
-			grid.add_child(_make_equip_cell(str(slot), EQ_CELL_H, {}, interactive))
-		else:
-			grid.add_child(_make_equip_cell(str(slot), EQ_CELL_H, eq.get(str(slot), {}), interactive))
-	zone.add_child(grid)
+	var bg := GridContainer.new()
+	bg.columns = cols
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bg.add_theme_constant_override("h_separation", EQ_GAP)
+	bg.add_theme_constant_override("v_separation", EQ_GAP)
+	for i in range(cols * rows):
+		var gc := Panel.new()
+		gc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		gc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		gc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var gs := StyleBoxFlat.new()
+		gs.bg_color = Color("#171410")
+		gs.corner_radius_all = 4
+		gc.add_theme_stylebox_override("panel", gs)
+		bg.add_child(gc)
+	zone.add_child(bg)
+	for row in cells:
+		if row.size() < 5:
+			continue
+		var slot := str(row[0])
+		var w := int(row[3])
+		var h := int(row[4])
+		var box := _make_equip_cell(slot, w, h, eq.get(slot, {}), interactive)
+		box.position = Vector2(int(row[1]) * (EQ_CELL + EQ_GAP), int(row[2]) * (EQ_CELL + EQ_GAP))
+		box.size = Vector2(w * EQ_CELL + (w - 1) * EQ_GAP, h * EQ_CELL + (h - 1) * EQ_GAP)
+		zone.add_child(box)
 	return zone
 
+# Превью сета: та же укладка, что во вкладке, но некликабельная и с занятыми
+# клетками из сета. Колонка фиксирована (EQ_COL_W), остаток строки забирает
+# стена инвентаря.
 func _make_equip_preview(title: String, eq: Dictionary) -> Control:
 	var panel := VBoxContainer.new()
-	panel.custom_minimum_size = Vector2(132, 0)
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.custom_minimum_size = Vector2(EQ_COL_W, 0)
+	panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	panel.add_theme_constant_override("separation", 6)
 	panel.add_theme_stylebox_override("panel", VTKSurface.panel(true, 6))
 	var head := Label.new()
@@ -1779,41 +1711,23 @@ func _make_equip_preview(title: String, eq: Dictionary) -> Control:
 	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(head)
 	# Слоты берём из каталога, как в редакторе (_refresh_slots): превью повторяет
-	# сетку вкладки целиком, включая пустые клетки и силуэт, даже если сет занял
-	# лишь часть слотов.
+	# укладку целиком, включая пустые клетки, даже если сет занял лишь часть
+	# слотов.
 	var lists: Array = []
 	for it in _db_items:
 		if it != null:
 			lists.append(it.get("slots"))
 	var layout := Picker.equip_layout(Picker.all_slots(lists))
-	var weap: Array = layout.get("weapons", [])
-	if not weap.is_empty():
-		var wbox := VBoxContainer.new()
-		wbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		wbox.add_theme_constant_override("separation", EQ_GAP)
-		for slot in weap:
-			wbox.add_child(_make_weapon_cell(str(slot), eq.get(str(slot), {}), false))
-		panel.add_child(wbox)
-	var body: Array = layout.get("body", [])
-	if not body.is_empty():
-		panel.add_child(_make_body_zone(body, eq, false))
-	var small: Array = layout.get("small", [])
-	if not small.is_empty():
-		var sgrid := GridContainer.new()
-		sgrid.columns = 2
-		sgrid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		sgrid.add_theme_constant_override("h_separation", EQ_GAP)
-		sgrid.add_theme_constant_override("v_separation", EQ_GAP)
-		for slot in small:
-			sgrid.add_child(_make_equip_cell(str(slot), EQ_SMALL_H, eq.get(str(slot), {}), false))
-		panel.add_child(sgrid)
-	if weap.is_empty() and body.is_empty() and small.is_empty():
+	var cells: Array = layout.get("cells", [])
+	if cells.is_empty():
 		var ph := Label.new()
 		ph.text = Loc.txt("Set is empty")
 		ph.add_theme_font_size_override("font_size", 11)
 		ph.add_theme_color_override("font_color", Color("#666666"))
 		ph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		panel.add_child(ph)
+	else:
+		panel.add_child(_make_equip_grid(cells, int(layout.get("cols", 6)), int(layout.get("rows", 8)), eq, false))
 	return panel
 
 func _gear_cell_size(desc: Dictionary) -> Vector2i:
@@ -1864,20 +1778,44 @@ func _wall_item(desc: Dictionary) -> Control:
 			box.add_child(q)
 	return box
 
+# Стена инвентаря: сетка 8 колонок, забирает остаток ширины строки (EXPAND),
+# поэтому клетки фона тянутся, а предметы держатся якорями - долями от ширины и
+# высоты. Пиксельные координаты, посчитанные один раз, не пережили бы ресайз
+# окна, а доля переживает.
 func _make_inventory_wall(gear: Array) -> Control:
+	var place: Array = []
+	var col := 0
+	var row := 0
+	var row_h := 1
+	for desc in gear:
+		if typeof(desc) != TYPE_DICTIONARY:
+			continue
+		var s := _gear_cell_size(desc)
+		if col + s.x > INVEN_COLS:
+			row += row_h
+			col = 0
+			row_h = 1
+		place.append({"desc": desc, "col": col, "row": row, "w": s.x, "h": s.y})
+		col += s.x
+		row_h = maxi(row_h, s.y)
+	var rows := maxi(8, row + row_h)
 	var wall := Control.new()
-	wall.custom_minimum_size = Vector2(8 * INVEN_CELL + 7 * INVEN_GAP, 8 * INVEN_CELL + 7 * INVEN_GAP)
+	wall.custom_minimum_size = Vector2(INVEN_COLS * INVEN_CELL + (INVEN_COLS - 1) * INVEN_GAP,
+		rows * INVEN_CELL + (rows - 1) * INVEN_GAP)
+	wall.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wall.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	wall.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	wall.clip_contents = true
 	var bg := GridContainer.new()
 	bg.columns = INVEN_COLS
-	bg.custom_minimum_size = wall.custom_minimum_size
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.add_theme_constant_override("h_separation", INVEN_GAP)
 	bg.add_theme_constant_override("v_separation", INVEN_GAP)
-	for i in range(8 * INVEN_COLS):
+	for i in range(rows * INVEN_COLS):
 		var gc := Panel.new()
-		gc.custom_minimum_size = Vector2(INVEN_CELL, INVEN_CELL)
+		gc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		gc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		gc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var gs := StyleBoxFlat.new()
 		gs.bg_color = Color("#14110c")
@@ -1885,30 +1823,24 @@ func _make_inventory_wall(gear: Array) -> Control:
 		gc.add_theme_stylebox_override("panel", gs)
 		bg.add_child(gc)
 	wall.add_child(bg)
-	var col := 0
-	var row := 0.0
-	var row_h := 0
-	for desc in gear:
-		if typeof(desc) != TYPE_DICTIONARY:
-			continue
-		var s := _gear_cell_size(desc)
-		if col + s.x > INVEN_COLS:
-			row += float(row_h * (INVEN_CELL + INVEN_GAP))
-			col = 0
-			row_h = 0
-		var item := _wall_item(desc)
-		item.position = Vector2(col * (INVEN_CELL + INVEN_GAP), row)
-		item.size = Vector2(s.x * INVEN_CELL + (s.x - 1) * INVEN_GAP, s.y * INVEN_CELL + (s.y - 1) * INVEN_GAP)
+	for p in place:
+		var item := _wall_item(p["desc"])
+		item.anchor_left = float(int(p["col"])) / float(INVEN_COLS)
+		item.anchor_right = float(int(p["col"]) + int(p["w"])) / float(INVEN_COLS)
+		item.anchor_top = float(int(p["row"])) / float(rows)
+		item.anchor_bottom = float(int(p["row"]) + int(p["h"])) / float(rows)
+		item.offset_left = 0.0
+		item.offset_top = 0.0
+		item.offset_right = 0.0
+		item.offset_bottom = 0.0
 		wall.add_child(item)
-		col += s.x
-		row_h = maxi(row_h, s.y)
 	return wall
 
 func _make_inventory_panel(gear: Array, meta: String = "") -> Control:
 	var panel := VBoxContainer.new()
 	panel.custom_minimum_size = Vector2(INVEN_COLS * INVEN_CELL + (INVEN_COLS - 1) * INVEN_GAP + 12, 0)
-	panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	panel.add_theme_constant_override("separation", 6)
 	var head := HBoxContainer.new()
 	var ttl := Label.new()
@@ -1940,39 +1872,6 @@ func _make_inventory_panel(gear: Array, meta: String = "") -> Control:
 # Ресурс предмета слота для иконки. Пустой дескриптор - null.
 func _cell_resource(desc: Dictionary) -> Variant:
 	return _item_info(str(desc.get("path", ""))).get("resource")
-
-# Силуэт тела под прозрачными клетками одежды: круг головы, торс со скруглёнными
-# плечами, две ноги. Части центрируются якорем 0.5 по X, поэтому силуэт остаётся
-# по центру при любой ширине колонки. Рисуется Panel'ами со StyleBoxFlat - без
-# внешних текстур.
-class BodySilhouette extends Control:
-	func _init() -> void:
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		modulate = Color(1, 1, 1, 0.6)
-		_part(4.0, 44.0, 44.0, 22, 22, 22, 22)
-		_part(56.0, 100.0, 120.0, 28, 28, 16, 16)
-		_part(178.0, 34.0, 60.0, 14, 14, 14, 14, -21.0)
-		_part(178.0, 34.0, 60.0, 14, 14, 14, 14, 21.0)
-
-	func _part(top: float, w: float, h: float, tl: int, tr: int, bl: int, br: int, cx := 0.0) -> void:
-		var p := Panel.new()
-		p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		p.anchor_left = 0.5
-		p.anchor_right = 0.5
-		p.offset_left = -w * 0.5 + cx
-		p.offset_right = w * 0.5 + cx
-		p.offset_top = top
-		p.offset_bottom = top + h
-		var s := StyleBoxFlat.new()
-		s.bg_color = Color("#1a1510")
-		s.border_color = Color("#2a1f14")
-		s.set_border_width_all(1)
-		s.corner_radius_top_left = tl
-		s.corner_radius_top_right = tr
-		s.corner_radius_bottom_left = bl
-		s.corner_radius_bottom_right = br
-		p.add_theme_stylebox_override("panel", s)
-		add_child(p)
 
 # Клик по строке слота: строка становится целью, а клик по текущей цели с
 # предметом открывает панель обвесов. Иначе обвесы пришлось бы искать

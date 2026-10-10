@@ -11,14 +11,35 @@ const SLOT_ORDER := ["Primary", "Secondary", "Knife", "Grenade_1", "Grenade_2",
 	"Backpack", "Rig", "Helmet", "Head", "Torso", "Legs", "Belt", "Feet",
 	"Hands", "Light", "Time", "Map", "NVG", "Player", "Matches"]
 
-# Раскладка сетки экипировки (вариант S1). Порядок в списках = порядок
-# заполнения GridContainer'а по строкам (тело - 2 колонки, мелкие - 2 колонки).
-# Это презентация, но живёт рядом с SLOT_ORDER: UI читает раскладку отсюда, а не
-# держит свою копию списка слотов, и раскладка тестируется headless.
-const EQUIP_WEAPONS := ["Primary", "Secondary"]
-const EQUIP_BODY := ["Head", "Helmet", "Torso", "Rig", "Legs", "Backpack", "Feet", "Belt"]
-const EQUIP_SMALL := ["Hands", "Knife", "Light", "Time", "Map", "NVG",
-	"Grenade_1", "Grenade_2", "Player", "Matches"]
+# Раскладка сетки экипировки (вариант E): фиксированная сетка 6×8. Запись -
+# [слот, колонка, ряд, ширина, высота] в ячейках. Стволы вытянуты в рост
+# (Primary 2×6, Secondary 2×4), крупная броня 2×2 (Helmet, Rig, Backpack),
+# нож/гранаты и мелочь по краям. Порядок фиксирован, поэтому раскладка
+# одинакова от сета к сету; UI берёт позиции отсюда, а не держит свой список.
+const EQUIP_GRID := [
+	["Primary", 0, 0, 2, 6],
+	["Helmet", 2, 0, 2, 2],
+	["Secondary", 4, 0, 2, 4],
+	["Rig", 2, 2, 2, 2],
+	["Backpack", 2, 4, 2, 2],
+	["Knife", 4, 4, 2, 1],
+	["Grenade_1", 4, 5, 1, 1],
+	["Grenade_2", 5, 5, 1, 1],
+	["Head", 0, 6, 1, 1],
+	["Torso", 1, 6, 1, 1],
+	["Legs", 2, 6, 1, 1],
+	["Belt", 3, 6, 1, 1],
+	["Hands", 4, 6, 1, 1],
+	["Feet", 5, 6, 1, 1],
+	["Matches", 0, 7, 1, 1],
+	["Light", 1, 7, 1, 1],
+	["NVG", 2, 7, 1, 1],
+	["Map", 3, 7, 1, 1],
+	["Time", 4, 7, 1, 1],
+	["Player", 5, 7, 1, 1],
+]
+const EQUIP_COLS := 6
+const EQUIP_ROWS := 8
 
 # Полосы категорий: порядок полок и подписи в одной таблице. Ключ -
 # str(item.type).to_lower() после CATEGORY_ALIASES, подпись - что видит игрок.
@@ -289,20 +310,18 @@ static func all_slots(slot_lists) -> Array:
 
 # Раскладка сетки экипировки, отфильтрованная по каталогу: present - результат
 # all_slots. Слот, которого нет в предметах игры, из раскладки выпадает, иначе
-# после обновления игры появилась бы пустая неинтерактивная клетка.
+# после обновления игры появилась бы пустая неинтерактивная клетка. Позиции
+# оставшихся не сдвигаются: клетка пропавшего слота просто остаётся фоном.
 static func equip_layout(present: Array) -> Dictionary:
+	var cells: Array = []
+	for row in EQUIP_GRID:
+		if present.has(str(row[0])):
+			cells.append(row.duplicate())
 	return {
-		"weapons": _keep_slots(EQUIP_WEAPONS, present),
-		"body": _keep_slots(EQUIP_BODY, present),
-		"small": _keep_slots(EQUIP_SMALL, present),
+		"cols": EQUIP_COLS,
+		"rows": EQUIP_ROWS,
+		"cells": cells,
 	}
-
-static func _keep_slots(order: Array, present: Array) -> Array:
-	var out: Array = []
-	for s in order:
-		if present.has(str(s)):
-			out.append(str(s))
-	return out
 
 # Подходит ли предмет под выбранный слот-цель. Пустая цель - фильтр выключен,
 # подходит всё. Строка вместо массива слотами не считается.
