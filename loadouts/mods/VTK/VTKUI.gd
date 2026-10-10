@@ -625,46 +625,35 @@ func _refresh_preview() -> void:
 		_preview_box.add_child(ph)
 		return
 
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 6)
+	var eq_d: Dictionary = pack.get("equip", {})
+	var gr_a: Array = pack.get("gear", [])
+	var qk := int(pack.get("quick_key", 0))
+
+	var card_head := VBoxContainer.new()
+	card_head.add_theme_constant_override("separation", 2)
 	var nm := Label.new()
 	nm.text = str(pack.get("name", _selected_set))
 	nm.add_theme_font_size_override("font_size", 14)
-	nm.add_theme_color_override("font_color", _gold)
-	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nm.add_theme_color_override("font_color", Color("#d8cdbe"))
 	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	head.add_child(nm)
-	var qk := int(pack.get("quick_key", 0))
-	if qk > 0:
-		var kb := Label.new()
-		kb.text = _keycode_to_string(qk)
-		kb.add_theme_font_size_override("font_size", 10)
-		kb.add_theme_color_override("font_color", _gold)
-		kb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		head.add_child(kb)
-	_preview_box.add_child(head)
+	card_head.add_child(nm)
+	var cap := Label.new()
+	cap.text = (Loc.txt("Loadout") + " · " + str(gr_a.size()) + Loc.txt(" items")).to_upper()
+	cap.add_theme_font_size_override("font_size", 9)
+	cap.add_theme_color_override("font_color", Color("#5f5347"))
+	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card_head.add_child(cap)
+	_preview_box.add_child(card_head)
 
-	var eq_d: Dictionary = pack.get("equip", {})
-	var gr_a: Array = pack.get("gear", [])
-
-	# Кнопки бывшей карточки - теперь здесь, под сводкой: иначе состав
-	# обрезается кнопками сверху. Все одной ширины.
-	var actions := HBoxContainer.new()
-	actions.add_theme_constant_override("separation", 4)
 	var apply_btn := Button.new()
 	apply_btn.text = Loc.txt("Apply")
-	apply_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	VTKSurface.style_button(apply_btn, true)
 	apply_btn.pressed.connect(func(): LD.load_loadout(_selected_set))
-	actions.add_child(apply_btn)
 	var edit_btn := Button.new()
 	edit_btn.text = Loc.txt("Edit")
-	edit_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	VTKSurface.style_button(edit_btn)
 	edit_btn.pressed.connect(func(): _edit_loadout(_selected_set))
-	actions.add_child(edit_btn)
 	var qk_btn := Button.new()
-	qk_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	qk_btn.add_theme_font_size_override("font_size", 9)
 	if qk > 0:
 		qk_btn.text = _keycode_to_string(qk)
@@ -674,16 +663,14 @@ func _refresh_preview() -> void:
 		qk_btn.add_theme_color_override("font_color", Color("#444"))
 	VTKSurface.style_button(qk_btn, qk > 0)
 	qk_btn.pressed.connect(func(): _begin_bind(_selected_set, qk_btn))
-	actions.add_child(qk_btn)
 	var del_btn := Button.new()
-	del_btn.text = "✕"
-	del_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	del_btn.text = Loc.txt("Delete")
 	VTKSurface.style_button(del_btn, false, true)
 	del_btn.pressed.connect(func(): _delete_loadout(_selected_set))
-	actions.add_child(del_btn)
 
-	_preview_box.add_child(_build_set_preview(eq_d, gr_a))
-	_preview_box.add_child(actions)
+	_preview_box.add_child(_build_set_preview(
+		eq_d, gr_a, true,
+		_make_control_column(Loc.txt("Controls").to_upper(), [apply_btn, edit_btn, qk_btn, del_btn])))
 
 # ============== TAB: Сеты ==============
 
