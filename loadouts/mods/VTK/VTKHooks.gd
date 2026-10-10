@@ -478,7 +478,7 @@ func _on_notes_rendered(_result) -> void:
 				ldr.call("SaveTaskNotes", inst, false)
 			card.queue_free()
 		else:
-			Notes.augment_note(card)
+			Notes.augment_note(card, _notes_cov_map(task_data))
 
 const TRADERS_RES := "user://Traders.tres"
 const DEPOSITS_META := "vtk_deposits"
@@ -552,6 +552,38 @@ func _card_covered(card) -> bool:
 		return false
 	var key := _key_of(task_data)
 	return VTKDeposits.is_covered(VTKDeposits.coverage(_ledger(), key, slots))
+
+# Покрытие для Notes: карточка заметки не строит ячейки inputGrid, поэтому
+# берём deliver напрямую и сопоставляем с леджером по индексу (порядок deliver
+# = порядок ячеек в Tasks). Считаем need так же, как Task.Initialize.
+func _notes_cov_map(task_data) -> Dictionary:
+	var out := {}
+	if task_data == null:
+		return out
+	var deliver = task_data.get("deliver")
+	if typeof(deliver) != TYPE_ARRAY:
+		return out
+	var task: Dictionary = {}
+	var ledger := _ledger()
+	var key := _key_of(task_data)
+	if typeof(ledger.get(key)) == TYPE_DICTIONARY:
+		task = ledger[key]
+	for i in range(deliver.size()):
+		var item = deliver[i]
+		var req := 1
+		if item != null:
+			var da := int(item.get("defaultAmount"))
+			if da >= 1 and str(item.get("subtype")) != "Magazine":
+				req = da
+		var dep := int(task.get(i, 0))
+		if dep > req:
+			dep = req
+		var k := Notes.item_key(item)
+		if not out.has(k):
+			out[k] = {"got": 0, "need": 0}
+		out[k]["need"] = int(out[k]["need"]) + req
+		out[k]["got"] = int(out[k]["got"]) + dep
+	return out
 
 func _on_tasks_rendered(_result) -> void:
 	var iface = _lib._caller if _lib else null

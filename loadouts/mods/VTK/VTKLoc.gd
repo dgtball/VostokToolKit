@@ -32,6 +32,7 @@ const RU := {
 	'Create new loadout': 'Создать новый сет',
 	'Deposit': 'Deposit',
 	'Deposit selected items toward this task': 'Внести выбранные предметы в счёт задачи',
+	'Deposited': 'Внесено',
 	'Does not fit: ': 'Не подходит: ',
 	'Done': 'Готово',
 	'Editing: ': 'Редактирование: ',
