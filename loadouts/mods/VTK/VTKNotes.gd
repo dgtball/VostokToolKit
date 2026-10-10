@@ -118,18 +118,18 @@ static func augment_note(card) -> void:
 	_apply_section(card.get("outputItems"), card.get("outputGrid"), task_data.get("receive"))
 
 static func _apply_section(items_label, grid, items) -> void:
+	var section = items_label.get_parent() if (items_label != null and items_label is Node) else null
+	if section == null:
+		return
+	var container = section.get_parent()
+	if container == null:
+		return
 	if items_label != null and items_label is Node:
 		items_label.visible = false
 	if grid != null and grid is Node:
 		grid.visible = false
 	var entries := group_items(items)
 	if entries.is_empty():
-		return
-	var section = items_label.get_parent() if (items_label != null and items_label is Node) else null
-	if section == null:
-		return
-	var container = section.get_parent()
-	if container == null:
 		return
 	var row := build_icon_row(entries)
 	container.add_child(row)

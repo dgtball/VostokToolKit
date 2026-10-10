@@ -108,13 +108,9 @@ var _current_tab: String = ""
 
 # teleport tab
 var _travel: Node = null
-var _tp_section_btns: Array = []
 var _tp_maps_box: VBoxContainer = null
 var _tp_shelters_box: VBoxContainer = null
 var _tp_traders_box: VBoxContainer = null
-var _tp_head: Label = null
-var _tp_count: Label = null
-var _current_tp_section: String = "maps"
 
 func _tp_section_label(section: String) -> String:
 	match section:
@@ -3613,76 +3609,41 @@ func _refresh_teleport_tab() -> void:
 		var note3 := Loc.txt("in the tutorial") if in_tutorial else ""
 		_tp_traders_box.add_child(_tp_row(String(entry["name"]), note3, not in_tutorial, func(): _travel.travel_to_trader(entry)))
 
-	if _tp_head != null:
-		_tp_head.text = _tp_section_label(_current_tp_section)
-	if _tp_count != null:
-		var n := 0
-		match _current_tp_section:
-			"maps":
-				n = _travel.MAPS.size()
-			"shelters":
-				n = _travel.SHELTERS.size()
-			"traders":
-				n = _travel.TRADERS.size()
-		_tp_count.text = str(n)
+func _make_tp_column(title: String, count: int, box: VBoxContainer) -> Control:
+	var card := PanelContainer.new()
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	card.add_theme_stylebox_override("panel", VTKSurface.surface("normal", false, false, false, 10, 10, 7, 7))
 
+	var col := VBoxContainer.new()
+	col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", 6)
+	card.add_child(col)
 
-func _tp_switch(section: String) -> void:
-	_current_tp_section = section
-	_tp_maps_box.visible = section == "maps"
-	_tp_shelters_box.visible = section == "shelters"
-	_tp_traders_box.visible = section == "traders"
-	for entry in _tp_section_btns:
-		var is_active: bool = entry["key"] == section
-		var btn: PanelContainer = entry["btn"]
-		btn.add_theme_stylebox_override("panel", _make_tp_section_style(is_active))
-		var ind: Panel = entry["ind"]
-		if ind != null:
-			var ind_s := StyleBoxFlat.new()
-			ind_s.bg_color = _gold if is_active else Color("#3a2e20")
-			ind_s.corner_radius_all = 1
-			ind.add_theme_stylebox_override("panel", ind_s)
-	_refresh_teleport_tab()
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 6)
+	col.add_child(head)
 
+	var nm := Label.new()
+	nm.text = title.to_upper()
+	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nm.add_theme_font_size_override("font_size", 11)
+	nm.add_theme_color_override("font_color", _gold)
+	head.add_child(nm)
 
-func _make_tp_section_style(active: bool) -> StyleBox:
-	return VTKSurface.surface("normal", active, false, false, 10, 10, 7, 7)
+	var cnt := Label.new()
+	cnt.text = str(count)
+	cnt.add_theme_font_size_override("font_size", 9)
+	cnt.add_theme_color_override("font_color", Color("#5f5347"))
+	cnt.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(cnt)
 
-
-func _make_tp_section_row(key: String, label: String) -> Control:
-	var row := PanelContainer.new()
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.mouse_filter = Control.MOUSE_FILTER_STOP
-	row.add_theme_stylebox_override("panel", _make_tp_section_style(false))
-	var hb := HBoxContainer.new()
-	hb.add_theme_constant_override("separation", 8)
-	row.add_child(hb)
-
-	var indicator := Panel.new()
-	indicator.custom_minimum_size = Vector2(3, 0)
-	indicator.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	indicator.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var ind_s := StyleBoxFlat.new()
-	ind_s.bg_color = Color("#3a2e20")
-	ind_s.corner_radius_all = 1
-	indicator.add_theme_stylebox_override("panel", ind_s)
-	hb.add_child(indicator)
-
-	var lbl := Label.new()
-	lbl.text = label
-	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lbl.add_theme_font_size_override("font_size", 11)
-	lbl.add_theme_color_override("font_color", Color("#d8cdbe"))
-	hb.add_child(lbl)
-
-	var k := key
-	row.set_meta("vtk_key", key)
-	_attach_motion(row)
-	row.gui_input.connect(func(ev: InputEvent):
-		var mb := ev as InputEventMouseButton
-		if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			_tp_switch(str(row.get_meta("vtk_key"))))
-	return row
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.add_child(box)
+	col.add_child(scroll)
+	return card
 
 
 func _build_teleport_tab(parent: VBoxContainer) -> void:
@@ -3694,51 +3655,31 @@ func _build_teleport_tab(parent: VBoxContainer) -> void:
 	head.add_theme_color_override("font_color", _gold)
 	parent.add_child(head)
 
-	var side := VBoxContainer.new()
-	side.add_theme_constant_override("separation", 4)
-
 	_tp_maps_box = VBoxContainer.new()
+	_tp_maps_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tp_maps_box.add_theme_constant_override("separation", 4)
 	_tp_shelters_box = VBoxContainer.new()
+	_tp_shelters_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tp_shelters_box.add_theme_constant_override("separation", 4)
 	_tp_traders_box = VBoxContainer.new()
+	_tp_traders_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tp_traders_box.add_theme_constant_override("separation", 4)
 
-	var main := VBoxContainer.new()
-	main.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	main.add_theme_constant_override("separation", 6)
+	var n_maps := 0
+	var n_shelters := 0
+	var n_traders := 0
+	if _travel != null and is_instance_valid(_travel):
+		n_maps = _travel.MAPS.size()
+		n_shelters = _travel.SHELTERS.size()
+		n_traders = _travel.TRADERS.size()
 
-	var main_head := HBoxContainer.new()
-	main_head.add_theme_constant_override("separation", 8)
-	main.add_child(main_head)
-	_tp_head = Label.new()
-	_tp_head.add_theme_font_size_override("font_size", 11)
-	_tp_head.add_theme_color_override("font_color", _gold)
-	_tp_head.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	main_head.add_child(_tp_head)
-	_tp_count = Label.new()
-	_tp_count.add_theme_font_size_override("font_size", 9)
-	_tp_count.add_theme_color_override("font_color", Color("#5f5347"))
-	_tp_count.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	main_head.add_child(_tp_count)
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 10)
+	row.add_child(_make_tp_column(_tp_section_label("maps"), n_maps, _tp_maps_box))
+	row.add_child(_make_tp_column(_tp_section_label("shelters"), n_shelters, _tp_shelters_box))
+	row.add_child(_make_tp_column(_tp_section_label("traders"), n_traders, _tp_traders_box))
+	parent.add_child(row)
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size = Vector2(0, 260)
-	var list := VBoxContainer.new()
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list.add_theme_constant_override("separation", 4)
-	scroll.add_child(list)
-	list.add_child(_tp_maps_box)
-	list.add_child(_tp_shelters_box)
-	list.add_child(_tp_traders_box)
-	main.add_child(scroll)
-
-	var defs := [["maps", Loc.txt("Maps")], ["shelters", Loc.txt("Shelters")], ["traders", Loc.txt("Traders")]]
-	for d in defs:
-		var row: Control = _make_tp_section_row(d[0], d[1])
-		side.add_child(row)
-		_tp_section_btns.append({"key": d[0], "btn": row, "ind": row.get_child(0).get_child(0)})
-
-	parent.add_child(_page_columns(Loc.txt("Points"), side, main))
-	_tp_switch("maps")
+	_refresh_teleport_tab()

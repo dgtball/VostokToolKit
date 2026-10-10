@@ -151,8 +151,36 @@ func _do_register() -> void:
 	_hooks_kc.append(_lib.hook("ai-death-pre", _on_ai_death))
 	_hooks_notes.append(_lib.hook("trader-completetask-post", _on_task_completed))
 	_hooks_notes.append(_lib.hook("interface-initializenotes-post", _on_notes_rendered))
+	_lib.hook("loader-newgame-post", _on_newgame_post)
 	_registered = true
 	print("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + _hooks_notes.size() + 1) + " hooks)")
+
+# Late Start (and any mod that saves the world from its own loader-newgame-post
+# handler) writes world.difficulty from gameData.difficulty. That value is stale:
+# the new-game menu passes difficulty to Loader.NewGame as an argument but never
+# stores it in gameData, whose difficulty is only assigned by Loader.LoadWorld
+# from a previous save. Left alone, a difficulty-3 run is persisted back as 1 and
+# LoadWorld no longer restores permadeath. Sync the live value and patch the saved
+# world so the chosen difficulty survives regardless of hook order.
+func _on_newgame_post(difficulty, _season) -> void:
+	var diff := int(difficulty)
+	var gd = _resolve_gamedata()
+	if gd != null:
+		gd.set("difficulty", diff)
+		if diff == 3:
+			gd.set("permadeath", true)
+	patch_world_difficulty(diff)
+	print("[VTK] newgame-post: difficulty=" + str(diff))
+
+func patch_world_difficulty(diff: int) -> void:
+	var path := "user://World.tres"
+	if not FileAccess.file_exists(path):
+		return
+	var world = load(path)
+	if world == null or world.get("difficulty") == null:
+		return
+	world.set("difficulty", diff)
+	ResourceSaver.save(world, path)
 
 func _on_ai_weapon_damage(_hitbox, _damage, _vector, id) -> void:
 	var victim_ai = _lib._caller if _lib else null

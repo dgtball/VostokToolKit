@@ -294,13 +294,13 @@ const SUB_FOLDERS := {
 # ключ - второй сегмент пути, а не предпоследний, как в SUB_FOLDERS. Папка,
 # которой нет в таблице, остаётся без чипа.
 const FURN_SUB_FOLDERS := {
-	"Bookshelf": "Storage & Cabinets",
+	"Bookshelf": "Decor",
 	"Cabinet_Medical": "Storage & Cabinets",
 	"Cabinet_Office": "Storage & Cabinets",
 	"Cabinet_Wood": "Storage & Cabinets",
 	"Crate_Military": "Storage & Cabinets",
 	"Crate_Special": "Storage & Cabinets",
-	"Cupboard": "Storage & Cabinets",
+	"Cupboard": "Decor",
 	"Locker": "Storage & Cabinets",
 	"Nightstand": "Storage & Cabinets",
 	"Bed_Civilian": "Seating & Beds",

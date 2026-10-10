@@ -177,7 +177,6 @@ const RU := {
 	'in the tutorial': 'в туториале',
 	'Interface': 'Интерфейс',
 	'Modules': 'Модули',
-	'Points': 'Точки перехода',
 	'Shows the kill counter in the interface': 'Показывает счётчик убийств в интерфейсе',
 	'Mines are highlighted in thermal vision mode': 'Мины подсвечиваются в режиме тепловизора',
 	'Turns on the thermal vision mode': 'Включает режим тепловизора',
