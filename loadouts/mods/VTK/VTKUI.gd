@@ -38,6 +38,9 @@ var _selected_set: String = ""
 var _bind_target: String = ""
 var _bind_pending: bool = false
 var _bind_btn: Button = null
+# Кнопка хоткея на странице Готово: её непустое состояние показываем текстом
+# «Назначить клавишу», а не «?». В остальных местах кнопка хоткея - превью сета.
+var _done_bind_btn: Button = null
 var _pending_qk: int = 0
 var _draft: Draft = null
 var _name_input: LineEdit = null
@@ -298,9 +301,7 @@ func _handle_bind_key(event: InputEventKey) -> void:
 		# Черновик ещё не в файле - бинд копится до сохранения.
 		_pending_qk = kc
 		_bind_pending = false
-		if _bind_btn != null:
-			_bind_btn.text = _keycode_to_string(kc)
-			_bind_btn.add_theme_color_override("font_color", _gold)
+		_apply_qk_btn(_bind_btn, kc)
 		_bind_btn = null
 
 func _begin_bind(target: String, btn: Button) -> void:
@@ -329,8 +330,27 @@ func _end_bind() -> void:
 	_bind_target = ""
 	_bind_pending = false
 	_bind_btn = null
-	if btn != null:
+	_apply_qk_btn(btn, qk)
+
+# Текст и цвет кнопки хоткея по её состоянию: назначенная клавиша - золотым,
+# неназначенная на странице Готово - подписью «Назначить клавишу», в остальных
+# местах - прежним «?». Одна точка правды для сборки, захвата клавиши и отмены,
+# иначе после смены кнопки где-то остаётся старый текст.
+func _apply_qk_btn(btn: Button, qk: int) -> void:
+	if btn == null:
+		return
+	if qk > 0:
 		btn.text = _keycode_to_string(qk)
+		btn.add_theme_color_override("font_color", _gold)
+		VTKSurface.style_button(btn, true)
+	elif btn == _done_bind_btn:
+		btn.text = Loc.txt("Assign key")
+		btn.add_theme_color_override("font_color", Color("#c8bfae"))
+		VTKSurface.style_button(btn)
+	else:
+		btn.text = "?"
+		btn.add_theme_color_override("font_color", Color("#444"))
+		VTKSurface.style_button(btn)
 
 func _load_items() -> void:
 	_db_items.clear()
@@ -524,12 +544,14 @@ func _refresh_all() -> void:
 	_refresh_draft_ui()
 
 # Общий билдер превью сета: левая панель - экипировка, правая - груз.
-# Им же собрана страница Done, чтобы состав везде выглядел одинаково.
-func _build_set_preview(title: String, eq: Dictionary, gear: Array) -> Control:
+# Им же собрана страница Done, чтобы состав везде выглядел одинаково. fill=false
+# на странице Done: там превью идёт по содержимому, а строка полей сразу под ним,
+# а не прижата к низу на всё окно.
+func _build_set_preview(title: String, eq: Dictionary, gear: Array, fill := true) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL if fill else Control.SIZE_SHRINK_BEGIN
 	row.add_child(_make_equip_preview(title, eq))
 	var meta := str(gear.size()) + Loc.txt(" items · ") + Loc.txt("grid 8 columns")
 	row.add_child(_make_inventory_panel(gear, meta))
@@ -781,6 +803,7 @@ func _build_editor() -> void:
 	_bind_target = ""
 	_bind_pending = false
 	_bind_btn = null
+	_done_bind_btn = null
 	_pending_qk = 0
 	_done_preview = null
 	_gear_search_field = null
@@ -999,18 +1022,19 @@ func _page_wrap() -> VBoxContainer:
 	return v
 
 # Ширина левой колонки по умолчанию (шаг 2 «Снаряжение» и «Точки»). Шаг 1
-# «Экипировка» идёт под колонку 330 (EQ_COL_W): укладка 6×8 шире 232.
+# «Экипировка» идёт под колонку 375 (EQ_COL_W): укладка 6×8 шире 232.
 const SIDE_WIDTH := 232
 
 # Размеры сетки экипировки (вариант E): фиксированная сетка 6 колонок × 8 рядов,
-# клетка EQ_CELL, зазор EQ_GAP. Колонка экипировки - 330: 6·48 + 5·4 = 308 плюс
-# поля панели. Раскладка слотов живёт в Picker.EQUIP_GRID; здесь только
-# геометрия. Прежних высот оружия/тела/мелочи больше нет - все клетки одного
-# размера, разный только размах (2×6, 2×2, 1×1).
-const EQ_COL_W := 330
-const EQ_CELL := 48
+# клетка EQ_CELL, зазор EQ_GAP. Колонка экипировки - 375: 6·55 + 5·4 = 350 плюс
+# поля панели. Клетка стены инвентаря (INVEN_CELL) крупнее на ту же долю, чтобы
+# обе сетки читались в одном масштабе. Раскладка слотов живёт в Picker.EQUIP_GRID;
+# здесь только геометрия. Прежних высот оружия/тела/мелочи больше нет - все клетки
+# одного размера, разный только размах (2×6, 2×2, 1×1).
+const EQ_COL_W := 375
+const EQ_CELL := 55
 const EQ_GAP := 4
-const INVEN_CELL := 48
+const INVEN_CELL := 55
 const INVEN_COLS := 8
 const INVEN_GAP := 3
 
@@ -1030,7 +1054,7 @@ func _make_grid_columns(width: float) -> int:
 
 
 # Каркас страницы: слева колонка выбора, справа предметы. Ширина колонки
-# задаётся единожды (по умолчанию SIDE_WIDTH): у экипировки она шире - 330,
+# задаётся единожды (по умолчанию SIDE_WIDTH): у экипировки она шире - 375,
 # чтобы встала укладка 6×8.
 func _page_columns(title: String, side: Control, main: Control, width := SIDE_WIDTH) -> HBoxContainer:
 	var h := HBoxContainer.new()
@@ -1451,8 +1475,9 @@ func _build_page_done() -> Control:
 
 	# Порядок из макета: превью состава первой, чтобы состав было видно сразу,
 	# строка имени с хоткеем за ней, кнопки в конце. Превью пустое до
-	# _refresh_pages сразу после сборки редактора.
-	_done_preview = _build_set_preview("", {}, [])
+	# _refresh_pages сразу после сборки редактора. Превью без вертикального
+	# растягивания: строка полей идёт сразу под ним, а не у нижнего края.
+	_done_preview = _build_set_preview("", {}, [], false)
 	v.add_child(_done_preview)
 
 	var name_row := HBoxContainer.new()
@@ -1468,6 +1493,9 @@ func _build_page_done() -> Control:
 	_name_input.add_theme_stylebox_override("normal", VTKSurface.panel(true, 10))
 	_name_input.add_theme_stylebox_override("focus", VTKSurface.focus_style())
 	_name_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Имя занимает 2/3 строки: растяжимая часть делится 2:1 между полем и кнопкой
+	# хоткея, у меток ширина фиксированная.
+	_name_input.size_flags_stretch_ratio = 2.0
 	if _draft != null:
 		_name_input.text = _draft.set_name
 	name_row.add_child(_name_input)
@@ -1479,17 +1507,12 @@ func _build_page_done() -> Control:
 	hk_lbl.add_theme_font_size_override("font_size", 11)
 	name_row.add_child(hk_lbl)
 	_bind_btn = Button.new()
-	_bind_btn.custom_minimum_size = Vector2(46, 20)
+	_done_bind_btn = _bind_btn
+	_bind_btn.custom_minimum_size = Vector2(120, 20)
 	_bind_btn.add_theme_font_size_override("font_size", 10)
-	var hk_qk := _display_qk()
-	if hk_qk > 0:
-		_bind_btn.text = _keycode_to_string(hk_qk)
-		_bind_btn.add_theme_color_override("font_color", _gold)
-		VTKSurface.style_button(_bind_btn, true)
-	else:
-		_bind_btn.text = "?"
-		_bind_btn.add_theme_color_override("font_color", Color("#444"))
-		VTKSurface.style_button(_bind_btn)
+	_bind_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_bind_btn.size_flags_stretch_ratio = 1.0
+	_apply_qk_btn(_bind_btn, _display_qk())
 	_bind_btn.pressed.connect(func(): _begin_bind_pending(_bind_btn))
 	name_row.add_child(_bind_btn)
 	v.add_child(name_row)
@@ -1524,7 +1547,8 @@ func _refresh_page_done() -> void:
 	_done_preview.add_child(_build_set_preview(
 		Loc.txt("Equipment") + " · " + str(_draft.set_name if _draft else ""),
 		_draft.equip if _draft else {},
-		_draft.gear if _draft else []))
+		_draft.gear if _draft else [],
+		false))
 
 # Пересборка содержимого, а не узлов: узлы страницы переживают обновление,
 # иначе терялся бы фокус в поиске и позиция скролла.
@@ -1561,11 +1585,14 @@ func _refresh_slots() -> void:
 		return
 	_equip_grid_box.add_child(_make_equip_grid(cells, int(layout.get("cols", 6)), int(layout.get("rows", 8))))
 
-# Стиль клетки сетки экипировки: прозрачная заливка, только рамка - силуэт
-# тела обязан просвечивать сквозь клетки одежды. Активная цель - золото.
+# Стиль клетки сетки экипировки: непрозрачная заливка, слот читается как слот, а
+# не как ряд фоновых ячеек 1×1. Занятая клетка чуть теплее и с цветом рамки
+# предмета, пустая - тёмная с едва заметной рамкой. Активная цель - золото.
 func _equip_cell_style(active: bool, hover: bool = false, occupied: bool = false) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0, 0, 0, 0)
+	s.bg_color = Color("#241d13") if occupied else Color("#1e1a15")
+	if active:
+		s.bg_color = Color("#2c2417")
 	s.set_border_width_all(1)
 	s.corner_radius_all = 6
 	if active:
@@ -1573,10 +1600,23 @@ func _equip_cell_style(active: bool, hover: bool = false, occupied: bool = false
 	elif hover:
 		s.border_color = Color("#c9823a")
 	elif occupied:
-		s.border_color = Color("#3a2e20")
+		s.border_color = Color("#8a6a30")
 	else:
-		s.border_color = Color("#2a1f14")
+		s.border_color = Color("#4a443a")
 	return s
+
+# Нужно ли разворачивать иконку предмета в этом слоте. Стволы в Primary/Secondary
+# лежат вдоль горизонтали, а слот вытянут по вертикали, поэтому их иконку крутим
+# дулом вверх. Пистолеты компактны и читаются как есть - их не трогаем. Правило
+# здесь, а не в Picker: ему нужен ресурс слота, а Picker держится чистой логикой.
+func _rotates_icon(slot: String, desc: Dictionary) -> bool:
+	if slot != "Primary" and slot != "Secondary":
+		return false
+	var res: Variant = _cell_resource(desc)
+	if res == null:
+		return false
+	var path := str(res.get("resource_path"))
+	return Picker.subcategory_of(path, res.get("type")) != "Pistols"
 
 # Клетка слота в укладке: w×h ячеек, занятая показывает иконку предмета, пустая
 # (или без иконки) - имя слота. Клик - прежний _on_slot_row_input: выбор цели,
@@ -1595,15 +1635,7 @@ func _make_equip_cell(slot: String, w: int, h: int, desc: Dictionary = {}, inter
 	box.mouse_filter = Control.MOUSE_FILTER_STOP
 	box.clip_contents = true
 	box.tooltip_text = str(src.get("name", Loc.txt(slot))) if occupied else Loc.txt(slot)
-	if not interactive and src.is_empty():
-		var ds := StyleBoxFlat.new()
-		ds.bg_color = Color("#1e1a15")
-		ds.set_border_width_all(1)
-		ds.border_color = Color("#4a443a")
-		ds.corner_radius_all = 6
-		box.add_theme_stylebox_override("panel", ds)
-	else:
-		box.add_theme_stylebox_override("panel", _equip_cell_style(active, false, occupied))
+	box.add_theme_stylebox_override("panel", _equip_cell_style(active, false, occupied))
 	if interactive:
 		_attach_row_hover(box, func(hv: bool): return _equip_cell_style(active, hv, occupied))
 		_attach_motion(box)
@@ -1616,7 +1648,7 @@ func _make_equip_cell(slot: String, w: int, h: int, desc: Dictionary = {}, inter
 	box.add_child(center)
 	if tex != null:
 		var icon := TextureRect.new()
-		icon.texture = Picker.item_art(tex)
+		icon.texture = Picker.item_art(tex, _rotates_icon(slot, src))
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		var sq := maxi(16, mini(w * EQ_CELL, h * EQ_CELL) - 16)
@@ -1653,11 +1685,10 @@ func _make_equip_cell(slot: String, w: int, h: int, desc: Dictionary = {}, inter
 		drop.offset_bottom = 18
 	return box
 
-# Укладка экипировки (вариант E): фоновая сетка cols×rows рисуется всегда -
-# раскладка читается и на пустом сете; клетки слотов ложатся поверх по
-# координатам из Picker.equip_layout. Отдельных секций оружия/тела/мелочи и
-# силуэта больше нет: положение слота задаёт раскладка. Шаг сетки
-# (EQ_CELL + EQ_GAP) держит клетки на одной линии с фоном.
+# Укладка экипировки (вариант E): клетки слотов ложатся по координатам из
+# Picker.equip_layout, фоновая сетка cols×rows не рисуется - слоты и есть сетка.
+# Отдельных секций оружия/тела/мелочи и силуэта нет: положение слота задаёт
+# раскладка. Шаг сетки (EQ_CELL + EQ_GAP) держит клетки на одной линии.
 func _make_equip_grid(cells: Array, cols: int, rows: int, eq: Dictionary = {}, interactive := true) -> Control:
 	var gw := cols * EQ_CELL + (cols - 1) * EQ_GAP
 	var gh := rows * EQ_CELL + (rows - 1) * EQ_GAP
@@ -1665,23 +1696,6 @@ func _make_equip_grid(cells: Array, cols: int, rows: int, eq: Dictionary = {}, i
 	zone.custom_minimum_size = Vector2(gw, gh)
 	zone.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	zone.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var bg := GridContainer.new()
-	bg.columns = cols
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bg.add_theme_constant_override("h_separation", EQ_GAP)
-	bg.add_theme_constant_override("v_separation", EQ_GAP)
-	for i in range(cols * rows):
-		var gc := Panel.new()
-		gc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		gc.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		gc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var gs := StyleBoxFlat.new()
-		gs.bg_color = Color("#171410")
-		gs.corner_radius_all = 4
-		gc.add_theme_stylebox_override("panel", gs)
-		bg.add_child(gc)
-	zone.add_child(bg)
 	for row in cells:
 		if row.size() < 5:
 			continue
@@ -3348,10 +3362,7 @@ func _save_loadout() -> void:
 	if _pending_qk != 0:
 		LD.set_quick_key_unique(name_new, _pending_qk)
 		_pending_qk = 0
-		if _bind_btn != null:
-			_bind_btn.text = _keycode_to_string(int(LD.get_set(name_new).get("quick_key", 0)))
-			_bind_btn.add_theme_color_override("font_color", _gold)
-			VTKSurface.style_button(_bind_btn, true)
+		_apply_qk_btn(_bind_btn, int(LD.get_set(name_new).get("quick_key", 0)))
 	_draft.set_name = name_new
 	_editing_name = name_new
 	_clear_problem()

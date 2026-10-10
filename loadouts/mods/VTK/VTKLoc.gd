@@ -20,6 +20,7 @@ const RU := {
 	'Ammo': 'Патроны',
 	'All items': 'Все предметы',
 	'Apply': 'Применить',
+	'Assign key': 'Назначить клавишу',
 	'Attachments': 'Обвесы',
 	'Books': 'Книги',
 	'Cancel': 'Отмена',

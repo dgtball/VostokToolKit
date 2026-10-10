@@ -70,12 +70,19 @@ static var _art_cache: Dictionary = {}
 # игры не трогает. used_rect расширен на 3 пикселя и обрезан по границе текстуры,
 # filter_clip убирает размытие по краю. Кэш по instance_id: иконки приходят из
 # одного набора ресурсов и переживают перестроение UI.
-static func item_art(texture: Texture2D) -> Texture2D:
+#
+# rotate разворачивает кроп на 90° против часовой (дуло вверх) и отдаёт
+# ImageTexture: у стволов иконка вытянута вдоль горизонтали, а клетка Primary/
+# Secondary вытянута по вертикали. Оригинал не мутируем - get_region копирует.
+# Кэш разведён на два ключа на один instance_id (повёрнутый и нет): одна и та
+# же иконка встречается и в слоте оружия, и в каталоге.
+static func item_art(texture: Texture2D, rotate := false) -> Texture2D:
 	if texture == null:
 		return null
 	var key := texture.get_instance_id()
-	if _art_cache.has(key):
-		return _art_cache[key]
+	var ckey := key * 2 + (1 if rotate else 0)
+	if _art_cache.has(ckey):
+		return _art_cache[ckey]
 	var image := texture.get_image()
 	if image == null:
 		return texture
@@ -87,11 +94,18 @@ static func item_art(texture: Texture2D) -> Texture2D:
 	var rect := Rect2(used).grow(3.0).intersection(Rect2(Vector2.ZERO, texture.get_size()))
 	if rect.size.x <= 0 or rect.size.y <= 0:
 		return texture
-	var art := AtlasTexture.new()
-	art.atlas = texture
-	art.region = rect
-	art.filter_clip = true
-	_art_cache[key] = art
+	var art: Texture2D
+	if rotate:
+		var region := image.get_region(Rect2i(rect))
+		region.rotate_90(ClockDirection.COUNTERCLOCKWISE)
+		art = ImageTexture.create_from_image(region)
+	else:
+		var atlas := AtlasTexture.new()
+		atlas.atlas = texture
+		atlas.region = rect
+		atlas.filter_clip = true
+		art = atlas
+	_art_cache[ckey] = art
 	return art
 
 # Ключи категорий в порядке полок.
