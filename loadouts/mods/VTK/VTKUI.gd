@@ -98,6 +98,7 @@ var _gear_grid_scroll: ScrollContainer = null
 var _att_overlay: Control = null
 var _att_overlay_body: VBoxContainer = null
 var _done_preview: Control = null
+var _done_meta: Label = null
 
 # tabs
 var _tab_btns: Array = []
@@ -1507,11 +1508,13 @@ func _items_for_gear() -> Array:
 func _build_page_done() -> Control:
 	var v := _page_wrap()
 
-	# Порядок из макета: превью состава первой, чтобы состав было видно сразу,
-	# строка имени с хоткеем за ней, кнопки в конце. Превью пустое до
-	# _refresh_pages сразу после сборки редактора. Превью без вертикального
-	# растягивания: строка полей идёт сразу под ним, а не у нижнего края.
-	_done_preview = _build_set_preview({}, [], false)
+	# Порядок из макета: трёхколоночный каркас состава (экипировка, инвентарь,
+	# управление) первым, чтобы состав было видно сразу, строка имени с хоткеем
+	# и подписью счётчика за ним. Превью пустое до _refresh_pages сразу после
+	# сборки редактора. Превью без вертикального растягивания: строка полей идёт
+	# сразу под ним, а не у нижнего края.
+	_done_preview = _build_set_preview({}, [], false,
+		_make_control_column(Loc.txt("Controls").to_upper(), []))
 	v.add_child(_done_preview)
 
 	var name_row := HBoxContainer.new()
@@ -1551,23 +1554,11 @@ func _build_page_done() -> Control:
 	name_row.add_child(_bind_btn)
 	v.add_child(name_row)
 
-	# Две кнопки одного размера. "Очистить" убрано: повторяет Cancel -
-	# оба сбрасывают черновик, разница только в видимости.
-	var actions := HBoxContainer.new()
-	actions.add_theme_constant_override("separation", 4)
-	var save_btn := Button.new()
-	save_btn.text = Loc.txt("Save loadout")
-	save_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	VTKSurface.style_button(save_btn, true)
-	save_btn.pressed.connect(_save_loadout)
-	actions.add_child(save_btn)
-	var cancel_btn := Button.new()
-	cancel_btn.text = Loc.txt("Cancel")
-	cancel_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	VTKSurface.style_button(cancel_btn)
-	cancel_btn.pressed.connect(_cancel_draft)
-	actions.add_child(cancel_btn)
-	v.add_child(actions)
+	_done_meta = Label.new()
+	_done_meta.add_theme_font_size_override("font_size", 9)
+	_done_meta.add_theme_color_override("font_color", Color("#5f5347"))
+	_done_meta.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(_done_meta)
 	return v
 
 # Сводка перед сохранением: что уйдёт в сет. Пересобирается целиком тем же
@@ -1578,10 +1569,22 @@ func _refresh_page_done() -> void:
 	for child in _done_preview.get_children():
 		_done_preview.remove_child(child)
 		child.queue_free()
+	var save_btn := Button.new()
+	save_btn.text = Loc.txt("Save loadout")
+	VTKSurface.style_button(save_btn, true)
+	save_btn.pressed.connect(_save_loadout)
+	var cancel_btn := Button.new()
+	cancel_btn.text = Loc.txt("Cancel")
+	VTKSurface.style_button(cancel_btn)
+	cancel_btn.pressed.connect(_cancel_draft)
 	_done_preview.add_child(_build_set_preview(
 		_draft.equip if _draft else {},
 		_draft.gear if _draft else [],
-		false))
+		false,
+		_make_control_column(Loc.txt("Controls").to_upper(), [save_btn, cancel_btn])))
+	if _done_meta != null:
+		_done_meta.text = (Loc.txt("Loadout") + " · " +
+			str((_draft.gear if _draft else []).size()) + Loc.txt(" items")).to_upper()
 
 # Пересборка содержимого, а не узлов: узлы страницы переживают обновление,
 # иначе терялся бы фокус в поиске и позиция скролла.
