@@ -60,7 +60,6 @@ const RU := {
 	'Map ': 'Карта ',
 	'Maps': 'Карты',
 	'Medical': 'Медпредметы',
-	'Mine highlighting (in thermal)': 'Подсветка мин (в тепловизоре)',
 	'Misc': 'Разное',
 	'Muzzle': 'Дульные',
 	'Name:': 'Название:',
@@ -112,7 +111,6 @@ const RU := {
 	'Teleport already in progress': 'Телепорт уже выполняется',
 	'Teleport unavailable in the tutorial': 'Телепорт недоступен в туториале',
 	'Teleport: ': 'Телепорт: ',
-	'Thermal vision': 'Тепловизор',
 	'Trader not found: ': 'Не удалось найти трейдера: ',
 	'Traders': 'Трейдеры',
 	'Underbarrel': 'Подствольные',
@@ -181,8 +179,6 @@ const RU := {
 	'Interface': 'Интерфейс',
 	'Modules': 'Модули',
 	'Shows the kill counter in the interface': 'Показывает счётчик убийств в интерфейсе',
-	'Mines are highlighted in thermal vision mode': 'Мины подсвечиваются в режиме тепловизора',
-	'Turns on the thermal vision mode': 'Включает режим тепловизора',
 	'Switch between English and Russian': 'Переключение между английским и русским',
 }
 

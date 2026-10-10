@@ -1023,15 +1023,19 @@ const SIDE_WIDTH := 232
 
 # Размеры сетки экипировки (вариант E): фиксированная сетка 6 колонок × 8 рядов,
 # клетка EQ_CELL, зазор EQ_GAP. Колонка экипировки - 375: 6·55 + 5·4 = 350 плюс
-# поля панели. Клетка стены инвентаря (INVEN_CELL) крупнее на ту же долю, чтобы
-# обе сетки читались в одном масштабе. Раскладка слотов живёт в Picker.EQUIP_GRID;
+# поля панели. Размер клетки стены инвентаря задаётся отдельно (INVEN_CELL).
+# Раскладка слотов живёт в Picker.EQUIP_GRID;
 # здесь только геометрия. Прежних высот оружия/тела/мелочи больше нет - все клетки
 # одного размера, разный только размах (2×6, 2×2, 1×1).
 const EQ_COL_W := 375
 const EQ_CELL := 55
 const EQ_GAP := 4
-const INVEN_CELL := 55
+# Стена инвентаря: чипы 1×1, клетка 70px для читаемости иконок, всегда 8×8.
+# С размерами экипировки больше не согласована: реальный размер слота ей
+# не нужен (превью), и поле не растягивается по ширине.
+const INVEN_CELL := 70
 const INVEN_COLS := 8
+const INVEN_ROWS := 8
 const INVEN_GAP := 3
 
 # Сколько клеток влезает в ширину. Константа "_gear_grid.columns = 4" давала
@@ -1740,30 +1744,11 @@ func _make_equip_preview(title: String, eq: Dictionary) -> Control:
 		panel.add_child(_make_equip_grid(cells, int(layout.get("cols", 6)), int(layout.get("rows", 8)), eq, false))
 	return panel
 
-func _gear_cell_size(desc: Dictionary) -> Vector2i:
-	if desc.is_empty():
-		return Vector2i(1, 1)
-	var res: Variant = _cell_resource(desc)
-	if res == null:
-		return Vector2i(1, 1)
-	var sz: Variant = res.get("size")
-	if typeof(sz) == TYPE_VECTOR2:
-		var s: Vector2 = sz
-		return Vector2i(clampi(roundi(s.x), 1, 8), maxi(1, roundi(s.y)))
-	return Vector2i(1, 1)
-
 func _wall_item(desc: Dictionary) -> Control:
-	var sz := _gear_cell_size(desc)
-	var w := sz.x
-	var h := sz.y
-	var box := Panel.new()
-	box.custom_minimum_size = Vector2(w * INVEN_CELL + (w - 1) * INVEN_GAP, h * INVEN_CELL + (h - 1) * INVEN_GAP)
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var box := Control.new()
+	box.custom_minimum_size = Vector2(INVEN_CELL, INVEN_CELL)
 	box.mouse_filter = Control.MOUSE_FILTER_STOP
-	box.clip_contents = true
 	box.tooltip_text = str(desc.get("name", "?"))
-	box.add_theme_stylebox_override("panel", VTKSurface.surface("normal"))
 	var tex := _item_icon(_cell_resource(desc))
 	if tex != null:
 		var img := TextureRect.new()
@@ -1781,39 +1766,29 @@ func _wall_item(desc: Dictionary) -> Control:
 			q.add_theme_color_override("font_color", _gold)
 			q.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			q.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-			q.offset_left = -20
-			q.offset_top = -14
+			q.offset_left = -24
+			q.offset_top = -18
 			q.offset_right = -2
 			q.offset_bottom = -2
 			box.add_child(q)
 	return box
 
-# Стена инвентаря: сетка 8 колонок, забирает остаток ширины строки (EXPAND),
-# поэтому клетки фона тянутся, а предметы держатся якорями - долями от ширины и
-# высоты. Пиксельные координаты, посчитанные один раз, не пережили бы ресайз
-# окна, а доля переживает.
+# Стена инвентаря: чипы 1×1, 8 колонок, минимум 8 рядов - поле всегда квадрат
+# 581×581 (при ≤64 стеках). Не растягивается по ширине: блок превью прижат
+# влево, остаток строки - справа. Пиксельные координаты, посчитанные один
+# раз, не пережили бы ресайз окна, поэтому предметы держатся якорями -
+# долями от ширины/высоты стены.
 func _make_inventory_wall(gear: Array) -> Control:
-	var place: Array = []
-	var col := 0
-	var row := 0
-	var row_h := 1
+	var n := 0
 	for desc in gear:
-		if typeof(desc) != TYPE_DICTIONARY:
-			continue
-		var s := _gear_cell_size(desc)
-		if col + s.x > INVEN_COLS:
-			row += row_h
-			col = 0
-			row_h = 1
-		place.append({"desc": desc, "col": col, "row": row, "w": s.x, "h": s.y})
-		col += s.x
-		row_h = maxi(row_h, s.y)
-	var rows := maxi(8, row + row_h)
+		if typeof(desc) == TYPE_DICTIONARY:
+			n += 1
+	var rows := maxi(INVEN_ROWS, int(ceil(n / float(INVEN_COLS))))
 	var wall := Control.new()
 	wall.custom_minimum_size = Vector2(INVEN_COLS * INVEN_CELL + (INVEN_COLS - 1) * INVEN_GAP,
 		rows * INVEN_CELL + (rows - 1) * INVEN_GAP)
-	wall.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	wall.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	wall.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	wall.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	wall.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	wall.clip_contents = true
 	var bg := GridContainer.new()
@@ -1833,23 +1808,29 @@ func _make_inventory_wall(gear: Array) -> Control:
 		gc.add_theme_stylebox_override("panel", gs)
 		bg.add_child(gc)
 	wall.add_child(bg)
-	for p in place:
-		var item := _wall_item(p["desc"])
-		item.anchor_left = float(int(p["col"])) / float(INVEN_COLS)
-		item.anchor_right = float(int(p["col"]) + int(p["w"])) / float(INVEN_COLS)
-		item.anchor_top = float(int(p["row"])) / float(rows)
-		item.anchor_bottom = float(int(p["row"]) + int(p["h"])) / float(rows)
+	var idx := 0
+	for desc in gear:
+		if typeof(desc) != TYPE_DICTIONARY:
+			continue
+		var item := _wall_item(desc)
+		var col := idx % INVEN_COLS
+		var row := int(idx / INVEN_COLS)
+		item.anchor_left = float(col) / float(INVEN_COLS)
+		item.anchor_right = float(col + 1) / float(INVEN_COLS)
+		item.anchor_top = float(row) / float(rows)
+		item.anchor_bottom = float(row + 1) / float(rows)
 		item.offset_left = 0.0
 		item.offset_top = 0.0
 		item.offset_right = 0.0
 		item.offset_bottom = 0.0
 		wall.add_child(item)
+		idx += 1
 	return wall
 
 func _make_inventory_panel(gear: Array, meta: String = "") -> Control:
 	var panel := VBoxContainer.new()
 	panel.custom_minimum_size = Vector2(INVEN_COLS * INVEN_CELL + (INVEN_COLS - 1) * INVEN_GAP + 12, 0)
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	panel.add_theme_constant_override("separation", 6)
 	var head := HBoxContainer.new()
@@ -3006,13 +2987,11 @@ var _feed_node = null
 var _thermal_active: bool = false
 var _mines_active: bool = true
 var _kc_btn: Node = null
-var _thermal_btn: Node = null
-var _mines_btn: Node = null
 
 const TOGGLE_CFG := "user://MCM/vostok-toolkit/ui_toggles.json"
 
 func _save_toggles() -> void:
-	var data = {"kc": _kc_active, "mine": _mines_active, "thermal": _thermal_active, "lang": Loc.get_lang()}
+	var data = {"kc": _kc_active, "lang": Loc.get_lang()}
 	var d = DirAccess.open(OS.get_user_data_dir() + "/MCM/vostok-toolkit")
 	if not d:
 		d = DirAccess.open(OS.get_user_data_dir())
@@ -3066,16 +3045,8 @@ func _restore_toggles() -> void:
 		return
 	var d = j.data
 	_kc_active = bool(d.get("kc", false))
-	_mines_active = bool(d.get("mine", true))
-	_thermal_active = bool(d.get("thermal", false))
 	if _kc_btn:
 		_kc_btn.button_pressed = _kc_active
-	if _mines_btn:
-		_mines_btn.button_pressed = _mines_active
-		_mines_toggle(_mines_active)
-	if _thermal_btn:
-		_thermal_btn.button_pressed = _thermal_active
-		_thermal_toggle(_thermal_active)
 
 func _build_settings_tab(parent: VBoxContainer) -> void:
 	_lang_btns.clear()
@@ -3087,8 +3058,6 @@ func _build_settings_tab(parent: VBoxContainer) -> void:
 
 	_make_settings_header(parent, Loc.txt("Modules"))
 	_kc_btn = _make_toggle_row(parent, Loc.txt("Kill counter"), Loc.txt("Shows the kill counter in the interface"), _kc_toggle)
-	_mines_btn = _make_toggle_row(parent, Loc.txt("Mine highlighting (in thermal)"), Loc.txt("Mines are highlighted in thermal vision mode"), _mines_toggle)
-	_thermal_btn = _make_toggle_row(parent, Loc.txt("Thermal vision"), Loc.txt("Turns on the thermal vision mode"), _thermal_toggle)
 
 func _make_settings_header(parent: VBoxContainer, text: String) -> void:
 	var h := Label.new()
@@ -3271,20 +3240,6 @@ func _save_mcm_bool(key: String, v: bool) -> void:
 	cf.set_value("Bool", key, d)
 	cf.save(cfile)
 
-func _mines_toggle(on: bool) -> void:
-	_mines_active = on
-	_save_toggles()
-	_ensure_nvg()
-	if _nvg_node != null and is_instance_valid(_nvg_node):
-		_nvg_node.set_mines_enabled(on)
-
-func _thermal_toggle(on: bool) -> void:
-	_thermal_active = on
-	_save_toggles()
-	_ensure_nvg()
-	if _nvg_node != null and is_instance_valid(_nvg_node):
-		_nvg_node.set_thermal_enabled(on)
-
 # поэтому состояние кладём прямо в него и перечитываем на каждом Apply.
 
 func _ensure_nvg() -> void:
@@ -3422,13 +3377,18 @@ func _register_mcm() -> void:
 	cfg.set_value("Keycode", "key_ui_toggle", {"name": "Hotkey: Toggle UI", "default": 0, "default_type": "Keycode", "value": 0, "category": CAT, "menu_pos": 0, "tooltip": "Press once to open/close the Loadouts UI."})
 	cfg.set_value("Bool", "nvg_debug_probe", {"name": "Debug logging", "default": false, "value": false, "category": CAT, "menu_pos": 1, "tooltip": "Writes probes to user://loadouts_debug.log and enables the F4 detection overlay. Leave off during normal play; turn on only to diagnose something."})
 	var TP := "02. ThermalVision"
-	cfg.set_value("Float", "nvg_noise", {"name": "NVG noise", "default": 4.0, "value": 4.0, "minRange": 0.0, "maxRange": 60.0, "step": 0.5, "category": TP, "menu_pos": 0, "tooltip": "Grain amount over the NVG image. Lower is cleaner. Vanilla is fixed at 10."})
-	cfg.set_value("Float", "nvg_white", {"default": 1.0, "value": 1.0, "minRange": 0.05, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 1, "tooltip": "Tonemap white point while NVG is on. Pull down to darken the image and cut the shimmer.", "name": "NVG white point"})
-	cfg.set_value("Int", "thermal_palette", {"default": 0, "value": 0, "minRange": 0, "maxRange": 5, "step": 1, "category": TP, "menu_pos": 2, "tooltip": "0 = Classic, 1 = White Hot (grey), 2 = Black Hot (inverted grey), 3 = Amber, 4 = Forest, 5 = Ice.", "name": "World palette"})
-	cfg.set_value("Float", "thermal_world", {"default": 1.70, "value": 1.70, "minRange": 1.0, "maxRange": 4.0, "step": 0.05, "category": TP, "menu_pos": 3, "tooltip": "How bright the surrounding world reads in thermal.", "name": "World brightness"})
-	cfg.set_value("Int", "thermal_bot_preset", {"default": 0, "value": 0, "minRange": 0, "maxRange": 3, "step": 1, "category": TP, "menu_pos": 4, "tooltip": "0 = Orange, 1 = Red, 2 = White, 3 = Cyan.", "name": "Bot colour"})
-	cfg.set_value("Float", "thermal_far_distance", {"default": 45.0, "value": 45.0, "minRange": 5.0, "maxRange": 300.0, "step": 5.0, "category": TP, "menu_pos": 5, "tooltip": "Beyond this distance a bot switches to the dimmer marker, the same way real thermal optics lose contrast with range.", "name": "Dim distance"})
-	cfg.set_value("Float", "thermal_bot_opacity", {"default": 0.0, "value": 0.0, "minRange": 0.0, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 6, "tooltip": "0 = a bot is drawn in the thermal palette colour for its own heat signature, so it can never introduce an off-palette hue. 1 = flat colour from the Bot colour preset. Cosmetic only; detection is unaffected, so it is safe to change mid-game.", "name": "Bot marker opacity"})
+	cfg.set_value("Bool", "thermal_enabled", {"name": "Thermal vision", "default": false, "value": false, "category": TP, "menu_pos": 0, "tooltip": "Master switch for the thermal vision layer: bot heat glow, mines and the Nomad marker. Plain green NVG is unaffected while this is off."})
+	cfg.set_value("Bool", "thermal_mines", {"name": "Mine highlighting", "default": true, "value": true, "category": TP, "menu_pos": 1, "tooltip": "Highlight mines while thermal vision is on."})
+	cfg.set_value("Bool", "thermal_mark_nomads", {"name": "Mark friendly Nomads", "default": true, "value": true, "category": TP, "menu_pos": 2, "tooltip": "Draw a floating green marker over friendly Nomads so they are not shot by accident."})
+	cfg.set_value("Bool", "thermal_winter_auto", {"name": "Winter auto-dimming", "default": true, "value": true, "category": TP, "menu_pos": 3, "tooltip": "In winter (season 2) snow blows the thermal image out; dim the world so bots stay readable."})
+	cfg.set_value("Float", "thermal_winter_dim", {"name": "Winter dimming", "default": 0.55, "value": 0.55, "minRange": 0.2, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 4, "tooltip": "Multiplier applied to world brightness while winter auto-dimming is active. Lower means darker snow."})
+	cfg.set_value("Float", "nvg_noise", {"name": "NVG noise", "default": 4.0, "value": 4.0, "minRange": 0.0, "maxRange": 60.0, "step": 0.5, "category": TP, "menu_pos": 5, "tooltip": "Grain amount over the NVG image. Lower is cleaner. Vanilla is fixed at 10."})
+	cfg.set_value("Float", "nvg_white", {"default": 1.0, "value": 1.0, "minRange": 0.05, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 6, "tooltip": "Tonemap white point while NVG is on. Pull down to darken the image and cut the shimmer.", "name": "NVG white point"})
+	cfg.set_value("Int", "thermal_palette", {"default": 0, "value": 0, "minRange": 0, "maxRange": 5, "step": 1, "category": TP, "menu_pos": 7, "tooltip": "0 = Classic, 1 = White Hot (grey), 2 = Black Hot (inverted grey), 3 = Amber, 4 = Forest, 5 = Ice.", "name": "World palette"})
+	cfg.set_value("Float", "thermal_world", {"default": 1.70, "value": 1.70, "minRange": 1.0, "maxRange": 4.0, "step": 0.05, "category": TP, "menu_pos": 8, "tooltip": "How bright the surrounding world reads in thermal.", "name": "World brightness"})
+	cfg.set_value("Int", "thermal_bot_preset", {"default": 0, "value": 0, "minRange": 0, "maxRange": 3, "step": 1, "category": TP, "menu_pos": 9, "tooltip": "0 = Amber, 1 = White, 2 = Orange, 3 = Red. Living bots glow in this colour; a corpse cools to a dimmer tint before disappearing.", "name": "Bot colour"})
+	cfg.set_value("Float", "thermal_far_distance", {"default": 45.0, "value": 45.0, "minRange": 5.0, "maxRange": 300.0, "step": 5.0, "category": TP, "menu_pos": 10, "tooltip": "Beyond this distance a bot switches to the dimmer marker tier, the same way real thermal optics lose contrast with range.", "name": "Dim distance"})
+	cfg.set_value("Float", "thermal_bot_opacity", {"default": 0.85, "value": 0.85, "minRange": 0.0, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 11, "tooltip": "How strongly the bot heat glow fills when thermal is on. 1 = solid preset colour on every warm pixel. Lower lets the thermal palette bleed through, so a bot keeps its heat shape instead of reading as a flat blob. Cosmetics only; detection is unaffected.", "name": "Bot glow strength"})
 	var TR := "03. Travel"
 	cfg.set_value("Bool", "tp_unlocked_shelters_only", {"name": "Unlocked shelters only", "default": false, "value": false, "category": TR, "menu_pos": 0, "tooltip": "When enabled, teleporting to a locked shelter is refused."})
 	var KF := "04. KillFeed"
@@ -3528,11 +3488,17 @@ func _mcm_apply(cfg: ConfigFile) -> void:
 	_nvg_node.set_nvg_white = float(_mcm_key_val(cfg, "Float", "nvg_white", 1.0))
 	_nvg_node.set_palette = int(_mcm_key_val(cfg, "Int", "thermal_palette", 0))
 	_nvg_node.set_world = float(_mcm_key_val(cfg, "Float", "thermal_world", 1.70))
+	_nvg_node.set_debug_probe = bool(_mcm_key_val(cfg, "Bool", "nvg_debug_probe", false))
+	_nvg_node.set_mark_nomads = bool(_mcm_key_val(cfg, "Bool", "thermal_mark_nomads", true))
+	_nvg_node.set_winter_auto = bool(_mcm_key_val(cfg, "Bool", "thermal_winter_auto", true))
+	_nvg_node.set_winter_dim = float(_mcm_key_val(cfg, "Float", "thermal_winter_dim", 0.55))
 	_nvg_node.set_bot_preset = int(_mcm_key_val(cfg, "Int", "thermal_bot_preset", 0))
 	_nvg_node.set_far_distance = float(_mcm_key_val(cfg, "Float", "thermal_far_distance", 45.0))
-	_nvg_node.set_bot_opacity = float(_mcm_key_val(cfg, "Float", "thermal_bot_opacity", 0.0))
-	_nvg_node.set_debug_probe = bool(_mcm_key_val(cfg, "Bool", "nvg_debug_probe", false))
+	_nvg_node.set_bot_opacity = float(_mcm_key_val(cfg, "Float", "thermal_bot_opacity", 0.85))
 	_nvg_node.apply_debug_probe()
+	# Mines/thermal moved out of the Settings tab into MCM; read them here.
+	_thermal_active = bool(_mcm_key_val(cfg, "Bool", "thermal_enabled", false))
+	_mines_active = bool(_mcm_key_val(cfg, "Bool", "thermal_mines", true))
 	_apply_nvg_settings()
 
 func _tp_row(title: String, note: String, enabled: bool, callback: Callable) -> Control:
