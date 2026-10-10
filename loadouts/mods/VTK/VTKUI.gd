@@ -429,7 +429,8 @@ func _build_ui() -> void:
 	ui_theme.set_font_size("font_size", "TooltipLabel", 10)
 	_panel.theme = ui_theme
 
-	# КПК-хром: верхний рейл устройства. Только имя и версия: бренд-квадрат,
+	# КПК-хром: верхний рейл устройства: плашка `_rail_brand` + имя, версия справа.
+	# Только имя и версия: бренд-квадрат,
 	# текущая вкладка и часы из макета убраны.
 	# Отступ сверху не 4, а 24: счётчик убийств - отдельный CanvasLayer слоем
 	# 9999 поверх панели, его Label стоит в (10,10), и при верхе 4 имя
@@ -445,19 +446,41 @@ func _build_ui() -> void:
 	_panel.add_child(rail)
 	_ui_nodes.append(rail)
 
-	var name_box := VBoxContainer.new()
-	name_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	name_box.add_theme_constant_override("separation", 0)
-	rail.add_child(name_box)
+	var brand := Panel.new()
+	brand.custom_minimum_size = Vector2(26, 26)
+	brand.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var bs := StyleBoxFlat.new()
+	bs.bg_color = Color("#d48a3a")
+	bs.corner_radius_all = 4
+	brand.add_theme_stylebox_override("panel", bs)
+	rail.add_child(brand)
+	var bv := Label.new()
+	bv.text = "V"
+	bv.add_theme_font_size_override("font_size", 13)
+	bv.add_theme_color_override("font_color", Color("#0e0b08"))
+	bv.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bv.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	bv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	brand.add_child(bv)
+
 	var rname := Label.new()
 	rname.text = "VOSTOK TOOLKIT"
 	rname.add_theme_font_size_override("font_size", 11)
-	name_box.add_child(rname)
+	rname.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	rail.add_child(rname)
+
+	var fill := Control.new()
+	fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rail.add_child(fill)
+
 	var rver := Label.new()
 	rver.text = "v" + _mod_version()
-	rver.add_theme_font_size_override("font_size", 8)
+	rver.add_theme_font_size_override("font_size", 9)
 	rver.add_theme_color_override("font_color", Color("#5f5347"))
-	name_box.add_child(rver)
+	rver.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	rail.add_child(rver)
 
 	var tab_bar = HBoxContainer.new()
 	tab_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
