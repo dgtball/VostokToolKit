@@ -16,9 +16,6 @@ var _last_damager: Dictionary = {}
 var _seen_deaths: Dictionary = {}
 
 var _death_is_ironman: bool = false
-var _ironman_active: bool = false
-var _ironman_initialized: bool = false
-var _ironman_pending: bool = false
 
 # The death screen ships its own "Load Game" button: live in a normal run,
 # greyed out under permadeath. We borrow that button instead of stacking our own
@@ -51,13 +48,6 @@ var _gd_missing_logged: bool = false
 # Ironman respawn drops you somewhere random out of these instead of always
 # Highway, so a death run can't be re-learned as one fixed route.
 const IRONMAN_MAPS := ["Highway", "School", "Outpost", "Apartments"]
-
-# Respawn vitals. Temperature and oxygen are deliberately left at full --
-# they gate survival mechanics rather than fight difficulty, and a random
-# roll there just felt arbitrary. The rest roll 30..100 per death so the run
-# never starts clean.
-const IRONMAN_VITAL_MIN := 30.0
-const IRONMAN_VITAL_MAX := 100.0
 
 func _ready() -> void:
 	name = "VTKHooks"
@@ -104,20 +94,6 @@ func _poll_death() -> void:
 	var is_dead := _death_latched
 	var is_ironman := _death_latched
 	if gd != null:
-		# LoadScene runs a full New Game, which rebuilds GameData from defaults
-		# and drops permadeath again. Re-assert it every frame until it sticks,
-		# otherwise the second death arrives as DEATH: Standard and the whole
-		# Death screen goes untouched.
-		if _ironman_pending:
-			if not bool(gd.get("permadeath", false)) or bool(gd.get("isDead", false)):
-				gd.set("permadeath", true)
-				gd.set("shelter", false)
-				gd.set("isDead", false)
-				print("[VTK] re-asserted ironman after restart (permadeath was dropped)")
-			else:
-				_ironman_pending = false
-				_ironman_initialized = true
-				print("[VTK] ironman re-applied and holding")
 		# The game rewrites both flags the moment the Death scene mounts, so
 		# neither can carry the screen on its own. Read the mode on the first
 		# frame that reports it, then keep serving the screen off the mounted
@@ -401,15 +377,6 @@ func _on_controller_process(_delta: float) -> void:
 	var controller = _lib._caller if _lib else null
 	if not is_instance_valid(controller):
 		return
-	var gd = _resolve_gamedata()
-	if gd == null:
-		return
-	if bool(gd.get("tutorial")):
-		return
-	if _ironman_active and not _ironman_initialized and not bool(gd.get("isDead", false)):
-		gd.set("permadeath", true)
-		_ironman_initialized = true
-		print("[VTK] Applied ironman mode after restart")
 	var now = Time.get_ticks_msec()
 	var stale: Array = []
 	for iid in _player_hits:
@@ -436,9 +403,6 @@ func _handle_death_screen(gd, is_dead: bool, is_ironman: bool) -> void:
 		_death_find_since = 0
 		_death_gave_up = false
 		_death_is_ironman = false
-		if not is_ironman and not _ironman_pending:
-			_ironman_active = false
-			_ironman_initialized = false
 		return
 
 	if _death_load_btn != null and is_instance_valid(_death_load_btn):
@@ -555,6 +519,14 @@ func _restore_load_button() -> void:
 	_death_load_bound = null
 	_death_load_orig_conns = []
 
+func _resolve_start_season() -> int:
+	var sim = get_node_or_null("/root/Simulation")
+	if sim != null:
+		var s = sim.get("season")
+		if s != null:
+			return int(s)
+	return 1
+
 func _wipe_saves_for_restart() -> void:
 	var ldr = get_node_or_null("/root/Loader")
 	if ldr != null and ldr.has_method("FormatSave"):
@@ -583,8 +555,6 @@ func _wipe_saves_for_restart() -> void:
 
 func _on_restart_pressed(gd, root) -> void:
 	print("[VTK] Restart: starting new game...")
-	_ironman_active = _death_is_ironman
-	_ironman_pending = _death_is_ironman
 	_death_latched = false
 	_gd_node = null
 	_death_load_btn = null
@@ -595,35 +565,6 @@ func _on_restart_pressed(gd, root) -> void:
 		print("[VTK] Restart: no GameData, aborting")
 		return
 	gd.set("isDead", false)
-	var hp := 100.0
-	var st := 100.0
-	var en := 100.0
-	var hy := 100.0
-	var me := 100.0
-	if _death_is_ironman:
-		hp = randf_range(IRONMAN_VITAL_MIN, IRONMAN_VITAL_MAX)
-		st = randf_range(IRONMAN_VITAL_MIN, IRONMAN_VITAL_MAX)
-		en = randf_range(IRONMAN_VITAL_MIN, IRONMAN_VITAL_MAX)
-		hy = randf_range(IRONMAN_VITAL_MIN, IRONMAN_VITAL_MAX)
-		me = randf_range(IRONMAN_VITAL_MIN, IRONMAN_VITAL_MAX)
-	gd.health = hp
-	gd.armStamina = st
-	gd.bodyStamina = st
-	gd.energy = en
-	gd.hydration = hy
-	gd.mental = me
-	gd.temperature = 100.0
-	gd.oxygen = 100.0
-	gd.set("bleeding", false)
-	gd.set("fracture", false)
-	gd.set("rupture", false)
-	gd.set("burn", false)
-	gd.set("frostbite", false)
-	gd.set("insanity", false)
-	gd.set("dehydration", false)
-	gd.set("headshot", false)
-	gd.set("poisoning", false)
-	gd.set("tutorial", false)
 	gd.set("previousMap", "")
 	var start_map = "Cabin"
 	if _death_is_ironman:
@@ -635,10 +576,18 @@ func _on_restart_pressed(gd, root) -> void:
 		gd.set("shelter", true)
 		gd.set("permadeath", false)
 	gd.set("currentMap", start_map)
-	_wipe_saves_for_restart()
 	var ldr = get_node_or_null("/root/Loader")
-	if ldr != null:
-		ldr.LoadScene(start_map)
-		print("[VTK] Restart: loading " + start_map + " ironman=" + str(_death_is_ironman))
-	else:
+	if ldr == null:
 		print("[VTK] Restart: ERROR - Loader not found")
+		return
+	var difficulty := 1
+	if _death_is_ironman:
+		difficulty = 3
+	elif gd.get("difficulty") != null:
+		difficulty = int(gd.get("difficulty"))
+	if ldr.has_method("NewGame"):
+		ldr.call("NewGame", difficulty, _resolve_start_season())
+	else:
+		_wipe_saves_for_restart()
+	ldr.LoadScene(start_map)
+	print("[VTK] Restart: loading " + start_map + " ironman=" + str(_death_is_ironman))

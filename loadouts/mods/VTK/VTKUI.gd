@@ -2630,10 +2630,13 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 		brow.add_child(plus)
 		vbox.add_child(brow)
 
-		# Ряд В: «В инвентарь» - спавн набора в инвентарь для проверки.
+		# Ряд В: «В инвентарь» - спавн набора в инвентарь для проверки; у
+		# мебели игра не умеет держать её в рюкзаке, поэтому кнопка зовётся
+		# «В каталог» и кладёт предмет в строительный каталог.
 		# Прежняя иконка действия читалась как состояние, а не как кнопка.
 		var spawn_btn := Button.new()
-		spawn_btn.text = Loc.txt("Spawn into inventory")
+		var is_furn := str(item.get("type")).strip_edges().to_lower() == "furniture"
+		spawn_btn.text = Loc.txt("Spawn into catalog") if is_furn else Loc.txt("Spawn into inventory")
 		spawn_btn.add_theme_font_size_override("font_size", 11)
 		spawn_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		VTKSurface.style_button(spawn_btn, false, false, 6, 6, 6, 7)

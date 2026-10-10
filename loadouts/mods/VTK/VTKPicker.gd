@@ -62,6 +62,7 @@ const CATEGORIES := [
 	["knife", "Knives"],
 	["literature", "Books"],
 	["misc", "Misc"],
+	["furniture", "Furniture"],
 ]
 
 static var _art_cache: Dictionary = {}
@@ -147,8 +148,9 @@ const CATEGORY_ALIASES := {
 	"grenade": "@grenade",
 }
 
-# Порядок подкатегорий - как заголовки "-- X --" в JCMDatabase.gd, минус
-# FURNITURE: там res://Assets, это не предметы для сета.
+# Порядок подкатегорий - как заголовки "-- X --" в JCMDatabase.gd. Хвост
+# списка - группы мебели из FURN_SUB_FOLDERS: у мебели подпись считается по
+# папке ассета, а не по SUB_FOLDERS.
 const SUBCATEGORY_ORDER := ["Assault Rifles", "Sniper Rifles", "Shotguns",
 	"Pistols", "SMGs",
 	"Handgun & SMG Mags", "Rifle & Sniper Mags",
@@ -159,7 +161,9 @@ const SUBCATEGORY_ORDER := ["Assault Rifles", "Sniper Rifles", "Shotguns",
 	"Weapon Parts", "Scopes", "Suppressors", "Lasers",
 	"Hydration", "Canned Goods", "Snacks & Ingredients", "Cooked Meals",
 	"Vices", "Fish", "Garbage",
-	"Utilities & Tools", "Music", "Fishing", "Lore"]
+	"Utilities & Tools", "Music", "Fishing", "Lore",
+	"Storage & Cabinets", "Seating & Beds", "Tables & Shelving",
+	"Appliances & Electronics", "Decor"]
 
 # Имя папки -> подкатегория. Ключ - третий сегмент пути
 # ("res://Items/Weapons/AKM/AKM.tres" -> "AKM"), потому что второй сегмент
@@ -269,11 +273,70 @@ const SUB_FOLDERS := {
 	"Fishing_Rod": "Fishing", "Tackle_Box": "Fishing",
 	"Guitar": "Music", "Harmonica": "Music",
 	"Cat": "Lore", "Oil_Sample": "Lore", "Patient_Report": "Lore",
+	# Свернутые одиночные чипы: под каждым из этих предметов была своя папка,
+	# но группа из одного предмета не нужна - уводим в ближайшую существующую.
+	"Hand_Warmer": "Utility",
+	"Suitcase_Driver": "Lore",
+	"Air_Freshener": "Utilities & Tools",
+	"Glue": "Utilities & Tools",
+	"Leather": "Utilities & Tools",
+	"Museum_Plate": "Utilities & Tools",
+	"Radiator_Engine": "Utilities & Tools",
+	"Screws": "Utilities & Tools",
 	# Бронеплиты: папки нет, путь трёхсегментный, ключ - имя файла.
 	"Armor_Plate_II": "Armor Plates", "Armor_Plate_IIIA": "Armor Plates",
 	"Armor_Plate_III": "Armor Plates", "Armor_Plate_III+": "Armor Plates",
 	"Armor_Plate_IV": "Armor Plates",
 	"Backpack_Bag": "Backpacks", "Potato_Box": "Canned Goods",
+}
+
+# Подкатегории мебели. Путь мебели: res://Assets/<Папка>/..._F.tres, поэтому
+# ключ - второй сегмент пути, а не предпоследний, как в SUB_FOLDERS. Папка,
+# которой нет в таблице, остаётся без чипа.
+const FURN_SUB_FOLDERS := {
+	"Bookshelf": "Storage & Cabinets",
+	"Cabinet_Medical": "Storage & Cabinets",
+	"Cabinet_Office": "Storage & Cabinets",
+	"Cabinet_Wood": "Storage & Cabinets",
+	"Crate_Military": "Storage & Cabinets",
+	"Crate_Special": "Storage & Cabinets",
+	"Cupboard": "Storage & Cabinets",
+	"Locker": "Storage & Cabinets",
+	"Nightstand": "Storage & Cabinets",
+	"Bed_Civilian": "Seating & Beds",
+	"Bed_Nomad": "Seating & Beds",
+	"Bench_Campsite": "Seating & Beds",
+	"Chair_Office": "Seating & Beds",
+	"Chair_School": "Seating & Beds",
+	"Chair_Sun": "Seating & Beds",
+	"Sofa_Leather": "Seating & Beds",
+	"Stool_Military": "Seating & Beds",
+	"Stool_Padded": "Seating & Beds",
+	"Shelf_Metal": "Tables & Shelving",
+	"Shelf_Wall": "Tables & Shelving",
+	"Shelf_Wood": "Tables & Shelving",
+	"Table_Cabin": "Tables & Shelving",
+	"Table_Canteen": "Tables & Shelving",
+	"Table_Kitchen": "Tables & Shelving",
+	"Table_Office": "Tables & Shelving",
+	"Freezer": "Appliances & Electronics",
+	"Fridge": "Appliances & Electronics",
+	"Radio": "Appliances & Electronics",
+	"Stove": "Appliances & Electronics",
+	"Television": "Appliances & Electronics",
+	"Calendar": "Decor",
+	"Carpet": "Decor",
+	"Curtains": "Decor",
+	"Dartboard": "Decor",
+	"Painting": "Decor",
+	"Pallet": "Decor",
+	"Posters": "Decor",
+	"Rack_Coat": "Decor",
+	"Rya": "Decor",
+	"Sign_Border_Zone": "Decor",
+	"Target_Stand": "Decor",
+	"Trolley": "Decor",
+	"Weapon_Display": "Decor",
 }
 
 # Верхние папки, у которых подкатегория не считается: подписи там либо
@@ -376,9 +439,11 @@ static func category_of(slots, type) -> String:
 static func subcategory_of(path: String, type) -> String:
 	if path == "" or type == null or str(type) == "":
 		return ""
-	# У мебели папка лежит в res://Assets и подпись из неё ничего не значит:
-	# в фильтрах подкатегория не показывается, а в сет мебель не попадает.
+	# Мебель: папка - второй сегмент пути (res://Assets/<Папка>/...).
 	if str(type).strip_edges().to_lower() == "furniture":
+		var fsegs: PackedStringArray = path.trim_prefix("res://").split("/")
+		if fsegs.size() >= 2:
+			return str(FURN_SUB_FOLDERS.get(fsegs[1], ""))
 		return ""
 	var leaf := path.get_file()
 	if leaf.get_extension() == "":

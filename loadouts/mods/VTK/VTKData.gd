@@ -429,11 +429,14 @@ static func apply_loadout(name: String, equip: bool) -> void:
 			else:
 				fitted += 1
 
+	var cat_grid = interface.get("catalogGrid")
+	var cat_before := _grid_count(cat_grid)
 	var gear: Array = pack["gear"]
 	for desc in gear:
 		if typeof(desc) != TYPE_DICTIONARY:
 			continue
 		_insert_desc(interface, ig, desc)
+	var to_catalog := _grid_count(cat_grid) - cat_before
 
 	if loader and loader.has_method("SaveCharacter"):
 		loader.SaveCharacter()
@@ -449,10 +452,14 @@ static func apply_loadout(name: String, equip: bool) -> void:
 
 	print("[VTK] apply '" + name + "' equip=" + str(equip)
 		+ " fitted=" + str(fitted) + " skipped=" + str(skipped)
-		+ " grid=" + str(grid_count) + " reset=skipped saved=1")
+		+ " grid=" + str(grid_count) + " catalog=" + str(to_catalog)
+		+ " reset=skipped saved=1")
 
 	if not equip:
-		_notify(loader, Loc.txt("Loadout \"") + name + Loc.txt("\" → to inventory: ") + str(grid_count), Color.GREEN)
+		var inv_msg := Loc.txt("Loadout \"") + name + Loc.txt("\" → to inventory: ") + str(grid_count)
+		if to_catalog > 0:
+			inv_msg += Loc.txt(" · To catalog: ") + str(to_catalog)
+		_notify(loader, inv_msg, Color.GREEN)
 		return
 
 	var msg := Loc.txt("Loadout \"") + name + Loc.txt("\" applied")
@@ -462,6 +469,8 @@ static func apply_loadout(name: String, equip: bool) -> void:
 		msg += Loc.txt(" \u00b7 Occupied slots: ") + str(skipped)
 	if grid_count > 0:
 		msg += Loc.txt(" \u00b7 In inventory: ") + str(grid_count)
+	if to_catalog > 0:
+		msg += Loc.txt(" · To catalog: ") + str(to_catalog)
 	_notify(loader, msg, Color.GREEN)
 
 # ---------- internals ----------
@@ -478,13 +487,40 @@ static func _insert_desc(interface, ig, desc: Dictionary) -> int:
 	if n > 1 and not desc.has("count"):
 		one = desc.duplicate()
 		one["amount"] = 1.0
+	# Каталог постройки: мебель игра показывает не в рюкзаке, а в строительном
+	# каталоге (interface.catalogGrid), как это делает JCM. Берём ссылку один
+	# раз до цикла; без Interface (headless-тест) остаётся null.
+	var catalog = null
+	if interface != null and is_instance_valid(interface):
+		catalog = interface.get("catalogGrid")
 	for i in range(n):
 		var gsd = _build_slot_data(one)
 		if gsd == null:
 			break
-		_insert(interface, ig, gsd)
+		if catalog != null and _is_furniture(gsd.get("itemData")):
+			interface.Create(gsd, catalog, false)
+		else:
+			_insert(interface, ig, gsd)
 		placed += 1
 	return placed
+
+# Мебель нельзя выдавать в рюкзак: игровое Interface.Create для неё зовётся с
+# строительным каталогом, а не с inventoryGrid.
+static func _is_furniture(res) -> bool:
+	if res == null:
+		return false
+	return str(res.get("type")).strip_edges().to_lower() == "furniture"
+
+# Число слотов сетки - для отчёта "сколько ушло в каталог". null-безопасно:
+# без игрового дерева сетки нет, должно вернуться 0, а не упасть.
+static func _grid_count(grid) -> int:
+	if grid == null or not is_instance_valid(grid):
+		return 0
+	var n := 0
+	for c in grid.get_children():
+		if is_instance_valid(c) and c.get("slotData") != null:
+			n += 1
+	return n
 
 # Один предмет снаряжения в инвентарь целиком (count обойм или amount
 # копий): кнопка «В инвентарь» в клетке шага 2. Без игрового дерева молча
@@ -509,7 +545,9 @@ static func spawn_gear(desc: Dictionary) -> int:
 	if interface.has_method("UpdateStats"):
 		interface.UpdateStats(true)
 	if placed > 0:
-		_notify(loader, Loc.txt("Spawned: ") + str(desc.get("name", "?"))
+		var res = load(str(desc.get("path", "")))
+		var prefix := Loc.txt("Spawned to catalog: ") if _is_furniture(res) else Loc.txt("Spawned: ")
+		_notify(loader, prefix + str(desc.get("name", "?"))
 			+ " x" + str(placed), Color.GREEN)
 	return placed
 
