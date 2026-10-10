@@ -5,8 +5,10 @@ var _lib = null
 var _kill_count: int = 0
 var _player_hits: Dictionary = {}
 var _hooks_kc: Array = []
+var _hooks_notes: Array = []
 
 const KC = preload("res://mods/VTK/VTKKillCounter.gd")
+const Notes = preload("res://mods/VTK/VTKNotes.gd")
 const HIT_WINDOW_MSEC := 15000
 const SEEN_DEATHS_TTL_MSEC := 600000
 
@@ -147,8 +149,10 @@ func _do_register() -> void:
 	_hooks_kc.append(_lib.hook("ai-weapondamage-pre", _on_ai_weapon_damage))
 	_hooks_kc.append(_lib.hook("ai-explosiondamage-pre", _on_ai_explosion))
 	_hooks_kc.append(_lib.hook("ai-death-pre", _on_ai_death))
+	_hooks_notes.append(_lib.hook("trader-completetask-post", _on_task_completed))
+	_hooks_notes.append(_lib.hook("interface-initializenotes-post", _on_notes_rendered))
 	_registered = true
-	print("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + 1) + " hooks)")
+	print("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + _hooks_notes.size() + 1) + " hooks)")
 
 func _on_ai_weapon_damage(_hitbox, _damage, _vector, id) -> void:
 	var victim_ai = _lib._caller if _lib else null
@@ -396,6 +400,50 @@ func _on_controller_process(_delta: float) -> void:
 			stale_dmg.append(iid)
 	for s in stale_dmg:
 		_last_damager.erase(s)
+
+# Сдача задачи во вкладке торговца: убираем её заметку из Notes сразу.
+# Notes в этот момент закрыт, поэтому чистим только данные (Loader).
+func _on_task_completed(task_data) -> void:
+	if task_data == null:
+		return
+	var ldr = get_node_or_null("/root/Loader")
+	if ldr == null or not ldr.has_method("LoadTaskNotes") or not ldr.has_method("SaveTaskNotes"):
+		return
+	var inst = Notes.find_note(ldr.call("LoadTaskNotes"), task_data)
+	if inst != null:
+		ldr.call("SaveTaskNotes", inst, false)
+
+# Отрисовка вкладки Notes: сданные заметки убираем, у остальных меняем текст
+# списка предметов на ряд иконок. Страховка для задач, сданных в обход
+# Trader.CompleteTask, и заметок из сессий до установки мода.
+func _on_notes_rendered() -> void:
+	var iface = _lib._caller if _lib else null
+	if iface == null or not is_instance_valid(iface):
+		return
+	var list = iface.get("notesList")
+	if list == null or not (list is Node):
+		return
+	var ldr = get_node_or_null("/root/Loader")
+	var traders = null
+	if FileAccess.file_exists("user://Traders.tres"):
+		traders = load("user://Traders.tres")
+	var completed = Notes.completed_lists(traders)
+	var notes = []
+	if ldr != null and ldr.has_method("LoadTaskNotes"):
+		notes = ldr.call("LoadTaskNotes")
+	for card in list.get_children():
+		if card == null or not is_instance_valid(card):
+			continue
+		var task_data = card.get("taskData")
+		if task_data == null:
+			continue
+		if Notes.is_completed(task_data, completed):
+			var inst = Notes.find_note(notes, task_data)
+			if inst != null and ldr != null and ldr.has_method("SaveTaskNotes"):
+				ldr.call("SaveTaskNotes", inst, false)
+			card.queue_free()
+		else:
+			Notes.augment_note(card)
 
 func _handle_death_screen(gd, is_dead: bool, is_ironman: bool) -> void:
 	if not is_dead or not is_ironman:
