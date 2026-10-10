@@ -562,18 +562,43 @@ func _refresh_all() -> void:
 	_refresh_loadout_list()
 	_refresh_draft_ui()
 
-# Общий билдер превью сета: левая панель - экипировка, правая - груз.
+# Колонка управления превью/Done: шапка + вертикальный стек кнопок.
+# Принимает готовые кнопки (стиль и текст задаёт вызывающий), раскладывает
+# их столбиком по центру высоты колонки. Панель тянется по вертикали.
+func _make_control_column(title: String, buttons: Array) -> Control:
+	var panel := VBoxContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_theme_constant_override("separation", 6)
+	var head := Label.new()
+	head.text = title
+	head.add_theme_font_size_override("font_size", 9)
+	head.add_theme_color_override("font_color", _gold)
+	head.add_theme_constant_override("letter_spacing", 1)
+	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(head)
+	var stack := VBoxContainer.new()
+	stack.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	stack.add_theme_constant_override("separation", 4)
+	for btn in buttons:
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		stack.add_child(btn)
+	panel.add_child(stack)
+	return panel
+
+# Общий билдер превью сета: три колонки - экипировка, инвентарь, управление.
 # Им же собрана страница Done, чтобы состав везде выглядел одинаково. fill=false
 # на странице Done: там превью идёт по содержимому, а строка полей сразу под ним,
-# а не прижата к низу на всё окно.
-func _build_set_preview(title: String, eq: Dictionary, gear: Array, fill := true) -> Control:
+# а не прижата к низу на всё окно. controls=null - колонки управления нет.
+func _build_set_preview(eq: Dictionary, gear: Array, fill := true, controls: Control = null) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL if fill else Control.SIZE_SHRINK_BEGIN
-	row.add_child(_make_equip_preview(title, eq))
-	var meta := str(gear.size()) + Loc.txt(" items · ") + Loc.txt("grid 8 columns")
-	row.add_child(_make_inventory_panel(gear, meta))
+	row.add_child(_make_equip_preview(eq))
+	row.add_child(_make_inventory_panel(gear))
+	if controls != null:
+		row.add_child(controls)
 	return row
 
 # Превью выбранного сета в правой колонке. Схлопывается при открытом
@@ -657,8 +682,7 @@ func _refresh_preview() -> void:
 	del_btn.pressed.connect(func(): _delete_loadout(_selected_set))
 	actions.add_child(del_btn)
 
-	_preview_box.add_child(_build_set_preview(
-		Loc.txt("Equipment") + " · " + str(pack.get("name", _selected_set)), eq_d, gr_a))
+	_preview_box.add_child(_build_set_preview(eq_d, gr_a))
 	_preview_box.add_child(actions)
 
 # ============== TAB: Сеты ==============
@@ -1500,7 +1524,7 @@ func _build_page_done() -> Control:
 	# строка имени с хоткеем за ней, кнопки в конце. Превью пустое до
 	# _refresh_pages сразу после сборки редактора. Превью без вертикального
 	# растягивания: строка полей идёт сразу под ним, а не у нижнего края.
-	_done_preview = _build_set_preview("", {}, [], false)
+	_done_preview = _build_set_preview({}, [], false)
 	v.add_child(_done_preview)
 
 	var name_row := HBoxContainer.new()
@@ -1568,7 +1592,6 @@ func _refresh_page_done() -> void:
 		_done_preview.remove_child(child)
 		child.queue_free()
 	_done_preview.add_child(_build_set_preview(
-		Loc.txt("Equipment") + " · " + str(_draft.set_name if _draft else ""),
 		_draft.equip if _draft else {},
 		_draft.gear if _draft else [],
 		false))
@@ -1734,17 +1757,18 @@ func _make_equip_grid(cells: Array, cols: int, rows: int, eq: Dictionary = {}, i
 # Превью сета: та же укладка, что во вкладке, но некликабельная и с занятыми
 # клетками из сета. Колонка фиксирована (EQ_COL_W), остаток строки забирает
 # стена инвентаря.
-func _make_equip_preview(title: String, eq: Dictionary) -> Control:
+func _make_equip_preview(eq: Dictionary) -> Control:
 	var panel := VBoxContainer.new()
 	panel.custom_minimum_size = Vector2(EQ_COL_W, 0)
 	panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panel.add_theme_constant_override("separation", 6)
 	panel.add_theme_stylebox_override("panel", VTKSurface.panel(true, 6))
 	var head := Label.new()
-	head.text = title
+	head.text = Loc.txt("Equipment").to_upper()
 	head.add_theme_font_size_override("font_size", 9)
-	head.add_theme_color_override("font_color", Color("#5f5347"))
+	head.add_theme_color_override("font_color", _gold)
+	head.add_theme_constant_override("letter_spacing", 1)
 	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(head)
 	# Слоты берём из каталога, как в редакторе (_refresh_slots): превью повторяет
@@ -1850,27 +1874,20 @@ func _make_inventory_wall(gear: Array) -> Control:
 		idx += 1
 	return wall
 
-func _make_inventory_panel(gear: Array, meta: String = "") -> Control:
+func _make_inventory_panel(gear: Array) -> Control:
 	var panel := VBoxContainer.new()
 	panel.custom_minimum_size = Vector2(INVEN_COLS * INVEN_CELL + (INVEN_COLS - 1) * INVEN_GAP + 12, 0)
 	panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panel.add_theme_constant_override("separation", 6)
 	var head := HBoxContainer.new()
 	var ttl := Label.new()
-	ttl.text = Loc.txt("Inventory")
+	ttl.text = Loc.txt("Inventory").to_upper()
 	ttl.add_theme_font_size_override("font_size", 9)
 	ttl.add_theme_color_override("font_color", _gold)
+	ttl.add_theme_constant_override("letter_spacing", 1)
 	ttl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	head.add_child(ttl)
-	var meta_lbl := Label.new()
-	meta_lbl.text = meta
-	meta_lbl.add_theme_font_size_override("font_size", 9)
-	meta_lbl.add_theme_color_override("font_color", Color("#5f5347"))
-	meta_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	meta_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	meta_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	head.add_child(meta_lbl)
 	panel.add_child(head)
 	var pad := MarginContainer.new()
 	pad.add_theme_constant_override("margin_left", 6)

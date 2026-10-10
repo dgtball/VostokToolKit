@@ -169,7 +169,6 @@ const RU := {
 	'Weapons': 'Оружие',
 	' in equipment': ' в экипировке',
 	' items · ': ' предметов · ',
-	'grid 8 columns': 'сетка 8 колонок',
 	'[rounds]': '[патроны]',
 	'+ Create loadout': '+ Создать сет',
 	'" applied': '» применён',
