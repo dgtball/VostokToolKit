@@ -168,7 +168,7 @@ func _do_register() -> void:
 # from a previous save. Left alone, a difficulty-3 run is persisted back as 1 and
 # LoadWorld no longer restores permadeath. Sync the live value and patch the saved
 # world so the chosen difficulty survives regardless of hook order.
-func _on_newgame_post(difficulty, _season, _result) -> void:
+func _on_newgame_post(difficulty, _season) -> void:
 	var diff := int(difficulty)
 	var gd = _resolve_gamedata()
 	if gd != null:
@@ -411,7 +411,7 @@ func _direction_is_player(direction) -> bool:
 		return false
 	return a.dot(b) > 0.985
 
-func _on_controller_process(_delta: float, _result) -> void:
+func _on_controller_process(_delta: float) -> void:
 	var controller = _lib._caller if _lib else null
 	if not is_instance_valid(controller):
 		return
@@ -437,7 +437,7 @@ func _on_controller_process(_delta: float, _result) -> void:
 
 # Сдача задачи во вкладке торговца: убираем её заметку из Notes сразу.
 # Notes в этот момент закрыт, поэтому чистим только данные (Loader).
-func _on_task_completed(task_data, _result) -> void:
+func _on_task_completed(task_data) -> void:
 	if task_data == null:
 		return
 	_clear_ledger_key(task_data)
@@ -467,18 +467,17 @@ func _on_notes_rendered(_result) -> void:
 	if ldr != null and ldr.has_method("LoadTaskNotes"):
 		notes = ldr.call("LoadTaskNotes")
 	for card in list.get_children():
-		if card == null or not is_instance_valid(card):
+		if card == null or not is_instance_valid(card) or card.is_queued_for_deletion():
 			continue
 		var task_data = card.get("taskData")
 		if task_data == null:
 			continue
 		if Notes.is_completed(task_data, completed):
-			var inst = Notes.find_note(notes, task_data)
-			if inst != null and ldr != null and ldr.has_method("SaveTaskNotes"):
-				ldr.call("SaveTaskNotes", inst, false)
-			card.queue_free()
-		else:
-			Notes.augment_note(card, _notes_cov_map(task_data))
+			var note = Notes.find_note(notes, task_data)
+			if note != null and ldr != null and ldr.has_method("SaveTaskNotes"):
+				ldr.call("SaveTaskNotes", note, false)
+			continue
+		Notes.augment_note(card, _notes_cov_map(task_data))
 
 const TRADERS_RES := "user://Traders.tres"
 const DEPOSITS_META := "vtk_deposits"
@@ -585,13 +584,31 @@ func _notes_cov_map(task_data) -> Dictionary:
 		out[k]["got"] = int(out[k]["got"]) + dep
 	return out
 
-func _on_tasks_rendered(_result) -> void:
+# Notes-панель можно держать открытой рядом с задачами: после вклада
+# перерисовываем её карточку, иначе она остаётся со старым прогрессом до
+# повторного открытия вкладки.
+func _refresh_notes_for(iface, task_data) -> void:
+	if iface == null or not is_instance_valid(iface) or task_data == null:
+		return
+	var list = iface.get("notesList")
+	if list == null or not (list is Node):
+		return
+	var key := _key_of(task_data)
+	var cov := _notes_cov_map(task_data)
+	for card in list.get_children():
+		if card == null or not is_instance_valid(card) or card.is_queued_for_deletion():
+			continue
+		var td = card.get("taskData")
+		if td != null and _key_of(td) == key:
+			Notes.augment_note(card, cov)
+
+func _on_tasks_rendered() -> void:
 	var iface = _lib._caller if _lib else null
 	if iface == null or not is_instance_valid(iface):
 		return
 	_render_all_tasks(iface)
 
-func _on_tasks_startinput(_target, _result) -> void:
+func _on_tasks_startinput(_target) -> void:
 	var iface = _lib._caller if _lib else null
 	if iface == null or not is_instance_valid(iface):
 		return
@@ -658,7 +675,27 @@ func _make_deposit_button(card) -> Button:
 	btn.tooltip_text = Loc.txt("Deposit selected items toward this task")
 	btn.pressed.connect(_on_deposit_pressed.bind(card))
 	buttons.add_child(btn)
+	_balance_buttons(buttons)
 	return btn
+
+# Ванильное Input/Complete живут в GridContainer(columns=3) и за счёт
+# content-based столбцов имеют разную ширину. Растягиваем все кнопки задачи до
+# общего минимума — три столбца становятся равными.
+func _balance_buttons(buttons) -> void:
+	if buttons == null or not (buttons is Node):
+		return
+	var maxw := 0.0
+	var maxh := 0.0
+	for c in buttons.get_children():
+		if c is Control:
+			var m: Vector2 = (c as Control).get_combined_minimum_size()
+			maxw = max(maxw, m.x)
+			maxh = max(maxh, m.y)
+	if maxw <= 0.0:
+		return
+	for c in buttons.get_children():
+		if c is Control:
+			(c as Control).custom_minimum_size = Vector2(maxw, maxh)
 
 func _paint_cell(cells: Array, s) -> void:
 	var idx := int(s["index"])
@@ -771,6 +808,7 @@ func _on_deposit_pressed(card) -> void:
 	_consume(take)
 	_ledger_set(res.get("ledger", {}))
 	_render_task_card(iface, card)
+	_refresh_notes_for(iface, task_data)
 	if card.has_method("CanComplete"):
 		card.CanComplete()
 

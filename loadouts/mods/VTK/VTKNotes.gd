@@ -266,11 +266,26 @@ static func _add_art(parent: Control, item, alpha: float) -> void:
 static func augment_note(card, cov_map := {}) -> void:
 	if card == null:
 		return
+	_remove_blocks(card)
 	var task_data = card.get("taskData")
 	if task_data == null:
 		return
 	_apply_deliver(card, task_data, cov_map)
 	_apply_section(card.get("outputItems"), card.get("outputGrid"), task_data.get("receive"))
+
+## Снимает ранее вставленные блоки, чтобы повторный augment_note (live-refresh
+## после вклада) заменял прогресс, а не наслаивал его.
+static func _remove_blocks(card) -> void:
+	if card == null or not (card is Node):
+		return
+	for nm in ["VTKNoteDeliver", "VTKNoteReward"]:
+		var n = card.find_child(nm, true, false)
+		while n != null:
+			var p = n.get_parent()
+			if p != null:
+				p.remove_child(n)
+			n.queue_free()
+			n = card.find_child(nm, true, false)
 
 static func _apply_deliver(card, task_data, cov_map) -> void:
 	var items_label = card.get("inputItems")
@@ -289,6 +304,7 @@ static func _apply_deliver(card, task_data, cov_map) -> void:
 	if entries.is_empty():
 		return
 	var block := VBoxContainer.new()
+	block.name = "VTKNoteDeliver"
 	block.add_theme_constant_override("separation", 4)
 	block.add_child(build_progress(entries, cov_map))
 	block.add_child(build_progress_row(entries, cov_map))
@@ -310,5 +326,6 @@ static func _apply_section(items_label, grid, items) -> void:
 	if entries.is_empty():
 		return
 	var row := build_icon_row(entries)
+	row.name = "VTKNoteReward"
 	container.add_child(row)
 	container.move_child(row, section.get_index() + 1)
