@@ -98,7 +98,6 @@ var _gear_grid_scroll: ScrollContainer = null
 var _att_overlay: Control = null
 var _att_overlay_body: VBoxContainer = null
 var _done_preview: Control = null
-var _done_meta: Label = null
 
 # tabs
 var _tab_btns: Array = []
@@ -448,16 +447,16 @@ func _build_ui() -> void:
 	_ui_nodes.append(rail)
 
 	var brand := Panel.new()
-	brand.custom_minimum_size = Vector2(26, 26)
+	brand.custom_minimum_size = Vector2(30, 30)
 	brand.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var bs := StyleBoxFlat.new()
 	bs.bg_color = Color("#d48a3a")
-	bs.corner_radius_all = 4
+	bs.corner_radius_all = 8
 	brand.add_theme_stylebox_override("panel", bs)
 	rail.add_child(brand)
 	var bv := Label.new()
 	bv.text = "V"
-	bv.add_theme_font_size_override("font_size", 13)
+	bv.add_theme_font_size_override("font_size", 15)
 	bv.add_theme_color_override("font_color", Color("#0e0b08"))
 	bv.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -467,7 +466,7 @@ func _build_ui() -> void:
 
 	var rname := Label.new()
 	rname.text = "VOSTOK TOOLKIT"
-	rname.add_theme_font_size_override("font_size", 11)
+	rname.add_theme_font_size_override("font_size", 14)
 	rname.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	rail.add_child(rname)
 
@@ -478,10 +477,22 @@ func _build_ui() -> void:
 
 	var rver := Label.new()
 	rver.text = "v" + _mod_version()
-	rver.add_theme_font_size_override("font_size", 9)
+	rver.add_theme_font_size_override("font_size", 10)
 	rver.add_theme_color_override("font_color", Color("#5f5347"))
 	rver.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	rail.add_child(rver)
+
+	# Полоса под рейлом (макет .rail border-bottom): 1px на всю ширину
+	# рабочей области (как рейл и вкладки, врезка 4px).
+	var rail_sep := ColorRect.new()
+	rail_sep.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	rail_sep.offset_left = 4
+	rail_sep.offset_top = 56
+	rail_sep.offset_right = -4
+	rail_sep.offset_bottom = 57
+	rail_sep.color = Color("#2a2419")
+	rail_sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_panel.add_child(rail_sep)
 
 	var tab_bar = HBoxContainer.new()
 	tab_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
@@ -638,13 +649,15 @@ func _refresh_preview() -> void:
 	nm.add_theme_color_override("font_color", Color("#d8cdbe"))
 	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card_head.add_child(nm)
-	var cap := Label.new()
-	cap.text = (Loc.txt("Loadout") + " · " + str(gr_a.size()) + Loc.txt(" items")).to_upper()
-	cap.add_theme_font_size_override("font_size", 9)
-	cap.add_theme_color_override("font_color", Color("#5f5347"))
-	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card_head.add_child(cap)
 	_preview_box.add_child(card_head)
+
+	# Разделитель под именем сета (макет .card head border-bottom).
+	var head_sep := ColorRect.new()
+	head_sep.custom_minimum_size = Vector2(0, 1)
+	head_sep.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head_sep.color = Color("#2a2419")
+	head_sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_preview_box.add_child(head_sep)
 
 	var apply_btn := Button.new()
 	apply_btn.text = Loc.txt("Apply")
@@ -655,7 +668,6 @@ func _refresh_preview() -> void:
 	VTKSurface.style_button(edit_btn)
 	edit_btn.pressed.connect(func(): _edit_loadout(_selected_set))
 	var qk_btn := Button.new()
-	qk_btn.add_theme_font_size_override("font_size", 9)
 	if qk > 0:
 		qk_btn.text = _keycode_to_string(qk)
 		qk_btn.add_theme_color_override("font_color", _gold)
@@ -1053,21 +1065,20 @@ func _page_wrap() -> VBoxContainer:
 	return v
 
 # Ширина левой колонки по умолчанию (шаг 2 «Снаряжение» и «Точки»). Шаг 1
-# «Экипировка» идёт под колонку 375 (EQ_COL_W): укладка 6×8 шире 232.
+# «Экипировка» идёт под колонку 447 (EQ_COL_W): укладка 6×8 шире 232.
 const SIDE_WIDTH := 232
 
 # Размеры сетки экипировки (вариант E): фиксированная сетка 6 колонок × 8 рядов,
-# клетка EQ_CELL, зазор EQ_GAP. Колонка экипировки - 375: 6·55 + 5·4 = 350 плюс
-# поля панели. Размер клетки стены инвентаря задаётся отдельно (INVEN_CELL).
-# Раскладка слотов живёт в Picker.EQUIP_GRID;
+# клетка EQ_CELL, зазор EQ_GAP. Колонка экипировки - 447: 6·70 + 5·3 = 435 плюс
+# поля панели 12. Метрики (клетка 70, зазор 3) совпадают с инвентарём, поэтому
+# превью ровное по низу. Раскладка слотов живёт в Picker.EQUIP_GRID;
 # здесь только геометрия. Прежних высот оружия/тела/мелочи больше нет - все клетки
 # одного размера, разный только размах (2×6, 2×2, 1×1).
-const EQ_COL_W := 375
-const EQ_CELL := 55
-const EQ_GAP := 4
+const EQ_COL_W := 447
+const EQ_CELL := 70
+const EQ_GAP := 3
 # Стена инвентаря: чипы 1×1, клетка 70px для читаемости иконок, всегда 8×8.
-# С размерами экипировки больше не согласована: реальный размер слота ей
-# не нужен (превью), и поле не растягивается по ширине.
+# Метрики совпадают с экипировкой (70/3) и отступом 6px: ряды колонок ровные.
 const INVEN_CELL := 70
 const INVEN_COLS := 8
 const INVEN_ROWS := 8
@@ -1370,7 +1381,7 @@ func _make_facet_row(facet: Dictionary, level: bool) -> Control:
 	var key := str(facet.get("key", ""))
 	var active := _gear_sub_key == key if level else _gear_facet_key == key
 	var row := PanelContainer.new()
-	row.custom_minimum_size = Vector2(0, 23 if level else 26)
+	row.custom_minimum_size = Vector2(0, 28 if level else 31)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.mouse_filter = Control.MOUSE_FILTER_STOP
 	row.add_theme_stylebox_override("panel", _make_slot_style(active))
@@ -1508,53 +1519,26 @@ func _items_for_gear() -> Array:
 func _build_page_done() -> Control:
 	var v := _page_wrap()
 
-	# Порядок из макета D2: строка имени с хоткеем и подписью счётчика идёт
-	# над карточкой, карточка — трёхколоночный каркас состава — под ней.
-	# Превью пустое до _refresh_pages сразу после сборки редактора. Превью без
-	# вертикального растягивания: карточка идёт по содержимому, а не до нижнего
-	# края.
-	var name_row := HBoxContainer.new()
-	name_row.add_theme_constant_override("separation", 4)
-	var name_lbl := Label.new()
-	name_lbl.text = Loc.txt("Name:")
-	name_lbl.add_theme_font_size_override("font_size", 11)
-	name_row.add_child(name_lbl)
+	# Карточка трёх колонок состава; имя сета и кнопка хоткея живут в столбце
+	# «Управление», как в превью. Узлы создаются один раз и перевешиваются в
+	# столбец при каждой пересборке (_refresh_page_done), чтобы не терять текст.
 	_name_input = LineEdit.new()
 	_name_input.placeholder_text = Loc.txt("Enter a name...")
 	_name_input.add_theme_color_override("font_color", Color("#ffffff"))
 	_name_input.add_theme_color_override("placeholder_color", Color("#666666"))
 	_name_input.add_theme_stylebox_override("normal", VTKSurface.panel(true, 10))
 	_name_input.add_theme_stylebox_override("focus", VTKSurface.focus_style())
-	_name_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# Имя занимает 2/3 строки: растяжимая часть делится 2:1 между полем и кнопкой
-	# хоткея, у меток ширина фиксированная.
-	_name_input.size_flags_stretch_ratio = 2.0
 	if _draft != null:
 		_name_input.text = _draft.set_name
-	name_row.add_child(_name_input)
 
 	# Хоткей назначается до сохранения: для нового сета бинд копится в
 	# _pending_qk и применяется в _save_loadout.
-	var hk_lbl := Label.new()
-	hk_lbl.text = Loc.txt("Hotkey:")
-	hk_lbl.add_theme_font_size_override("font_size", 11)
-	name_row.add_child(hk_lbl)
 	_bind_btn = Button.new()
 	_done_bind_btn = _bind_btn
 	_bind_btn.custom_minimum_size = Vector2(120, 20)
 	_bind_btn.add_theme_font_size_override("font_size", 10)
-	_bind_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_bind_btn.size_flags_stretch_ratio = 1.0
 	_apply_qk_btn(_bind_btn, _display_qk())
 	_bind_btn.pressed.connect(func(): _begin_bind_pending(_bind_btn))
-	name_row.add_child(_bind_btn)
-	v.add_child(name_row)
-
-	_done_meta = Label.new()
-	_done_meta.add_theme_font_size_override("font_size", 9)
-	_done_meta.add_theme_color_override("font_color", Color("#5f5347"))
-	_done_meta.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(_done_meta)
 
 	_done_preview = _build_set_preview({}, [], false,
 		_make_control_column(Loc.txt("Controls").to_upper(), []))
@@ -1566,6 +1550,12 @@ func _build_page_done() -> Control:
 func _refresh_page_done() -> void:
 	if _done_preview == null:
 		return
+	# Поле имени и кнопка хоткея переживают пересборку: отцепить от старого
+	# столбца, иначе queue_free унёс бы их вместе с ним (текст и фокус).
+	if _name_input != null and _name_input.get_parent() != null:
+		_name_input.get_parent().remove_child(_name_input)
+	if _done_bind_btn != null and _done_bind_btn.get_parent() != null:
+		_done_bind_btn.get_parent().remove_child(_done_bind_btn)
 	for child in _done_preview.get_children():
 		_done_preview.remove_child(child)
 		child.queue_free()
@@ -1581,10 +1571,8 @@ func _refresh_page_done() -> void:
 		_draft.equip if _draft else {},
 		_draft.gear if _draft else [],
 		false,
-		_make_control_column(Loc.txt("Controls").to_upper(), [save_btn, cancel_btn])))
-	if _done_meta != null:
-		_done_meta.text = (Loc.txt("Loadout") + " · " +
-			str((_draft.gear if _draft else []).size()) + Loc.txt(" items")).to_upper()
+		_make_control_column(Loc.txt("Controls").to_upper(),
+			[_name_input, _done_bind_btn, save_btn, cancel_btn])))
 
 # Пересборка содержимого, а не узлов: узлы страницы переживают обновление,
 # иначе терялся бы фокус в поиске и позиция скролла.
@@ -1778,7 +1766,15 @@ func _make_equip_preview(eq: Dictionary) -> Control:
 		ph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		panel.add_child(ph)
 	else:
-		panel.add_child(_make_equip_grid(cells, int(layout.get("cols", 6)), int(layout.get("rows", 8)), eq, false))
+		var pad := MarginContainer.new()
+		pad.add_theme_constant_override("margin_left", 6)
+		pad.add_theme_constant_override("margin_top", 6)
+		pad.add_theme_constant_override("margin_right", 6)
+		pad.add_theme_constant_override("margin_bottom", 6)
+		pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pad.add_child(_make_equip_grid(cells, int(layout.get("cols", 6)),
+			int(layout.get("rows", 8)), eq, false))
+		panel.add_child(pad)
 	return panel
 
 func _wall_item(desc: Dictionary) -> Control:
@@ -2197,6 +2193,7 @@ func _set_search(t: String) -> void:
 func _entry(it) -> Dictionary:
 	return {
 		"item": it,
+		"name": str(it.get("name", "")),
 		"cat": Picker.category_of(it.get("slots"), it.get("type")),
 		"sub": Picker.subcategory_of(str(it.resource_path), it.get("type")),
 	}
@@ -3413,12 +3410,12 @@ func _register_mcm() -> void:
 	cfg.set_value("Bool", "thermal_winter_auto", {"name": "Winter auto-dimming", "default": true, "value": true, "category": TP, "menu_pos": 3, "tooltip": "In winter (season 2) snow blows the thermal image out; dim the world so bots stay readable."})
 	cfg.set_value("Float", "thermal_winter_dim", {"name": "Winter dimming", "default": 0.55, "value": 0.55, "minRange": 0.2, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 4, "tooltip": "Multiplier applied to world brightness while winter auto-dimming is active. Lower means darker snow."})
 	cfg.set_value("Float", "nvg_noise", {"name": "NVG noise", "default": 4.0, "value": 4.0, "minRange": 0.0, "maxRange": 60.0, "step": 0.5, "category": TP, "menu_pos": 5, "tooltip": "Grain amount over the NVG image. Lower is cleaner. Vanilla is fixed at 10."})
-	cfg.set_value("Float", "nvg_white", {"default": 1.0, "value": 1.0, "minRange": 0.05, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 6, "tooltip": "Tonemap white point while NVG is on. Pull down to darken the image and cut the shimmer.", "name": "NVG white point"})
+	cfg.set_value("Float", "nvg_white", {"default": 1.0, "value": 1.0, "minRange": 0.05, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 6, "tooltip": "Brightness of the NVG image. 1 = full brightness; lower darkens the whole overlay (helps cut shimmer in bright scenes).", "name": "NVG brightness"})
 	cfg.set_value("Int", "thermal_palette", {"default": 0, "value": 0, "minRange": 0, "maxRange": 5, "step": 1, "category": TP, "menu_pos": 7, "tooltip": "0 = Classic, 1 = White Hot (grey), 2 = Black Hot (inverted grey), 3 = Amber, 4 = Forest, 5 = Ice.", "name": "World palette"})
 	cfg.set_value("Float", "thermal_world", {"default": 1.70, "value": 1.70, "minRange": 1.0, "maxRange": 4.0, "step": 0.05, "category": TP, "menu_pos": 8, "tooltip": "How bright the surrounding world reads in thermal.", "name": "World brightness"})
-	cfg.set_value("Int", "thermal_bot_preset", {"default": 0, "value": 0, "minRange": 0, "maxRange": 3, "step": 1, "category": TP, "menu_pos": 9, "tooltip": "0 = Amber, 1 = White, 2 = Orange, 3 = Red. Living bots glow in this colour; a corpse cools to a dimmer tint before disappearing.", "name": "Bot colour"})
-	cfg.set_value("Float", "thermal_far_distance", {"default": 45.0, "value": 45.0, "minRange": 5.0, "maxRange": 300.0, "step": 5.0, "category": TP, "menu_pos": 10, "tooltip": "Beyond this distance a bot switches to the dimmer marker tier, the same way real thermal optics lose contrast with range.", "name": "Dim distance"})
-	cfg.set_value("Float", "thermal_bot_opacity", {"default": 0.85, "value": 0.85, "minRange": 0.0, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 11, "tooltip": "How strongly the bot heat glow fills when thermal is on. 1 = solid preset colour on every warm pixel. Lower lets the thermal palette bleed through, so a bot keeps its heat shape instead of reading as a flat blob. Cosmetics only; detection is unaffected.", "name": "Bot glow strength"})
+	cfg.set_value("Int", "thermal_bot_preset", {"default": 0, "value": 0, "minRange": 0, "maxRange": 3, "step": 1, "category": TP, "menu_pos": 9, "tooltip": "0 = Amber, 1 = White, 2 = Orange, 3 = Red. Living bots glow in this colour; a corpse cools from the head down before disappearing.", "name": "Bot colour"})
+	cfg.set_value("Float", "thermal_far_distance", {"default": 45.0, "value": 45.0, "minRange": 5.0, "maxRange": 300.0, "step": 5.0, "category": TP, "menu_pos": 10, "tooltip": "Bots and mines only glow within this distance; past it they read as ordinary scenery. 5 = only right beside you, 300 = the whole map.", "name": "Distance"})
+	cfg.set_value("Float", "thermal_bot_opacity", {"default": 0.85, "value": 0.85, "minRange": 0.0, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 11, "tooltip": "How brightly the bot heat glow reads. 1 = solid preset colour; lower dims the glow so a bot keeps its heat shape instead of a flat blob, down to a faint trace at 0. Cosmetics only; detection is unaffected.", "name": "Bot glow strength"})
 	var TR := "03. Travel"
 	cfg.set_value("Bool", "tp_unlocked_shelters_only", {"name": "Unlocked shelters only", "default": false, "value": false, "category": TR, "menu_pos": 0, "tooltip": "When enabled, teleporting to a locked shelter is refused."})
 	var KF := "04. KillFeed"

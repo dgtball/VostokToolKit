@@ -752,10 +752,17 @@ func _selected_stacks(iface) -> Array:
 		var item = sd.get("itemData")
 		if item == null:
 			continue
+		# Нестакающиеся предметы игра хранит с amount = 0: Task.Initialize
+		# проставляет amount только при defaultAmount != 0, поэтому почти все
+		# сдаваемые предметы лежат в инвентаре нулём. Для вклада такая ячейка —
+		# ровно один предмет, иначе apply() пропустит её как пустую.
+		var amt := int(sd.get("amount", 0))
+		if amt < 1:
+			amt = 1
 		out.append({
 			"file": str(item.get("file")),
 			"name": str(item.get("name")),
-			"amount": int(sd.get("amount", 0)),
+			"amount": amt,
 			"ref": cell,
 		})
 	return out

@@ -2,12 +2,11 @@ shader_type canvas_item;
 
 // NVG / thermal overlay. Replaces the vanilla NVG ColorRect shader (see
 // VTKNVG.gd for why the swap is safe). The whole frame is read back through
-// the false-colour thermal palette; bots, mines and the friendly Nomad marker
-// are pulled out, by key colours emitted by their own unshaded overlay meshes.
-// Those keys are the DETECTOR: fixed by design and kept in lockstep with
-// VTKNVG.HOT_KEY / HOT_FAR_KEY / DEAD_KEY / DEAD_FAR_KEY / MINE_KEY /
-// MARKER_KEY and the overlay materials that emit them. The *Color uniforms are
-// the freely chosen substitution colours.
+// the false-colour thermal palette; bot heat, mines and the friendly Nomad
+// marker are pulled out by the EXACT detector keys their own unshaded materials
+// emit: VTKNVG.BOT_WARM_KEY / BOT_MID_KEY / BOT_COLD_KEY (VTKBot.gdshader) plus
+// MINE_KEY / MARKER_KEY. Keep that list in lockstep with VTKNVG.gd. The *Color
+// uniforms are the freely chosen substitution colours.
 
 uniform sampler2D screen_texture : hint_screen_texture, repeat_disable, filter_linear_mipmap;
 uniform vec4 tint : source_color = vec4(0.47, 0.67, 0.51, 1.0);
@@ -23,31 +22,27 @@ uniform float thermalDarken : hint_range(1.0, 4.0, 0.01) = 1.70;
 uniform int worldPaletteMode = 0;
 uniform bool debugDetect = false;
 uniform bool markNomads = false;
+// Final image brightness while NVG is on. Applied to the composited overlay, so
+// unlike the old Environment.tonemap_white poke it is actually visible.
+uniform float nvgWhite : hint_range(0.05, 1.0, 0.05) = 1.0;
 
 uniform vec3 mineKey : source_color = vec3(0.0, 0.0, 1.0);
 // Green is emitted only by the floating Nomad marker mesh (VTKNVG.MARKER_KEY),
 // never by scenery, so the tight tolerance below cannot be tripped by foliage.
 uniform vec3 markerKey : source_color = vec3(0.0, 1.0, 0.0);
 
-// Bot glow: two detectors per "heat" tier (near + far). Living bots emit the
-// hot pair; a corpse keeps emitting it while still warm, then switches to the
-// cool pair once DEATH_WARM_SECS pass and to the cold pair once DEATH_COOL_SECS
-// pass (VTKNVG.gd) -- a stepped, readable "the body is cooling down" without
-// per-bot shader state. The keys (magenta / cyan) are fixed the way they were
-// proven; only *Color substitutions change with the Bot colour preset.
-uniform vec3 hotKey : source_color = vec3(1.0, 0.0, 1.0);
-uniform vec3 hotFarKey : source_color = vec3(0.6, 0.0, 0.6);
-uniform vec3 deadKey : source_color = vec3(0.0, 0.7, 1.0);
-uniform vec3 deadFarKey : source_color = vec3(0.0, 0.35, 0.5);
+// Bot heat: three detector keys on one body. VTKBot.gdshader emits warm at the
+// feet, stepping through mid to cold up the body as a corpse cools, so the
+// detector below always sees a PURE key while the substitution colour stays a
+// free choice. The warm/mid/cold *Color uniforms are the preset readout.
+uniform vec3 warmKey : source_color = vec3(1.0, 0.0, 1.0);
+uniform vec3 midKey : source_color = vec3(1.0, 1.0, 0.0);
+uniform vec3 coldKey : source_color = vec3(0.0, 0.7, 1.0);
 uniform float botHighlightOpacity : hint_range(0.0, 1.0, 0.01) = 0.85;
 
-// Display colours, synced with BOT_PRESETS[0] (Amber) in VTKNVG.gd: the hot
-// pair is full-strength warm, the cool pair is dim and the cold pair dimmer
-// still, so a body visibly loses heat as the tiers advance.
-uniform vec3 hotColor : source_color = vec3(1.0, 0.8, 0.15);
-uniform vec3 hotFarColor : source_color = vec3(0.6, 0.48, 0.09);
-uniform vec3 deadColor : source_color = vec3(0.55, 0.45, 0.28);
-uniform vec3 deadFarColor : source_color = vec3(0.28, 0.3, 0.4);
+uniform vec3 warmColor : source_color = vec3(0.6, 0.48, 0.09);
+uniform vec3 midColor : source_color = vec3(0.55, 0.45, 0.28);
+uniform vec3 coldColor : source_color = vec3(0.28, 0.3, 0.4);
 
 uniform vec3 mineColor : source_color = vec3(0.7, 0.1, 0.07);
 uniform vec3 markerColor : source_color = vec3(0.2, 1.0, 0.2);
@@ -128,10 +123,9 @@ void fragment()
 		// Pick whichever key is CLOSEST: with a wide tolerance two keys'
 		// ranges can overlap on a single pixel, and an if/elif chain would
 		// let an earlier check steal matches that belong to a later key.
-		float dBot = distance(pixelColor.rgb, hotKey);
-		float dBotFar = distance(pixelColor.rgb, hotFarKey);
-		float dDead = distance(pixelColor.rgb, deadKey);
-		float dDeadFar = distance(pixelColor.rgb, deadFarKey);
+		float dWarm = distance(pixelColor.rgb, warmKey);
+		float dMid = distance(pixelColor.rgb, midKey);
+		float dCold = distance(pixelColor.rgb, coldKey);
 		float dMine = distance(pixelColor.rgb, mineKey);
 		float dMark = distance(pixelColor.rgb, markerKey);
 		// The Nomad marker key is very tight and only live while marking is on;
@@ -139,8 +133,8 @@ void fragment()
 		if (!markNomads || dMark > 0.15) {
 			dMark = 10.0;
 		}
-		float minD = min(min(dBot, dBotFar), min(dDead, dDeadFar));
-		minD = min(min(minD, dMine), dMark);
+		float minD = min(min(dWarm, dMid), min(dCold, dMine));
+		minD = min(minD, dMark);
 
 		// The framebuffer can be read back only after shading, so a CPU probe
 		// can never see the pre-shader frame. Let the shader report itself:
@@ -152,22 +146,20 @@ void fragment()
 			float luminance = clamp(rawLuminance * thermalDarken, 0.0, 1.0);
 			vec3 backgroundColor = ThermalPalette(luminance) * 0.7;
 			if (minD < 0.4) {
-				vec3 subColor = backgroundColor;
+				vec3 subColor;
 				if (minD == dMine) {
 					subColor = mineColor;
 				} else if (minD == dMark) {
 					subColor = markerColor;
 				} else {
-// Bot glow: living bots emit the hot tier; a corpse cools down
-				// the ladder (hot -> dead -> deadFar) as DEATH_WARM_SECS and
-				// DEATH_COOL_SECS pass in VTKNVG.gd. Fade toward the weather
-				// background, not toward black, so a low opacity leaves a
-				// readable heat readout on the palette.
-					vec3 botColor = hotColor;
-					if (minD == dBotFar) botColor = hotFarColor;
-					else if (minD == dDead) botColor = deadColor;
-					else if (minD == dDeadFar) botColor = deadFarColor;
-					subColor = mix(backgroundColor, botColor, botHighlightOpacity);
+					// Bot heat: the key says WHERE on the cooling ladder the
+					// pixel sits, the preset says what that reads as. Only the
+					// preset colour is scaled by glow strength, so the slider
+					// can never leak the world palette onto a bot.
+					vec3 botColor = warmColor;
+					if (minD == dMid) botColor = midColor;
+					else if (minD == dCold) botColor = coldColor;
+					subColor = botColor * (0.2 + 0.8 * botHighlightOpacity);
 				}
 				color = vec4(subColor, pixelColor.a);
 			} else {
@@ -177,6 +169,7 @@ void fragment()
 	} else {
 		color = pixelColor * tint;
 	}
+	color.rgb *= nvgWhite;
 	color += noiseEffect;
 	color.rgb *= (1.0 + goggleOutlines);
 	COLOR = mix(vec4(0.0, 0.0, 0.0, 1.0), color, goggleMask);

@@ -9,11 +9,14 @@ extends Node
 #      a "noise" uniform we can actually drive (vanilla's own shader declares
 #      noise as a `const`, which is why BetterNVG's set_shader_parameter
 #      calls there did nothing).
-#   2. Bots, mines and the friendly Nomad marker each carry a fixed emissive
-#      "key" color. Bots and mines swap between the real mesh and a duplicated
-#      overlay mesh that emits the key, so the only bot/mine pixel on screen IS
-#      the key color. The marker is a separate small billboarded key mesh over
-#      a Nomad's head.
+#   2. Bots, mines and the friendly Nomad marker each carry fixed emissive
+#      "key" colours. Mines are painted by material_override, so the whole
+#      on-screen shell IS the key pixel. A bot's key body is a DUPLICATE of its
+#      real mesh (a sibling carrying VTKBot.gdshader) with the real mesh hidden,
+#      because the game's own bot geometry ignores an external material_override;
+#      that shader picks the key by pixel height so a corpse can cool from the
+#      extremities inward. The marker is a separate small billboarded key mesh
+#      over a Nomad's head.
 #   3. The shader samples the screen, finds whichever key is nearest, and
 #      substitutes a display color. Everything else goes through the
 #      false-color thermal palette.
@@ -25,6 +28,7 @@ extends Node
 const GAME_DATA_RES := "res://Resources/GameData.tres"
 const NVG_SCRIPT_SUFFIX := "NVG.gd"
 const SHADER_RES := "res://mods/VTK/VTKNVG.gdshader"
+const BOT_SHADER_RES := "res://mods/VTK/VTKBot.gdshader"
 
 const DEBUG_MINES := false
 const DEBUG_LOG := "user://loadouts_debug.log"
@@ -43,22 +47,18 @@ const MARKER_KEY := Color(0.0, 1.0, 0.0)
 const MARKER_SCREEN_SCALE := 0.035
 const MARKER_MIN_SCALE := 0.3
 
-# Bot glow: two heat tiers, each a near/far pair of detector keys. Living bots
-# (and freshly-dead bodies) emit the hot pair; a corpse drops to the cool pair
-# once DEATH_WARM_SECS pass, then to the cold pair once DEATH_COOL_SECS pass --
-# a stepped, readable "the body is cooling down" without per-bot shader state.
-# Keys are fixed and proven apart from each other and from MINE_KEY/MARKER_KEY;
-# only the substitution colours are preset-driven.
-const HOT_KEY := Color(1.0, 0.0, 1.0)
-const HOT_FAR_KEY := Color(0.6, 0.0, 0.6)
-const DEAD_KEY := Color(0.0, 0.7, 1.0)
-const DEAD_FAR_KEY := Color(0.0, 0.35, 0.5)
-# A body stays highlighted up to DEATH_COOLDOWN seconds after death: hot while
-# DEATH_WARM_SECS, then the cool tier, then the cold tier, then the overlay
-# hides entirely -- each step is dimmer, so the glow "dies down" gradually.
-const DEATH_COOLDOWN := 180.0
-const DEATH_WARM_SECS := 40.0
-const DEATH_COOL_SECS := 120.0
+# Bot heat: three detector keys emitted by VTKBot.gdshader, chosen by a pixel's
+# height on the body (feet warm, head cold) so a corpse reads as cooling from
+# the extremities inward. A living bot emits warm everywhere; as DEATH_COOLDOWN
+# passes the cold front descends from the head toward the feet. Keys are fixed
+# and mutually apart (and away from MINE_KEY/MARKER_KEY); only the substitution
+# colours are preset-driven.
+const BOT_WARM_KEY := Color(1.0, 0.0, 1.0)
+const BOT_MID_KEY := Color(1.0, 1.0, 0.0)
+const BOT_COLD_KEY := Color(0.0, 0.7, 1.0)
+# A body stays highlighted for DEATH_COOLDOWN seconds after death, cooling from
+# the head down, then the glow hides entirely.
+const DEATH_COOLDOWN := 120.0
 
 var _dbg_f: FileAccess = null
 var _dbg_summary_cd: float = 0.0
@@ -100,16 +100,16 @@ const TICK := 0.1
 # shader's mineKey uniform and the unshaded overlay material that emits it.
 const MINE_KEY := Color(0.0, 0.0, 1.0)
 
-# Bot glow substitution colours, per preset: [hot, hotFar, cool, cold]. These
-# never reach the detector -- the keys in HOT_KEY/DEAD_KEY are fixed and the
-# display colours are driven from here, so switching a preset cannot shift the
-# world palette. The last two are the corpse endurance tiers: each cooler AND
-# dimmer, so a body visibly loses heat over time.
+# Bot glow substitution colours, per preset: [warm, mid, cold]. These never
+# reach the detector -- the keys in BOT_WARM_KEY/BOT_MID_KEY/BOT_COLD_KEY are
+# fixed and the display colours are driven from here, so switching a preset
+# cannot shift the world palette. The three tones are the cooling readout:
+# warm at the (still-warm) feet, mid partway up, cold at the head.
 const BOT_PRESETS := [
-	[Color(1.0, 0.8, 0.15), Color(0.6, 0.48, 0.09), Color(0.55, 0.45, 0.28), Color(0.28, 0.3, 0.4)],   # Amber -> bronze -> slate
-	[Color(1.0, 1.0, 1.0), Color(0.6, 0.6, 0.6), Color(0.58, 0.56, 0.6), Color(0.3, 0.32, 0.38)],     # White -> warm grey -> cold grey
-	[Color(1.0, 0.55, 0.15), Color(0.6, 0.33, 0.09), Color(0.5, 0.34, 0.2), Color(0.26, 0.22, 0.24)], # Orange -> dim orange -> nearly black
-	[Color(1.0, 0.25, 0.15), Color(0.6, 0.15, 0.09), Color(0.5, 0.22, 0.16), Color(0.28, 0.18, 0.2)],  # Red -> dim red -> barely warm
+	[Color(0.6, 0.48, 0.09), Color(0.55, 0.45, 0.28), Color(0.28, 0.3, 0.4)],   # Amber -> bronze -> slate
+	[Color(0.6, 0.6, 0.6), Color(0.58, 0.56, 0.6), Color(0.3, 0.32, 0.38)],     # White -> warm grey -> cold grey
+	[Color(0.6, 0.33, 0.09), Color(0.5, 0.34, 0.2), Color(0.26, 0.22, 0.24)],   # Orange -> dim orange -> nearly black
+	[Color(0.6, 0.15, 0.09), Color(0.5, 0.22, 0.16), Color(0.28, 0.18, 0.2)],   # Red -> dim red -> barely warm
 ]
 const BOT_PRESET_NAMES: Array[String] = ["Amber", "White", "Orange", "Red"]
 
@@ -120,11 +120,13 @@ var set_thermal: bool = false
 var set_mines: bool = true
 var set_palette: int = 0
 var set_world: float = 1.70
-# Bot glow. 0.85 is the default on purpose: at 0 the glow fades into the bot's
-# own palette heat signature, and around night-time scenery that reads near
-# black -- which made bots effectively invisible. Raise/lower from MCM.
+# Bot glow. 0.85 is the default on purpose: at 0 the glow dims to a faint trace
+# of the preset colour (0.2 of it), which around night-time scenery reads near
+# black and made bots effectively invisible. Raise/lower from MCM.
 var set_bot_opacity: float = 0.85
 var set_bot_preset: int = 0
+# Glow range: bots and mines only glow within this distance (MCM "Glow range").
+# Past it they read as ordinary scenery, the way real optics lose a signature.
 var set_far_distance: float = 45.0
 # Friendly Nomads show a floating ▼ marker on top of their (warm) body glow.
 var set_mark_nomads: bool = true
@@ -143,13 +145,12 @@ var _nvg_root: Node = null
 var _nvg_mat_node: Node = null
 var _installed: bool = false
 
-var _mat_hot: StandardMaterial3D = null
-var _mat_hot_far: StandardMaterial3D = null
-var _mat_dead: StandardMaterial3D = null
-var _mat_dead_far: StandardMaterial3D = null
 var _mat_mine: StandardMaterial3D = null
 var _mat_marker: StandardMaterial3D = null
 var _marker_mesh: Mesh = null
+# Shared bot body shader; each bot gets its own ShaderMaterial instance off it,
+# because "cool" and "footY" are per-bot uniforms (VTKBot.gdshader).
+var _bot_shader: Shader = null
 
 var _bots: Dictionary = {}
 var _mines: Dictionary = {}
@@ -191,16 +192,17 @@ func _ready() -> void:
 	if ResourceLoader.exists(SHADER_RES):
 		_shader = load(SHADER_RES) as Shader
 
-	# Key materials emit the detector pixels. Seeded from the key constants so
-	# they can never drift from the shader uniforms of the same name. Bot glow
-	# uses one material per (state, tier) pair; the marker material is a real
-	# key material too -- the Label3D route produced a font glyph that never
+	# Load the bot body shader. A missing file leaves _bot_shader null and bots
+	# simply never get painted, rather than painting them with a broken material.
+	if ResourceLoader.exists(BOT_SHADER_RES):
+		_bot_shader = load(BOT_SHADER_RES) as Shader
+
+	# Key materials emit the detector pixels. Mines and the Nomad marker use a
+	# plain unshaded+emission StandardMaterial3D; bots use VTKBot.gdshader (per
+	# bot), which emits warm/mid/cold by pixel height. The marker material is a
+	# real key material too -- the Label3D route produced a font glyph that never
 	# landed on the pure key, so it got palettised; a mesh with the same
 	# unshaded+emission setup does not.
-	_mat_hot = _key_material(HOT_KEY)
-	_mat_hot_far = _key_material(HOT_FAR_KEY)
-	_mat_dead = _key_material(DEAD_KEY)
-	_mat_dead_far = _key_material(DEAD_FAR_KEY)
 	_mat_mine = _key_material(MINE_KEY)
 	_mat_marker = _key_material(MARKER_KEY)
 	_mat_marker.no_depth_test = true
@@ -353,10 +355,6 @@ func _apply_uniforms() -> void:
 	#
 	# Kept ahead of the _installed check on purpose -- if this were gated on the
 	# shader being live, the two sides could desync during startup.
-	_key_set(_mat_hot, HOT_KEY)
-	_key_set(_mat_hot_far, HOT_FAR_KEY)
-	_key_set(_mat_dead, DEAD_KEY)
-	_key_set(_mat_dead_far, DEAD_FAR_KEY)
 	_key_set(_mat_mine, MINE_KEY)
 	_key_set(_mat_marker, MARKER_KEY)
 	if not _installed or _nvg_mat_node == null or not is_instance_valid(_nvg_mat_node):
@@ -376,18 +374,17 @@ func _apply_uniforms() -> void:
 	nvg_mat.set_shader_parameter("worldPaletteMode", set_palette)
 	nvg_mat.set_shader_parameter("debugDetect", _debug_detect)
 	nvg_mat.set_shader_parameter("markNomads", set_mark_nomads)
+	nvg_mat.set_shader_parameter("nvgWhite", set_nvg_white)
 	nvg_mat.set_shader_parameter("botHighlightOpacity", set_bot_opacity)
-	nvg_mat.set_shader_parameter("hotKey", HOT_KEY)
-	nvg_mat.set_shader_parameter("hotFarKey", HOT_FAR_KEY)
-	nvg_mat.set_shader_parameter("deadKey", DEAD_KEY)
-	nvg_mat.set_shader_parameter("deadFarKey", DEAD_FAR_KEY)
+	nvg_mat.set_shader_parameter("warmKey", BOT_WARM_KEY)
+	nvg_mat.set_shader_parameter("midKey", BOT_MID_KEY)
+	nvg_mat.set_shader_parameter("coldKey", BOT_COLD_KEY)
 	nvg_mat.set_shader_parameter("mineKey", MINE_KEY)
 	nvg_mat.set_shader_parameter("markerKey", MARKER_KEY)
 	var p: Array = BOT_PRESETS[clampi(set_bot_preset, 0, BOT_PRESETS.size() - 1)]
-	nvg_mat.set_shader_parameter("hotColor", p[0])
-	nvg_mat.set_shader_parameter("hotFarColor", p[1])
-	nvg_mat.set_shader_parameter("deadColor", p[2])
-	nvg_mat.set_shader_parameter("deadFarColor", p[3])
+	nvg_mat.set_shader_parameter("warmColor", p[0])
+	nvg_mat.set_shader_parameter("midColor", p[1])
+	nvg_mat.set_shader_parameter("coldColor", p[2])
 
 
 # gameData.season == 2 is winter (default 1). Gated on the setting so the
@@ -416,7 +413,6 @@ func _process(delta: float) -> void:
 	# Overlay visibility tracks NVG state every frame, not every TICK: the tick
 	# gate below runs the world scan, but if key overlays waited for it, a quick
 	# NVG toggle left them a frame behind on the flash of raw key pixels.
-	_apply_env()
 	for id in _bots.keys():
 		_update_bot(id, on)
 	for id in _mines.keys():
@@ -451,10 +447,11 @@ func _process(delta: float) -> void:
 func _cdist(a: Color, b: Color) -> float:
 	return sqrt(pow(a.r - b.r, 2.0) + pow(a.g - b.g, 2.0) + pow(a.b - b.b, 2.0))
 
-# Reads the real framebuffer back and reports what the shader actually sees at
-# a few bots. The key match is a screen-space distance test with a 0.4 cutoff,
-# so "the marker washed out" is only decidable from measured pixels. Samples at
-# the marker height, since that is where a friendly Nomad's key mesh sits.
+# Reads the real framebuffer back and reports the composited pixel at a few
+# bots. Because substitution happens on the GPU, the sample is the OUTPUT: a
+# colour close to a preset display colour means the detector fired (SUB); the
+# raw-key distance only tells us about pixels it missed. Samples at head height,
+# which is the first zone to cool.
 func _probe_pixels() -> void:
 	var vp := get_viewport()
 	if vp == null:
@@ -475,20 +472,32 @@ func _probe_pixels() -> void:
 	if nvg_mat is ShaderMaterial:
 		tint = str((nvg_mat as ShaderMaterial).get_shader_parameter("tint"))
 	_dbg("[px] world=%s tint=%s screen=%dx%d" % [str(set_world), tint, w, h])
-	var keys := {
-		"hot": HOT_KEY,
-		"hotFar": HOT_FAR_KEY,
-		"dead": DEAD_KEY,
-		"deadFar": DEAD_FAR_KEY,
+	# Robot keys are the raw detector colours; once substitution has happened the
+	# output no longer matches them (it is a preset colour), so the raw distance
+	# is only meaningful for a pixel the detector MISSED. The DISP distance is
+	# the useful one: close to a substitution colour means the detector fired.
+	var rkeys := {
+		"warm": BOT_WARM_KEY,
+		"mid": BOT_MID_KEY,
+		"cold": BOT_COLD_KEY,
 		"mine": MINE_KEY,
 		"marker": MARKER_KEY,
+	}
+	var p: Array = BOT_PRESETS[clampi(set_bot_preset, 0, BOT_PRESETS.size() - 1)]
+	var g: float = 0.2 + 0.8 * set_bot_opacity
+	var disp := {
+		"warm": p[0] * g,
+		"mid": p[1] * g,
+		"cold": p[2] * g,
+		"mine": Color(0.7, 0.1, 0.07),
+		"marker": Color(0.2, 1.0, 0.2),
 	}
 	var done := 0
 	# Pool bots sit parked at y=100/110/120, far outside the camera, so every
 	# one of them fails the screen-bounds test and the loop used to report
 	# nothing at all. Tally the skips so an empty probe is explainable.
 	var skip_noview := 0
-	var skip_overlay := 0
+	var skip_unpainted := 0
 	var skip_bounds := 0
 	for id in _bots.keys():
 		var e = _bots.get(id)
@@ -501,8 +510,9 @@ func _probe_pixels() -> void:
 		if "active" in node and not bool(node.get("active")):
 			skip_noview += 1
 			continue
-		if not (bool(e["overlay"]) if "overlay" in e else false):
-			skip_overlay += 1
+		var overlay = e.get("overlay")
+		if overlay == null or not is_instance_valid(overlay):
+			skip_unpainted += 1
 			continue
 		var sp := cam.unproject_position(node.global_position + Vector3(0.0, 1.0, 0.0))
 		if sp.x < 1.0 or sp.y < 1.0 or sp.x >= float(w - 1) or sp.y >= float(h - 1):
@@ -513,16 +523,21 @@ func _probe_pixels() -> void:
 			str(node.name), str(e["friendly"]), c.r, c.g, c.b,
 			(0.299 * c.r + 0.587 * c.g + 0.114 * c.b)]
 		var best := 999.0
-		for k in keys.keys():
-			var d := _cdist(c, keys[k])
+		for k in rkeys.keys():
+			var d := _cdist(c, rkeys[k])
 			line += "%s=%.2f " % [String(k), d]
 			if d < best:
 				best = d
-		_dbg(line + "MIN=%.2f %s" % [best, ("MATCH" if best < 0.4 else "NO-MATCH")])
+		var bestDisp := 999.0
+		for k in disp.keys():
+			bestDisp = minf(bestDisp, _cdist(c, disp[k]))
+		_dbg(line + "MIN=%.2f %s DISP=%.2f %s" % [
+			best, ("MATCH" if best < 0.4 else "NO-MATCH"),
+			bestDisp, ("SUB" if bestDisp < 0.12 else "RAW")])
 		done += 1
 	if done == 0:
-		_dbg("[px] no sampleable bot: inactive=%d no_overlay=%d off_screen=%d of %d" % [
-			skip_noview, skip_overlay, skip_bounds, _bots.size()])
+		_dbg("[px] no sampleable bot: inactive=%d unpainted=%d off_screen=%d of %d" % [
+			skip_noview, skip_unpainted, skip_bounds, _bots.size()])
 
 
 func _count_friendly() -> int:
@@ -531,24 +546,6 @@ func _count_friendly() -> int:
 		if _bots[id]["friendly"]:
 			n += 1
 	return n
-
-
-func _apply_env() -> void:
-	if set_nvg_white <= 0.0 or not _nvg_active():
-		return
-	var env := _env()
-	if env != null:
-		env.tonemap_white = set_nvg_white
-
-
-func _env() -> Environment:
-	var world = get_node_or_null("/root/Map/World")
-	if world == null:
-		return null
-	var we = world.get("environment")
-	if we == null:
-		return null
-	return we.get("environment")
 
 
 func _log_trader(node: Node) -> void:
@@ -566,13 +563,18 @@ func _register_bot(node: Node) -> void:
 	var id := node.get_instance_id()
 	if _bots.has(id):
 		return
-	# The key overlay is NOT built here: AI.Initialize() assigns the bot's
-	# variant mesh at runtime, so node.get("mesh") is null at registration time
-	# and a duplicate built now would have nothing to show (the bot ended up
-	# glowless). It is built lazily in _ensure_bot_overlay once the mesh exists.
-	# The bot is tracked from the start so a friendly Nomad still gets its ▼.
+	# No overlay is built here: the bot's visual (variant mesh, LODs, weapon
+	# rig) is assembled by AI.Initialize() at runtime, so node.mesh can be null
+	# at registration. The bot is tracked from the start (a friendly Nomad still
+	# gets its ▼) and its key overlay is built lazily in _ensure_bot_overlay
+	# once the real mesh exists. The body is painted by a DUPLICATE of the real
+	# mesh carrying VTKBot.gdshader, with the real mesh hidden -- overriding the
+	# game's own bot geometry with material_override does not reach the screen,
+	# which is exactly why the duplicate-overlay path exists.
 	_bots[id] = {
-		"node": node,
+		"mesh": null,
+		"overlay": null,
+		"mat": null,
 		"friendly": _is_friendly(node),
 		"death": 0.0,
 		"recorded": false,
@@ -581,9 +583,12 @@ func _register_bot(node: Node) -> void:
 		_dbg("[bot] %s tracked pos=%s" % [node.get_path(), str(node.global_position)])
 
 
-# Lazily builds the key overlay -- a duplicated mesh emitting the detector key,
-# sibling to the real one so it rides along with the bot's transforms -- once
-# the bot's real mesh exists. Retried every frame until it lands.
+# Lazily builds the key overlay -- a duplicate of the bot's real mesh emitting
+# the detector keys, sibling to the real one so it rides the skeleton's pose --
+# once node.mesh exists. Retried every frame until it lands. Duplicating rather
+# than overriding the real mesh is the proven path: the game's own bot geometry
+# ignores an external material_override on the instance, so the key never
+# reaches the screen and the body just reads as ordinary scenery.
 func _ensure_bot_overlay(e: Dictionary, node: Node) -> void:
 	if e.get("overlay") != null and is_instance_valid(e["overlay"]):
 		return
@@ -623,10 +628,9 @@ func _update_bot(id: int, thermal_on: bool) -> void:
 	e["friendly"] = friendly
 
 	# Death clock: death_time is latched on the frame the bot dies, and a body
-	# stays highlighted DEATH_COOLDOWN seconds while it cools down the tier
-	# ladder: hot while DEATH_WARM_SECS, then the cool tier until
-	# DEATH_COOL_SECS, then the cold tier, then the overlay hides. Mirror of the
-	# reference mod's death_time/death_time_recorded pair.
+	# stays highlighted DEATH_COOLDOWN seconds while it cools. The cooling front
+	# (VTKBot.gdshader) is driven by cool = secs / DEATH_COOLDOWN; at the end the
+	# glow hides. Mirror of the reference mod's death_time/death_time_recorded.
 	var dead: bool = bool(node.get("dead"))
 	var secs := -1.0
 	var now := float(Time.get_ticks_msec()) / 1000.0
@@ -661,21 +665,42 @@ func _update_bot(id: int, thermal_on: bool) -> void:
 	if mesh == null or not is_instance_valid(mesh):
 		return
 
-	var show := not dead or secs < DEATH_COOLDOWN
-	var m: StandardMaterial3D
-	if dead and secs >= DEATH_WARM_SECS:
-		# A corpse only cools on its timer; distance far does not apply.
-		m = _mat_dead_far if secs >= DEATH_COOL_SECS else _mat_dead
-	else:
-		var far := _player_pos().distance_to(node.global_position) > maxf(set_far_distance, 1.0)
-		m = _mat_hot_far if far else _mat_hot
-	# AI.Initialize() can swap the variant mesh at runtime, so keep the
-	# overlay's mesh in sync with the real one.
+	if _bot_shader == null:
+		return
+
+	# AI.Initialize() can swap the variant mesh at runtime, so keep the overlay's
+	# mesh in sync with the real one.
 	if overlay.mesh != mesh.mesh:
 		overlay.mesh = mesh.mesh
-	overlay.material_override = m
-	overlay.visible = show
-	mesh.visible = not show
+
+	# A body only glows inside the glow range and while it still has heat left;
+	# past either bound the overlay hides and the real mesh shows through.
+	var dist := _player_pos().distance_to(node.global_position)
+	var show := dist <= maxf(set_far_distance, 1.0) and (not dead or secs < DEATH_COOLDOWN)
+	if not show:
+		overlay.visible = false
+		mesh.visible = true
+		return
+
+	# Per-bot body material off the shared shader: "cool" and "footY" are
+	# per-bot uniforms. cool = secs / DEATH_COOLDOWN drives the cooling front
+	# (VTKBot.gdshader) from just above the head down past the feet.
+	var bmat: ShaderMaterial = e.get("mat")
+	if bmat == null:
+		bmat = ShaderMaterial.new()
+		bmat.shader = _bot_shader
+		bmat.set_shader_parameter("warmKey", BOT_WARM_KEY)
+		bmat.set_shader_parameter("midKey", BOT_MID_KEY)
+		bmat.set_shader_parameter("coldKey", BOT_COLD_KEY)
+		e["mat"] = bmat
+	var cool := 0.0 if not dead else clampf(secs / DEATH_COOLDOWN, 0.0, 1.0)
+	bmat.set_shader_parameter("cool", cool)
+	bmat.set_shader_parameter("footY", node.global_position.y)
+	# The key body is the duplicate overlay; the real mesh is hidden so only the
+	# key shows, and the screen shader substitutes it to the preset colour.
+	overlay.material_override = bmat
+	overlay.visible = true
+	mesh.visible = false
 
 
 # Lazily builds the marker on the bot itself (looked up by name, not via the
@@ -801,7 +826,10 @@ func _update_mine(id: int, thermal_on: bool) -> void:
 	if not is_instance_valid(e["node"]):
 		_mines.erase(id)
 		return
-	var show := thermal_on and set_mines
+	# Mines obey the same glow range as bots: past it they read as scenery.
+	var node = e["node"]
+	var dist := _player_pos().distance_to(node.global_position)
+	var show := thermal_on and set_mines and dist <= maxf(set_far_distance, 1.0)
 	for mesh in e["meshes"]:
 		if is_instance_valid(mesh):
 			mesh.material_override = _mat_mine if show else null
