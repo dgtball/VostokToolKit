@@ -49,10 +49,8 @@ const RU := {
 	'Gear': 'Снаряжение',
 	'Grenades': 'Гранаты',
 	'Grips': 'Рукоятки',
-	'Interface language': 'Язык интерфейса',
 	'Inventory': 'Инвентарь',
 	'Keys': 'Ключи',
-	'Kill counter': 'Счётчик убийств',
 	'Knives': 'Ножи',
 	'Lasers': 'ЛЦУ',
 	'Loadout "': 'Сет «',
@@ -104,7 +102,6 @@ const RU := {
 	'Spawned to catalog: ': 'Заспавнено в каталог: ',
 	'Sets': 'Сеты',
 	'Set is empty': 'Сет пуст',
-	'Settings': 'Настройки',
 	'Shelter not unlocked yet: ': 'Убежище ещё не открыто: ',
 	'Shelters': 'Убежища',
 	'Teleport': 'Телепорт',
@@ -175,10 +172,6 @@ const RU := {
 	'" → to inventory: ': '» → в инвентарь: ',
 	'file: ': 'файл: ',
 	'in the tutorial': 'в туториале',
-	'Interface': 'Интерфейс',
-	'Modules': 'Модули',
-	'Shows the kill counter in the interface': 'Показывает счётчик убийств в интерфейсе',
-	'Switch between English and Russian': 'Переключение между английским и русским',
 }
 
 static var _lang := DEFAULT
@@ -194,9 +187,3 @@ static func txt(text: String) -> String:
 	if _lang == "ru":
 		return RU.get(text, text)
 	return text
-
-static func codes() -> PackedStringArray:
-	return PackedStringArray(["en", "ru"])
-
-static func code_label(code: String) -> String:
-	return "Русский" if code == "ru" else "English"

@@ -103,7 +103,6 @@ var _done_preview: Control = null
 var _tab_btns: Array = []
 var _tab_containers: Dictionary = {}
 var _ui_nodes: Array = []
-var _lang_btns: Array = []
 var _current_tab: String = ""
 
 # teleport tab
@@ -203,8 +202,8 @@ func _init_later() -> void:
 		return
 	_late_initialized = true
 	_migrate_mcm_dir()
-	# Обе миграции - до _load_items, _restore_toggles и _register_mcm: обеим
-	# нужен готовый каталог MCM/vostok-toolkit.
+	# Обе миграции - до _load_items и _register_mcm: обеим нужен готовый
+	# каталог MCM/vostok-toolkit.
 	var LD = preload("res://mods/VTK/VTKData.gd")
 	LD.migrate_save_file()
 	game_data = load("res://Resources/GameData.tres")
@@ -212,7 +211,6 @@ func _init_later() -> void:
 	_load_items()
 	_load_lang()
 	_build_ui()
-	_restore_toggles()
 	var Hooks = preload("res://mods/VTK/VTKHooks.gd")
 	_hooks = Hooks.new()
 	add_child(_hooks)
@@ -502,7 +500,7 @@ func _build_ui() -> void:
 	tab_bar.offset_bottom = 88
 	_panel.add_child(tab_bar)
 
-	var tabs = [Loc.txt("Sets"), Loc.txt("Settings"), Loc.txt("Teleport")]
+	var tabs = [Loc.txt("Sets"), Loc.txt("Teleport")]
 	for tname in tabs:
 		var btn = Button.new()
 		btn.text = tname
@@ -538,7 +536,6 @@ func _build_ui() -> void:
 		_tab_containers[tname] = vb
 
 	_build_loadouts_tab(_tab_containers[Loc.txt("Sets")])
-	_build_settings_tab(_tab_containers[Loc.txt("Settings")])
 	_build_teleport_tab(_tab_containers[Loc.txt("Teleport")])
 
 	_switch_tab(Loc.txt("Sets"))
@@ -1951,7 +1948,7 @@ class ToggleSwitch:
 		if emit:
 			toggled.emit(v)
 
-	# button_pressed для совместимости с прежними CheckButton в _restore_toggles.
+	# button_pressed для совместимости с CheckButton-вызовами.
 	var button_pressed: bool:
 		get:
 			return _on
@@ -3001,53 +2998,26 @@ func _build_mag_panel(path: String, desc: Dictionary) -> Control:
 	row.add_child(cap_lbl)
 	return panel
 
-# ============== TAB: Настройки ==============
+# ============== HUD / LANGUAGE ==============
 
 var _kc_node: Control = null
 var _hooks: Node = null
 var _nvg_node: Node = null
-var _kc_active: bool = false
 var _kc_mcm: bool = true
 var _feed_mcm: bool = true
 var _hud_canvas = null
 var _feed_node = null
 var _thermal_active: bool = false
 var _mines_active: bool = true
-var _kc_btn: Node = null
-
-const TOGGLE_CFG := "user://MCM/vostok-toolkit/ui_toggles.json"
-
-func _save_toggles() -> void:
-	var data = {"kc": _kc_active, "lang": Loc.get_lang()}
-	var d = DirAccess.open(OS.get_user_data_dir() + "/MCM/vostok-toolkit")
-	if not d:
-		d = DirAccess.open(OS.get_user_data_dir())
-		if d:
-			d.make_dir("MCM")
-			d = DirAccess.open(OS.get_user_data_dir() + "/MCM")
-			if d:
-				d.make_dir("vostok-toolkit")
-				d = DirAccess.open(OS.get_user_data_dir() + "/MCM/vostok-toolkit")
-	var f = FileAccess.open(TOGGLE_CFG, FileAccess.WRITE)
-	if f:
-		f.store_string(JSON.stringify(data))
-		f.close()
 
 func _load_lang() -> void:
 	Loc.set_lang(Loc.DEFAULT)
-	var f = FileAccess.open(TOGGLE_CFG, FileAccess.READ)
-	if not f:
-		print("[VTK] lang: no ", TOGGLE_CFG, ", using ", Loc.DEFAULT)
+	var cf := ConfigFile.new()
+	if cf.load("user://MCM/vostok-toolkit/config.ini") != OK:
 		return
-	var txt = f.get_as_text()
-	f.close()
-	if txt.is_empty():
-		return
-	var j = JSON.new()
-	if j.parse(txt) != OK:
-		return
-	Loc.set_lang(str(j.data.get("lang", Loc.DEFAULT)))
-	print("[VTK] lang restored: ", Loc.get_lang())
+	var d = cf.get_value("Dropdown", "language", {})
+	if typeof(d) == TYPE_DICTIONARY:
+		Loc.set_lang(str(d.get("value", Loc.DEFAULT)))
 
 func _clear_ui() -> void:
 	for n in _ui_nodes:
@@ -3059,160 +3029,23 @@ func _clear_ui() -> void:
 	_scroll = null
 	_panel = null
 
-func _restore_toggles() -> void:
-	var f = FileAccess.open(TOGGLE_CFG, FileAccess.READ)
-	if not f:
-		return
-	var txt = f.get_as_text()
-	f.close()
-	if txt.is_empty():
-		return
-	var j = JSON.new()
-	if j.parse(txt) != OK:
-		return
-	var d = j.data
-	_kc_active = bool(d.get("kc", false))
-	if _kc_btn:
-		_kc_btn.button_pressed = _kc_active
-
-func _build_settings_tab(parent: VBoxContainer) -> void:
-	_lang_btns.clear()
-
-	parent.add_child(HSeparator.new())
-
-	_make_settings_header(parent, Loc.txt("Interface"))
-	_make_lang_row(parent)
-
-	_make_settings_header(parent, Loc.txt("Modules"))
-	_kc_btn = _make_toggle_row(parent, Loc.txt("Kill counter"), Loc.txt("Shows the kill counter in the interface"), _kc_toggle)
-
-func _make_settings_header(parent: VBoxContainer, text: String) -> void:
-	var h := Label.new()
-	h.text = text.to_upper()
-	h.add_theme_font_size_override("font_size", 9)
-	h.add_theme_color_override("font_color", Color("#5f5347"))
-	h.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
-	h.add_theme_constant_override("shadow_offset_x", 1)
-	h.add_theme_constant_override("shadow_offset_y", 1)
-	parent.add_child(h)
-
-func _make_lang_row(parent: VBoxContainer) -> HBoxContainer:
-	var row = HBoxContainer.new()
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_theme_constant_override("separation", 10)
-	parent.add_child(row)
-
-	var box := VBoxContainer.new()
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	box.add_theme_constant_override("separation", 1)
-	row.add_child(box)
-	var lbl = Label.new()
-	lbl.text = Loc.txt("Interface language")
-	lbl.add_theme_font_size_override("font_size", 11)
-	lbl.add_theme_color_override("font_color", Color("#d8cdbe"))
-	box.add_child(lbl)
-	var sub := Label.new()
-	sub.text = Loc.txt("Switch between English and Russian")
-	sub.add_theme_font_size_override("font_size", 8)
-	sub.add_theme_color_override("font_color", Color("#5f5347"))
-	box.add_child(sub)
-
-	_lang_btns.clear()
-	var codes := Loc.codes()
-	var seg_panel := PanelContainer.new()
-	seg_panel.add_theme_stylebox_override("panel", VTKSurface.panel(true, 4))
-	seg_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(seg_panel)
-	var seg := HBoxContainer.new()
-	seg.add_theme_constant_override("separation", 0)
-	seg_panel.add_child(seg)
-	for c in codes:
-		var b := Button.new()
-		b.text = Loc.code_label(c)
-		b.toggle_mode = true
-		b.button_pressed = (c == Loc.get_lang())
-		b.custom_minimum_size = Vector2(64, 30)
-		b.add_theme_font_size_override("font_size", 11)
-		var seg_btn := _make_seg_btn_style(c == Loc.get_lang())
-		b.add_theme_stylebox_override("normal", seg_btn)
-		var seg_btn_hover := _make_seg_btn_style(true)
-		b.add_theme_stylebox_override("hover", seg_btn_hover)
-		var seg_btn_pressed := _make_seg_btn_style(true)
-		b.add_theme_stylebox_override("pressed", seg_btn_pressed)
-		b.add_theme_color_override("font_color", _gold if c == Loc.get_lang() else Color("#8a7a6a"))
-		_attach_motion(b)
-		b.pressed.connect(_on_lang_button.bind(c))
-		seg.add_child(b)
-		_lang_btns.append(b)
-	return row
-
-func _make_seg_btn_style(active: bool) -> StyleBox:
-	return VTKSurface.surface("normal", active, false, false, 8, 8, 4, 4)
-
-func _on_lang_button(code: String) -> void:
-	var cur := Loc.get_lang()
-	print("[VTK] lang button pressed code=", code, " current=", cur)
-	if code == cur:
-		return
-	Loc.set_lang(code)
-	_save_toggles()
-	print("[VTK] lang now=", Loc.get_lang(), ", rebuilding UI")
+# Пересборка UI на месте после смены языка. Активную вкладку восстанавливаем
+# по позиции: _current_tab хранит локализованную строку, а после перевода
+# имена вкладок меняются и по имени прежний ключ не находится.
+func _rebuild_ui() -> void:
+	var idx := -1
+	for i in range(_tab_btns.size()):
+		if (_tab_btns[i] as Button).text == _current_tab:
+			idx = i
+			break
 	_clear_ui()
 	_build_ui()
-	_restore_toggles()
+	if idx >= 0 and idx < _tab_btns.size():
+		_switch_tab((_tab_btns[idx] as Button).text)
 
-func _make_toggle_row(parent: VBoxContainer, label_text: String, hint_text: String, callback: Callable) -> Node:
-	var set_row := PanelContainer.new()
-	set_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	set_row.add_theme_stylebox_override("panel", VTKSurface.surface("normal", false, false, false, 10, 10, 7, 7))
-	parent.add_child(set_row)
-	_attach_row_hover(set_row, func(hv: bool) -> StyleBox:
-		return VTKSurface.surface("hover" if hv else "normal", false, false, false, 10, 10, 7, 7))
-
-	var row = HBoxContainer.new()
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_theme_constant_override("separation", 10)
-	set_row.add_child(row)
-
-	var box := VBoxContainer.new()
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	box.add_theme_constant_override("separation", 1)
-	row.add_child(box)
-	var lbl = Label.new()
-	lbl.text = label_text
-	lbl.add_theme_font_size_override("font_size", 11)
-	lbl.add_theme_color_override("font_color", Color("#d8cdbe"))
-	box.add_child(lbl)
-	var sub = Label.new()
-	sub.text = hint_text
-	sub.add_theme_font_size_override("font_size", 8)
-	sub.add_theme_color_override("font_color", Color("#5f5347"))
-	box.add_child(sub)
-
-	var sw := ToggleSwitch.new()
-	sw.set_on(false)
-	sw.toggled.connect(callback)
-	sw.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(sw)
-	return sw
-
-# UI-тумблер из вкладки «Настройки»: пишет в json (legacy) и в MCM, затем
-# применяет через общий путь. _save_toggles после _apply_hud, чтобы json
-# получил уже обновлённый _kc_active, а не предыдущее значение.
-func _kc_toggle(on: bool) -> void:
-	_kc_mcm = on
-	_save_mcm_bool("kill_counter_enabled", on)
-	_apply_hud()
-	_save_toggles()
-
-# Единая точка применения обоих HUD-виджетов. Зовётся из _mcm_apply и из
-# UI-тумблера; файлы не трогает — запись в MCM делает только _kc_toggle.
+# Единая точка применения обоих HUD-виджетов. Зовётся только из _mcm_apply:
+# состояние приходит из MCM, отдельного UI-тумблера больше нет.
 func _apply_hud() -> void:
-	_kc_active = _kc_mcm
-	if _kc_btn != null and is_instance_valid(_kc_btn):
-		_kc_btn.button_pressed = _kc_mcm
 	_set_counter_enabled(_kc_mcm)
 	_set_feed_enabled(_feed_mcm)
 
@@ -3248,26 +3081,6 @@ func _ensure_hud() -> void:
 		var Feed = preload("res://mods/VTK/VTKFeed.gd")
 		_feed_node = Feed.new()
 		_hud_canvas.add_child(_feed_node)
-
-# Перезапись значения Bool-ключа в config.ini, чтобы меню MCM показывало
-# то же, что переключил пользователь в настройках мода.
-func _save_mcm_bool(key: String, v: bool) -> void:
-	var cfile := "user://MCM/vostok-toolkit/config.ini"
-	if not FileAccess.file_exists(cfile):
-		return
-	var cf := ConfigFile.new()
-	if cf.load(cfile) != OK:
-		return
-	if not cf.has_section_key("Bool", key):
-		return
-	var d = cf.get_value("Bool", key, {})
-	if typeof(d) != TYPE_DICTIONARY:
-		return
-	d["value"] = v
-	cf.set_value("Bool", key, d)
-	cf.save(cfile)
-
-# поэтому состояние кладём прямо в него и перечитываем на каждом Apply.
 
 func _ensure_nvg() -> void:
 	if _nvg_node != null and is_instance_valid(_nvg_node):
@@ -3393,7 +3206,6 @@ static func _keycode_to_string(kc: int) -> String:
 
 func _register_mcm() -> void:
 	if not ResourceLoader.exists("res://ModConfigurationMenu/Scripts/Doink Oink/MCM_Helpers.tres"):
-		_kc_mcm = _kc_active
 		_apply_hud()
 		return
 	var MCM = load("res://ModConfigurationMenu/Scripts/Doink Oink/MCM_Helpers.tres")
@@ -3403,6 +3215,7 @@ func _register_mcm() -> void:
 	var CAT := "01. General"
 	cfg.set_value("Keycode", "key_ui_toggle", {"name": "Hotkey: Toggle UI", "default": 0, "default_type": "Keycode", "value": 0, "category": CAT, "menu_pos": 0, "tooltip": "Press once to open/close the Loadouts UI."})
 	cfg.set_value("Bool", "nvg_debug_probe", {"name": "Debug logging", "default": false, "value": false, "category": CAT, "menu_pos": 1, "tooltip": "Writes probes to user://loadouts_debug.log and enables the F4 detection overlay. Leave off during normal play; turn on only to diagnose something."})
+	cfg.set_value("Dropdown", "language", {"name": "Language", "default": Loc.DEFAULT, "value": Loc.get_lang(), "options": {"en": "English", "ru": "Русский"}, "category": CAT, "menu_pos": 2, "tooltip": "Interface language of the Loadouts window. English is the source language."})
 	var TP := "02. ThermalVision"
 	cfg.set_value("Bool", "thermal_enabled", {"name": "Thermal vision", "default": false, "value": false, "category": TP, "menu_pos": 0, "tooltip": "Master switch for the thermal vision layer: bot heat glow, mines and the Nomad marker. Plain green NVG is unaffected while this is off."})
 	cfg.set_value("Bool", "thermal_mines", {"name": "Mine highlighting", "default": true, "value": true, "category": TP, "menu_pos": 1, "tooltip": "Highlight mines while thermal vision is on."})
@@ -3500,6 +3313,11 @@ func _mcm_apply(cfg: ConfigFile) -> void:
 	var cpath = "user://MCM/vostok-toolkit/config.ini"
 	if cfg.get_sections().is_empty() and FileAccess.file_exists(cpath):
 		cfg.load(cpath)
+	var want := str(_mcm_key_val(cfg, "Dropdown", "language", Loc.get_lang()))
+	if want != Loc.get_lang():
+		Loc.set_lang(want)
+		if Loc.get_lang() == want:
+			_rebuild_ui()
 	_key_ui_toggle = int(_mcm_key_val(cfg, "Keycode", "key_ui_toggle", 0))
 	_kc_mcm = bool(_mcm_key_val(cfg, "Bool", "kill_counter_enabled", true))
 	_feed_mcm = bool(_mcm_key_val(cfg, "Bool", "kill_feed_enabled", true))

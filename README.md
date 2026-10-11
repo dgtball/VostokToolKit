@@ -4,7 +4,7 @@
 
 ![Vostok Toolkit](assets/logo.jpg)
 
-**Версия:** 4.13.5 · **Загрузчик:** Metro Mod Loader 3.4.2 · **Язык:** RU / EN
+**Версия:** 4.13.7 · **Загрузчик:** Metro Mod Loader 3.4.2 · **Язык:** RU / EN
 
 ## Возможности
 
@@ -28,7 +28,7 @@
 ## Использование
 
 - Панель вызывается клавишей `key_ui_toggle` — она настраивается в MCM. По умолчанию - F3
-- Сеты хранятся в `user://MCM/vostok-toolkit/VTKsets.json`, настройки интерфейса — в `ui_toggles.json` рядом.
+- Сеты хранятся в `user://MCM/vostok-toolkit/VTKsets.json`; язык интерфейса — в MCM (General → Language).
 
 ## Сборка из исходников
 
