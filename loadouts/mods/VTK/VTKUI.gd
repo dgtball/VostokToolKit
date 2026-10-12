@@ -1,8 +1,11 @@
 extends CanvasLayer
+const Paths = preload("res://mods/VTK/VTKPaths.gd")
+const Log = preload("res://mods/VTK/VTKLog.gd")
 const Loc = preload("res://mods/VTK/VTKLoc.gd")
 const Draft = preload("res://mods/VTK/VTKDraft.gd")
 const Picker = preload("res://mods/VTK/VTKPicker.gd")
 const VTKSurface := preload("res://mods/VTK/VTKSurface.gd")
+const LD := preload("res://mods/VTK/VTKData.gd")
 
 const UI_LAYER := 4095
 
@@ -124,7 +127,7 @@ func _tp_section_label(section: String) -> String:
 var game_data: Resource = null
 
 # ui
-var _gold: Color = Color("#d48a3a")
+var _gold: Color = VTKSurface.GOLD
 
 var _key_ui_toggle: int = 0
 var _panel_open: bool = false
@@ -165,15 +168,15 @@ func _migrate_mcm_dir() -> void:
 		return
 	var err = DirAccess.make_dir_recursive_absolute(new_dir)
 	if err != OK:
-		print("[VTK] MCM migration failed: could not create destination (code " + str(err) + ")")
+		Log.log("[VTK] MCM migration failed: could not create destination (code " + str(err) + ")")
 		return
 	var src := DirAccess.open(old_dir)
 	if src == null:
-		print("[VTK] MCM migration failed: could not open source dir")
+		Log.log("[VTK] MCM migration failed: could not open source dir")
 		return
 	var list_err = src.list_dir_begin()
 	if list_err != OK:
-		print("[VTK] MCM migration failed: could not list source dir (code " + str(list_err) + ")")
+		Log.log("[VTK] MCM migration failed: could not list source dir (code " + str(list_err) + ")")
 		return
 	var fname := src.get_next()
 	var copied := 0
@@ -183,19 +186,19 @@ func _migrate_mcm_dir() -> void:
 			var c_err = src.copy_absolute(old_dir + "/" + fname, new_dir + "/" + fname)
 			if c_err != OK:
 				failed += 1
-				print("[VTK] MCM migration: failed to copy " + fname + " (code " + str(c_err) + ")")
+				Log.log("[VTK] MCM migration: failed to copy " + fname + " (code " + str(c_err) + ")")
 			else:
 				copied += 1
 		fname = src.get_next()
 	src.list_dir_end()
 	if failed > 0:
-		print("[VTK] MCM migration failed: " + str(failed) + " file(s) not copied")
+		Log.log("[VTK] MCM migration failed: " + str(failed) + " file(s) not copied")
 		return
 	var r_err = DirAccess.remove_absolute(old_dir)
 	if r_err != OK:
-		print("[VTK] MCM migration: copied " + str(copied) + " file(s), but failed to remove old dir (code " + str(r_err) + ")")
+		Log.log("[VTK] MCM migration: copied " + str(copied) + " file(s), but failed to remove old dir (code " + str(r_err) + ")")
 		return
-	print("[VTK] MCM dir migrated: loadouts -> vostok-toolkit (" + str(copied) + " file(s))")
+	Log.log("[VTK] MCM dir migrated: loadouts -> vostok-toolkit (" + str(copied) + " file(s))")
 
 func _init_later() -> void:
 	if _late_initialized:
@@ -204,10 +207,9 @@ func _init_later() -> void:
 	_migrate_mcm_dir()
 	# Обе миграции - до _load_items и _register_mcm: обеим нужен готовый
 	# каталог MCM/vostok-toolkit.
-	var LD = preload("res://mods/VTK/VTKData.gd")
 	LD.migrate_save_file()
-	game_data = load("res://Resources/GameData.tres")
-	print("[VTK] Starting UI init")
+	game_data = load(Paths.GAME_DATA)
+	Log.log("[VTK] Starting UI init")
 	_load_items()
 	_load_lang()
 	_build_ui()
@@ -215,7 +217,7 @@ func _init_later() -> void:
 	_hooks = Hooks.new()
 	add_child(_hooks)
 	_register_mcm()
-	print("[VTK] UI init done")
+	Log.log("[VTK] UI init done")
 
 func _is_toggle_event(event: InputEvent) -> bool:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
@@ -261,7 +263,6 @@ func _input(event: InputEvent) -> void:
 		var kc := int(event.physical_keycode)
 		if kc == 0:
 			kc = int(event.keycode)
-		var LD = preload("res://mods/VTK/VTKData.gd")
 		var qname = LD.get_name_by_quick_key(kc)
 		if qname == "" and kc != int(event.keycode):
 			qname = LD.get_name_by_quick_key(int(event.keycode))
@@ -280,7 +281,6 @@ func _handle_bind_key(event: InputEventKey) -> void:
 		kc = int(event.keycode)
 	if kc == 0:
 		return
-	var LD = preload("res://mods/VTK/VTKData.gd")
 	if _bind_target != "":
 		# Клавиша, занятая другим сетом, забирается: чужой бинд снимается.
 		LD.set_quick_key_unique(_bind_target, kc)
@@ -300,7 +300,7 @@ func _begin_bind(target: String, btn: Button) -> void:
 	_bind_btn = btn
 	if btn != null:
 		btn.text = Loc.txt("Press a key…")
-		btn.add_theme_color_override("font_color", Color("#666666"))
+		btn.add_theme_color_override("font_color", VTKSurface.GREY_DIM)
 
 func _begin_bind_pending(btn: Button) -> void:
 	_bind_target = ""
@@ -308,13 +308,12 @@ func _begin_bind_pending(btn: Button) -> void:
 	_bind_btn = btn
 	if btn != null:
 		btn.text = Loc.txt("Press a key…")
-		btn.add_theme_color_override("font_color", Color("#666666"))
+		btn.add_theme_color_override("font_color", VTKSurface.GREY_DIM)
 
 func _end_bind() -> void:
 	var btn := _bind_btn
 	var qk := _display_qk()
 	if _bind_target != "":
-		var LD = preload("res://mods/VTK/VTKData.gd")
 		var pack: Dictionary = LD.get_set(_bind_target)
 		qk = int(pack.get("quick_key", 0)) if not pack.is_empty() else 0
 	_bind_target = ""
@@ -345,7 +344,7 @@ func _apply_qk_btn(btn: Button, qk: int) -> void:
 func _load_items() -> void:
 	_db_items.clear()
 	_item_index.clear()
-	var db = get_node_or_null("/root/Database")
+	var db = get_node_or_null(Paths.DATABASE)
 	if not db:
 		return
 	if not db.master:
@@ -444,7 +443,7 @@ func _build_ui() -> void:
 	brand.custom_minimum_size = Vector2(30, 30)
 	brand.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var bs := StyleBoxFlat.new()
-	bs.bg_color = Color("#d48a3a")
+	bs.bg_color = VTKSurface.GOLD
 	bs.corner_radius_all = 8
 	brand.add_theme_stylebox_override("panel", bs)
 	rail.add_child(brand)
@@ -472,7 +471,7 @@ func _build_ui() -> void:
 	var rver := Label.new()
 	rver.text = "v" + _mod_version()
 	rver.add_theme_font_size_override("font_size", 10)
-	rver.add_theme_color_override("font_color", Color("#5f5347"))
+	rver.add_theme_color_override("font_color", VTKSurface.BROWN)
 	rver.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	rail.add_child(rver)
 
@@ -560,7 +559,7 @@ func _switch_tab(name: String) -> void:
 			btn.add_theme_color_override("font_color", _gold)
 			btn.add_theme_stylebox_override("normal", _make_tab_active_style())
 		else:
-			btn.add_theme_color_override("font_color", Color("#888"))
+			btn.add_theme_color_override("font_color", VTKSurface.GREY)
 			btn.add_theme_stylebox_override("normal", _make_tab_style())
 
 func _refresh_all() -> void:
@@ -617,7 +616,6 @@ func _refresh_preview() -> void:
 	_preview_box.visible = _draft == null
 	if _draft != null:
 		return
-	var LD = preload("res://mods/VTK/VTKData.gd")
 	var pack: Dictionary = {}
 	if _selected_set != "":
 		pack = LD.get_set(_selected_set)
@@ -626,7 +624,7 @@ func _refresh_preview() -> void:
 		var ph := Label.new()
 		ph.text = Loc.txt("Select a set on the left")
 		ph.add_theme_font_size_override("font_size", 11)
-		ph.add_theme_color_override("font_color", Color("#666666"))
+		ph.add_theme_color_override("font_color", VTKSurface.GREY_DIM)
 		_preview_box.add_child(ph)
 		return
 
@@ -639,7 +637,7 @@ func _refresh_preview() -> void:
 	var nm := Label.new()
 	nm.text = str(pack.get("name", _selected_set))
 	nm.add_theme_font_size_override("font_size", 14)
-	nm.add_theme_color_override("font_color", Color("#d8cdbe"))
+	nm.add_theme_color_override("font_color", VTKSurface.INK)
 	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card_head.add_child(nm)
 	_preview_box.add_child(card_head)
@@ -923,7 +921,7 @@ func _build_stepper() -> Control:
 		var lab := Label.new()
 		lab.text = titles[i]
 		lab.add_theme_font_size_override("font_size", 11)
-		lab.add_theme_color_override("font_color", _gold if _page == idx else Color("#888888"))
+		lab.add_theme_color_override("font_color", _gold if _page == idx else VTKSurface.GREY)
 		lab.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_step_labels.append(lab)
 		hb.add_child(lab)
@@ -973,7 +971,7 @@ func _make_step_circle(n: int, active: bool) -> Panel:
 	var num := Label.new()
 	num.text = str(n)
 	num.add_theme_font_size_override("font_size", 10)
-	num.add_theme_color_override("font_color", Color("#1a1206") if active else Color("#8a7a6a"))
+	num.add_theme_color_override("font_color", Color("#1a1206") if active else VTKSurface.MUTED)
 	num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	num.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1006,7 +1004,7 @@ func _show_page(n: int) -> void:
 		if i < _step_labels.size():
 			var lab := _step_labels[i] as Label
 			if lab != null:
-				lab.add_theme_color_override("font_color", _gold if on else Color("#888888"))
+				lab.add_theme_color_override("font_color", _gold if on else VTKSurface.GREY)
 		if i < _step_circles.size():
 			var circle := _step_circles[i] as Panel
 			if circle != null:
@@ -1014,7 +1012,7 @@ func _show_page(n: int) -> void:
 		if i < _step_numbers.size():
 			var num := _step_numbers[i] as Label
 			if num != null:
-				num.add_theme_color_override("font_color", Color("#1a1206") if on else Color("#8a7a6a"))
+				num.add_theme_color_override("font_color", Color("#1a1206") if on else VTKSurface.MUTED)
 		if i < _step_checks.size():
 			var chk := _step_checks[i] as Label
 			if chk != null:
@@ -1115,7 +1113,7 @@ func _page_columns(title: String, side: Control, main: Control, width := SIDE_WI
 	var lbl := Label.new()
 	lbl.text = title
 	lbl.add_theme_font_size_override("font_size", 9)
-	lbl.add_theme_color_override("font_color", Color("#5f5347"))
+	lbl.add_theme_color_override("font_color", VTKSurface.BROWN)
 	sv.add_child(lbl)
 	sv.add_child(side)
 	panel.add_child(sv)
@@ -1145,7 +1143,7 @@ func _build_page_equipment() -> Control:
 	var search := LineEdit.new()
 	search.placeholder_text = Loc.txt("Search items...")
 	search.add_theme_color_override("font_color", Color("#ffffff"))
-	search.add_theme_color_override("placeholder_color", Color("#666666"))
+	search.add_theme_color_override("placeholder_color", VTKSurface.GREY_DIM)
 	search.add_theme_stylebox_override("normal", VTKSurface.panel(true, 10))
 	search.add_theme_stylebox_override("focus", VTKSurface.focus_style())
 	search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1182,7 +1180,7 @@ func _build_page_gear() -> Control:
 	var search := LineEdit.new()
 	search.placeholder_text = Loc.txt("Search items...")
 	search.add_theme_color_override("font_color", Color("#ffffff"))
-	search.add_theme_color_override("placeholder_color", Color("#666666"))
+	search.add_theme_color_override("placeholder_color", VTKSurface.GREY_DIM)
 	search.add_theme_stylebox_override("normal", VTKSurface.panel(true, 10))
 	search.add_theme_stylebox_override("focus", VTKSurface.focus_style())
 	search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1298,7 +1296,7 @@ func _refresh_gear_catalog() -> void:
 # _gold внешнего скрипта, поэтому цвет дублируется константой.
 class ChosenRow extends PanelContainer:
 	const S := preload("res://mods/VTK/VTKSurface.gd")
-	const GOLD := Color("#e0b55a")
+	const GOLD := VTKSurface.GOLD_SOFT
 
 	var _on := false
 	var _action: Callable
@@ -1316,7 +1314,7 @@ class ChosenRow extends PanelContainer:
 		var l := Label.new()
 		l.text = ("✓ " if _on else "") + label
 		l.add_theme_font_size_override("font_size", 10)
-		l.add_theme_color_override("font_color", GOLD if _on else Color("#8a7a6a"))
+		l.add_theme_color_override("font_color", GOLD if _on else VTKSurface.MUTED)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		l.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1329,7 +1327,7 @@ class ChosenRow extends PanelContainer:
 		)
 
 	func _draw() -> void:
-		S.draw_dashes(self, Rect2(Vector2(2, 2), size - Vector2(4, 4)), Color("#5f5347"))
+		S.draw_dashes(self, Rect2(Vector2(2, 2), size - Vector2(4, 4)), VTKSurface.BROWN)
 
 # Фасеты левой колонки: строки категорий со счётчиками. Цифра считается по
 # текущему запросу, поэтому всегда равна тому, что окажется в сетке после клика.
@@ -1377,7 +1375,7 @@ func _make_facet_row(facet: Dictionary, level: bool) -> Control:
 	hb.add_theme_constant_override("separation", 6)
 	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(hb)
-	hb.add_child(_make_dot(Color("#4a4038") if level else Color("#5f5347")))
+	hb.add_child(_make_dot(Color("#4a4038") if level else VTKSurface.BROWN))
 
 	var nm := Label.new()
 	if key == "":
@@ -1387,14 +1385,14 @@ func _make_facet_row(facet: Dictionary, level: bool) -> Control:
 	nm.add_theme_font_size_override("font_size", 10 if level else 11)
 	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	nm.add_theme_color_override("font_color", _gold if active else Color("#d8cdbe"))
+	nm.add_theme_color_override("font_color", _gold if active else VTKSurface.INK)
 	hb.add_child(nm)
 
 	var cnt := Label.new()
 	cnt.text = str(int(facet.get("count", 0)))
 	cnt.add_theme_font_size_override("font_size", 10 if level else 11)
 	cnt.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cnt.add_theme_color_override("font_color", Color("#8a7a6a"))
+	cnt.add_theme_color_override("font_color", VTKSurface.MUTED)
 	hb.add_child(cnt)
 	return row
 
@@ -1477,7 +1475,7 @@ func _rebuild_gear_grid(facets: Array) -> void:
 		var note := Label.new()
 		note.text = Loc.txt("Nothing fits")
 		note.add_theme_font_size_override("font_size", 11)
-		note.add_theme_color_override("font_color", Color("#666666"))
+		note.add_theme_color_override("font_color", VTKSurface.GREY_DIM)
 		_gear_grid.add_child(note)
 		return
 	for entry in found:
@@ -1507,7 +1505,7 @@ func _build_page_done() -> Control:
 	_name_input = LineEdit.new()
 	_name_input.placeholder_text = Loc.txt("Enter a name...")
 	_name_input.add_theme_color_override("font_color", Color("#ffffff"))
-	_name_input.add_theme_color_override("placeholder_color", Color("#666666"))
+	_name_input.add_theme_color_override("placeholder_color", VTKSurface.GREY_DIM)
 	_name_input.add_theme_stylebox_override("normal", VTKSurface.panel(true, 10))
 	_name_input.add_theme_stylebox_override("focus", VTKSurface.focus_style())
 	if _draft != null:
@@ -1666,7 +1664,7 @@ func _make_equip_cell(slot: String, w: int, h: int, desc: Dictionary = {}, inter
 		lb.text = Loc.txt(slot)
 		lb.add_theme_font_size_override("font_size", 9)
 		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lb.add_theme_color_override("font_color", Color("#d8cdbe") if occupied else Color("#5f5347"))
+		lb.add_theme_color_override("font_color", VTKSurface.INK if occupied else VTKSurface.BROWN)
 		lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		center.add_child(lb)
 
@@ -1744,7 +1742,7 @@ func _make_equip_preview(eq: Dictionary) -> Control:
 		var ph := Label.new()
 		ph.text = Loc.txt("Set is empty")
 		ph.add_theme_font_size_override("font_size", 11)
-		ph.add_theme_color_override("font_color", Color("#666666"))
+		ph.add_theme_color_override("font_color", VTKSurface.GREY_DIM)
 		ph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		panel.add_child(ph)
 	else:
@@ -1907,7 +1905,7 @@ func _make_dot(color: Color) -> Panel:
 class ToggleSwitch:
 	extends Control
 	signal toggled(value: bool)
-	const GOLD := Color("#d48a3a")
+	const GOLD := VTKSurface.GOLD
 	var _on := false
 	var _track: Panel = null
 	var _knob: Panel = null
@@ -2012,7 +2010,7 @@ func _rebuild_target_bar() -> void:
 	var lbl := Label.new()
 	lbl.text = Loc.txt("Filter") + ":"
 	lbl.add_theme_font_size_override("font_size", 9)
-	lbl.add_theme_color_override("font_color", Color("#5f5347"))
+	lbl.add_theme_color_override("font_color", VTKSurface.BROWN)
 	line.add_child(lbl)
 
 	if cats.size() > 1:
@@ -2027,7 +2025,7 @@ func _rebuild_target_bar() -> void:
 	reset.tooltip_text = Loc.txt("Reset")
 	var any_on := _target_cat != "" or _target_sub != ""
 	reset.add_theme_stylebox_override("normal", _make_chip_style(any_on))
-	reset.add_theme_color_override("font_color", _gold if any_on else Color("#5f5347"))
+	reset.add_theme_color_override("font_color", _gold if any_on else VTKSurface.BROWN)
 	reset.pressed.connect(_reset_target_filters)
 	line.add_child(reset)
 
@@ -2220,7 +2218,7 @@ func _rebuild_shelves() -> void:
 		var note := Label.new()
 		note.text = Loc.txt("Nothing fits")
 		note.add_theme_font_size_override("font_size", 11)
-		note.add_theme_color_override("font_color", Color("#666666"))
+		note.add_theme_color_override("font_color", VTKSurface.GREY_DIM)
 		_shelves_box.add_child(note)
 		return
 	for shelf in Picker.shelves_of(found):
@@ -2240,7 +2238,7 @@ func _make_shelf(shelf: Dictionary) -> Control:
 	# Заголовок полки нейтральный: цвет по категории вынуждал бы держать
 	# палитру ради одной строки текста, а на шаге 2 категорию и так называет
 	# подсвеченная строка фасета.
-	head.add_theme_color_override("font_color", Color("#d8cdbe"))
+	head.add_theme_color_override("font_color", VTKSurface.INK)
 	box.add_child(head)
 
 	var flow := HFlowContainer.new()
@@ -2300,7 +2298,7 @@ class CreateCard extends Panel:
 		var l := Label.new()
 		l.text = label
 		l.add_theme_font_size_override("font_size", 11)
-		l.add_theme_color_override("font_color", Color("#8a7a6a"))
+		l.add_theme_color_override("font_color", VTKSurface.MUTED)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		l.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -2314,7 +2312,7 @@ class CreateCard extends Panel:
 
 	func _draw() -> void:
 		S.draw_dashes(self,
-			Rect2(Vector2(2, 2), size - Vector2(4, 4)), Color("#5f5347"))
+			Rect2(Vector2(2, 2), size - Vector2(4, 4)), VTKSurface.BROWN)
 
 func _refresh_loadout_list() -> void:
 	for child in _list_container.get_children():
@@ -2327,12 +2325,11 @@ func _refresh_loadout_list() -> void:
 	_cards_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list_container.add_child(_cards_grid)
 
-	var LD = preload("res://mods/VTK/VTKData.gd")
 	var loadouts = LD.get_all()
 	if loadouts.is_empty():
 		var empty = Label.new()
 		empty.text = Loc.txt("No saved loadouts")
-		empty.add_theme_color_override("font_color", Color("#666"))
+		empty.add_theme_color_override("font_color", VTKSurface.GREY_DIM)
 		_list_container.add_child(empty)
 		var debug = Label.new()
 		debug.text = Loc.txt("file: ") + str(OS.get_user_data_dir()) + "/MCM/vostok-toolkit/VTKsets.json"
@@ -2395,7 +2392,7 @@ func _refresh_loadout_list() -> void:
 		var meta = Label.new()
 		meta.text = str(eq_d.size() + gr_a.size()) + Loc.txt(" items · ") + str(eq_d.size()) + Loc.txt(" in equipment")
 		meta.add_theme_font_size_override("font_size", 10)
-		meta.add_theme_color_override("font_color", Color("#666"))
+		meta.add_theme_color_override("font_color", VTKSurface.GREY_DIM)
 		meta.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		box.add_child(meta)
 
@@ -2446,7 +2443,6 @@ func _spawn_gear(path_now: String) -> void:
 	var desc := _draft.descriptor_of(path_now)
 	if desc.is_empty():
 		return
-	var LD = preload("res://mods/VTK/VTKData.gd")
 	LD.spawn_gear(desc)
 
 func _toggle_attachment_panel(path: String) -> void:
@@ -2976,7 +2972,7 @@ func _build_mag_panel(path: String, desc: Dictionary) -> Control:
 	var cap_lbl := Label.new()
 	cap_lbl.text = Loc.txt("[rounds]") + " " + str(cap)
 	cap_lbl.add_theme_font_size_override("font_size", 9)
-	cap_lbl.add_theme_color_override("font_color", Color("#666666"))
+	cap_lbl.add_theme_color_override("font_color", VTKSurface.GREY_DIM)
 	row.add_child(cap_lbl)
 	return panel
 
@@ -3116,7 +3112,6 @@ func _save_loadout() -> void:
 	if _draft.item_count() == 0:
 		_set_problem(Loc.txt("Set is empty"))
 		return
-	var LD = preload("res://mods/VTK/VTKData.gd")
 	var all = LD.get_all()
 	for ld in all:
 		if str(ld.get("name")) == name_new and name_new != _editing_name:
@@ -3145,7 +3140,6 @@ func _save_loadout() -> void:
 	_refresh_loadout_list()
 
 func _edit_loadout(name: String) -> void:
-	var LD = preload("res://mods/VTK/VTKData.gd")
 	var raw = LD.get_set(name)
 	if raw.is_empty():
 		return
@@ -3158,7 +3152,6 @@ func _edit_loadout(name: String) -> void:
 	_build_editor()
 
 func _delete_loadout(name: String) -> void:
-	var LD = preload("res://mods/VTK/VTKData.gd")
 	LD.remove(name)
 	if _editing_name == name:
 		_cancel_draft()
@@ -3171,7 +3164,6 @@ func _display_qk() -> int:
 	if _pending_qk > 0:
 		return _pending_qk
 	if _editing_name != "":
-		var LD = preload("res://mods/VTK/VTKData.gd")
 		var pack: Dictionary = LD.get_set(_editing_name)
 		if not pack.is_empty():
 			return int(pack.get("quick_key", 0))
@@ -3192,9 +3184,8 @@ func _register_mcm() -> void:
 	var cfg = ConfigFile.new()
 	var CAT := "01. General"
 	cfg.set_value("Keycode", "key_ui_toggle", {"name": "Hotkey: Toggle UI", "default": 0, "default_type": "Keycode", "value": 0, "category": CAT, "menu_pos": 0, "tooltip": "Press once to open/close the Loadouts UI."})
-	cfg.set_value("Bool", "nvg_debug_probe", {"name": "Debug logging", "default": false, "value": false, "category": CAT, "menu_pos": 1, "tooltip": "Writes probes to user://loadouts_debug.log and enables the F4 detection overlay. Leave off during normal play; turn on only to diagnose something."})
-	cfg.set_value("Dropdown", "language", {"name": "Language", "default": Loc.DEFAULT, "value": Loc.get_lang(), "options": {"en": "English", "ru": "Русский"}, "category": CAT, "menu_pos": 2, "tooltip": "Interface language of the Loadouts window. English is the source language."})
-	cfg.set_value("Bool", "auto_equip", {"name": "Auto-equip on pickup", "default": true, "value": true, "category": CAT, "menu_pos": 3, "tooltip": "When a picked-up item fits an empty equipment slot it is equipped right away. Stackables top up an already equipped stack; loading a save or starting a new game is left untouched."})
+	cfg.set_value("Dropdown", "language", {"name": "Language", "default": Loc.DEFAULT, "value": Loc.get_lang(), "options": {"en": "English", "ru": "Русский"}, "category": CAT, "menu_pos": 1, "tooltip": "Interface language of the Loadouts window. English is the source language."})
+	cfg.set_value("Bool", "auto_equip", {"name": "Auto-equip on pickup", "default": true, "value": true, "category": CAT, "menu_pos": 2, "tooltip": "When a picked-up item fits an empty equipment slot it is equipped right away. Stackables top up an already equipped stack; loading a save or starting a new game is left untouched."})
 	var TP := "02. ThermalVision"
 	cfg.set_value("Bool", "thermal_enabled", {"name": "Thermal vision", "default": false, "value": false, "category": TP, "menu_pos": 0, "tooltip": "Master switch for the thermal vision layer: bot heat glow, mines and the Nomad marker. Plain green NVG is unaffected while this is off."})
 	cfg.set_value("Bool", "thermal_mines", {"name": "Mine highlighting", "default": true, "value": true, "category": TP, "menu_pos": 1, "tooltip": "Highlight mines while thermal vision is on."})
@@ -3212,6 +3203,9 @@ func _register_mcm() -> void:
 	var KF := "04. KillFeed"
 	cfg.set_value("Bool", "kill_counter_enabled", {"name": "Kill counter", "default": true, "value": true, "category": KF, "menu_pos": 0, "tooltip": "Show the kill counter HUD line (Killed / Enemies / Nomads)."})
 	cfg.set_value("Bool", "kill_feed_enabled", {"name": "Kill feed", "default": true, "value": true, "category": KF, "menu_pos": 1, "tooltip": "Show the kill feed under the counter: killer, weapon/headshot icons, victim."})
+	var DBG := "05. Debug"
+	cfg.set_value("Bool", "debug_log", {"name": "Mod debug log", "default": false, "value": false, "category": DBG, "menu_pos": 0, "tooltip": "Print mod diagnostics (item resolution, hooks, teleports, saves) to the game log. Off during normal play; turn on only to troubleshoot."})
+	cfg.set_value("Bool", "nvg_debug_probe", {"name": "NVG probe log", "default": false, "value": false, "category": DBG, "menu_pos": 1, "tooltip": "Write NVG/thermal probes to user://loadouts_debug.log and enable the F4 detection overlay. Leave off during normal play; turn on only to diagnose something."})
 	cfg.set_value("Info", "version", _mod_version())
 	cfg.set_value("Info", "author", "opencode")
 	var path = "user://MCM/vostok-toolkit"
@@ -3255,29 +3249,15 @@ func _register_mcm() -> void:
 	_mcm_apply(ConfigFile.new())
 
 func _mod_version() -> String:
+	# Единственный источник версии - version.txt, который пишет pack.ps1.
+	# res://mod.txt не читаем: он общий для всех модов и в заголовке может
+	# оказаться чужая версия.
 	var vf = FileAccess.open("res://mods/VTK/version.txt", FileAccess.READ)
-	if vf != null:
-		var v := vf.get_as_text().strip_edges()
-		vf.close()
-		if v != "":
-			return v
-	# Фолбэк для ручной укладки без pack.ps1: res://mod.txt разделяется всеми
-	# модами в рантайме и может оказаться чужим (в заголовке чужая версия).
-	var f = FileAccess.open("res://mod.txt", FileAccess.READ)
-	if f == null:
+	if vf == null:
 		return "unknown"
-	var text = f.get_as_text()
-	f.close()
-	var at = text.find("version=")
-	if at < 0:
-		return "unknown"
-	var open_q = text.find("\"", at)
-	if open_q < 0:
-		return "unknown"
-	var close_q = text.find("\"", open_q + 1)
-	if close_q < 0:
-		return "unknown"
-	return text.substr(open_q + 1, close_q - open_q - 1)
+	var v := vf.get_as_text().strip_edges()
+	vf.close()
+	return v if v != "" else "unknown"
 
 func _mcm_key_val(cfg: ConfigFile, section: String, key: String, fallback):
 	if not cfg.has_section_key(section, key):
@@ -3297,6 +3277,7 @@ func _mcm_apply(cfg: ConfigFile) -> void:
 		if Loc.get_lang() == want:
 			_rebuild_ui()
 	_key_ui_toggle = int(_mcm_key_val(cfg, "Keycode", "key_ui_toggle", 0))
+	Log.enabled = bool(_mcm_key_val(cfg, "Bool", "debug_log", false))
 	_kc_mcm = bool(_mcm_key_val(cfg, "Bool", "kill_counter_enabled", true))
 	_feed_mcm = bool(_mcm_key_val(cfg, "Bool", "kill_feed_enabled", true))
 	_apply_hud()
@@ -3340,14 +3321,14 @@ func _tp_row(title: String, note: String, enabled: bool, callback: Callable) -> 
 	nm.text = title
 	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	nm.add_theme_font_size_override("font_size", 12)
-	nm.add_theme_color_override("font_color", Color("#d8cdbe") if enabled else Color("#4d443a"))
+	nm.add_theme_color_override("font_color", VTKSurface.INK if enabled else Color("#4d443a"))
 	hb.add_child(nm)
 
 	if note != "":
 		var nt := Label.new()
 		nt.text = note
 		nt.add_theme_font_size_override("font_size", 9)
-		nt.add_theme_color_override("font_color", Color("#5f5347"))
+		nt.add_theme_color_override("font_color", VTKSurface.BROWN)
 		nt.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		hb.add_child(nt)
 
@@ -3425,7 +3406,7 @@ func _make_tp_column(title: String, count: int, box: VBoxContainer) -> Control:
 	var cnt := Label.new()
 	cnt.text = str(count)
 	cnt.add_theme_font_size_override("font_size", 9)
-	cnt.add_theme_color_override("font_color", Color("#5f5347"))
+	cnt.add_theme_color_override("font_color", VTKSurface.BROWN)
 	cnt.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(cnt)
 

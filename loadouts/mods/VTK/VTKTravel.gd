@@ -1,9 +1,11 @@
 extends Node
+const Paths = preload("res://mods/VTK/VTKPaths.gd")
+const Log = preload("res://mods/VTK/VTKLog.gd")
 const Loc = preload("res://mods/VTK/VTKLoc.gd")
 
-const GAME_DATA_RES := "res://Resources/GameData.tres"
-const CONTROLLER_PATH := "/root/Map/Core/Controller"
-const LOADER_PATH := "/root/Loader"
+const GAME_DATA_RES := Paths.GAME_DATA
+const CONTROLLER_PATH := Paths.CONTROLLER
+const LOADER_PATH := Paths.LOADER
 const SCENE_WAIT_FRAMES := 600
 const TRAVEL_LOG := "user://loadouts_travel.log"
 const TRADER_STAND_DISTANCE := 2.0
@@ -60,7 +62,7 @@ func is_shelter_unlocked(shelter_name: String) -> bool:
 	var loader := _loader()
 	if loader != null and loader.has_method("CheckShelterState"):
 		return bool(loader.CheckShelterState(shelter_name))
-	return FileAccess.file_exists("user://" + shelter_name + ".tres")
+	return FileAccess.file_exists(Paths.SHELTER_SAVE_FMT % shelter_name)
 
 
 func travel_to_trader(entry: Dictionary) -> void:
@@ -174,7 +176,7 @@ func _save_before_transition(target_map: String, loader: Node) -> void:
 	if loader == null or not loader.has_method("SaveCharacter"):
 		_log("pre-transition save: Loader.SaveCharacter unavailable")
 		return
-	var iface := get_node_or_null("/root/Map/Core/UI/Interface")
+	var iface := get_node_or_null(Paths.INTERFACE)
 	if iface == null:
 		_log("pre-transition save: Interface missing, skipping")
 		return
@@ -225,8 +227,8 @@ func _close_interfaces() -> void:
 	var parent := get_parent()
 	if parent != null and is_instance_valid(parent) and parent.has_method("_set_panel_open"):
 		parent.call("_set_panel_open", false)
-	var ui := get_node_or_null("/root/Map/Core/UI")
-	var iface := get_node_or_null("/root/Map/Core/UI/Interface")
+	var ui := get_node_or_null(Paths.UI)
+	var iface := get_node_or_null(Paths.INTERFACE)
 	var gd_iface := "n/a"
 	if game_data != null:
 		gd_iface = str(game_data.get("interface"))
@@ -252,7 +254,7 @@ func _message(text: String, color: Color) -> void:
 	if loader != null and loader.has_method("Message"):
 		loader.call("Message", text, color)
 		return
-	print("[VTK] " + text)
+	Log.log("[VTK] " + text)
 
 
 func _log_reset() -> void:
@@ -269,7 +271,7 @@ func _log(msg: String) -> void:
 		if _log_file == null:
 			_log_file = FileAccess.open(TRAVEL_LOG, FileAccess.WRITE)
 		if _log_file == null:
-			print("[VTK] " + msg)
+			Log.log("[VTK] " + msg)
 			return
 	_log_file.seek_end()
 	var elapsed := 0
@@ -277,7 +279,7 @@ func _log(msg: String) -> void:
 		elapsed = Time.get_ticks_msec() - _teleport_started_ms
 	_log_file.store_line("[" + Time.get_datetime_string_from_system() + " | +" + str(elapsed) + "ms] " + msg)
 	_log_file.flush()
-	print("[VTK] " + msg)
+	Log.log("[VTK] " + msg)
 
 
 func _trader_point(entry: Dictionary) -> Vector3:

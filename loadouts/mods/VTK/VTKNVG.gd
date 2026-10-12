@@ -1,4 +1,5 @@
 extends Node
+const Paths = preload("res://mods/VTK/VTKPaths.gd")
 
 # Owns the NVG overlay shader, plus the thermal/mines layer that rides on it.
 #
@@ -25,7 +26,7 @@ extends Node
 # walk, and per-entity work is only a reference swap between pre-built
 # materials -- no shader or material allocation after startup.
 
-const GAME_DATA_RES := "res://Resources/GameData.tres"
+const GAME_DATA_RES := Paths.GAME_DATA
 const NVG_SCRIPT_SUFFIX := "NVG.gd"
 const SHADER_RES := "res://mods/VTK/VTKNVG.gdshader"
 const BOT_SHADER_RES := "res://mods/VTK/VTKBot.gdshader"
@@ -333,7 +334,7 @@ func _try_install_shader() -> void:
 		_installed = false
 		return
 	if _nvg_root == null or not is_instance_valid(_nvg_root):
-		_nvg_root = get_node_or_null("/root/Map/Core/UI/NVG")
+		_nvg_root = get_node_or_null(Paths.NVG)
 	if _nvg_root == null or not is_instance_valid(_nvg_root):
 		_installed = false
 		return

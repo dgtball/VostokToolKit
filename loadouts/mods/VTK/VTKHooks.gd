@@ -1,4 +1,6 @@
 extends Node
+const Paths = preload("res://mods/VTK/VTKPaths.gd")
+const Log = preload("res://mods/VTK/VTKLog.gd")
 
 var _registered: bool = false
 var _lib = null
@@ -74,7 +76,7 @@ const IRONMAN_MAPS := ["Highway", "School", "Outpost", "Apartments"]
 
 func _ready() -> void:
 	name = "VTKHooks"
-	print("[VTK] Hooks node ready, RTVModLib=" + str(Engine.has_meta("RTVModLib")))
+	Log.log("[VTK] Hooks node ready, RTVModLib=" + str(Engine.has_meta("RTVModLib")))
 
 func get_kill_count() -> int:
 	return _kill_count
@@ -97,7 +99,7 @@ func set_equip_enabled(on: bool) -> void:
 func set_equip_debug(on: bool) -> void:
 	_equip_debug = on
 
-const GAME_DATA_RES := "res://Resources/GameData.tres"
+const GAME_DATA_RES := Paths.GAME_DATA
 
 func _resolve_gamedata() -> Variant:
 	if _gd_node != null and is_instance_valid(_gd_node):
@@ -110,7 +112,7 @@ func _resolve_gamedata() -> Variant:
 	for c in get_tree().root.get_children():
 		if "isDead" in c and "permadeath" in c:
 			_gd_node = c
-			print("[VTK] GameData resolved by flag scan: " + str(c.name) + " (" + c.get_class() + ")")
+			Log.log("[VTK] GameData resolved by flag scan: " + str(c.name) + " (" + c.get_class() + ")")
 			return _gd_node
 	return null
 
@@ -119,7 +121,7 @@ func _poll_death() -> void:
 	if gd == null and not _death_latched:
 		if not _gd_missing_logged:
 			_gd_missing_logged = true
-			print("[VTK] poll: GameData resource unavailable; death screen idle")
+			Log.log("[VTK] poll: GameData resource unavailable; death screen idle")
 		return
 	var is_dead := _death_latched
 	var is_ironman := _death_latched
@@ -135,7 +137,7 @@ func _poll_death() -> void:
 			# Latch it: the flags live on the map's GameData, which is torn down
 			# on death, so the next frame may have no source left to read.
 			_death_latched = true
-			print("[VTK] poll: death+ironman latched from " + str(gd.get_class()) + " isDead=" + str(bool(gd.get("isDead", false))) + " permadeath=" + str(bool(gd.get("permadeath", false))) + " death_scene=" + str(dead_scene))
+			Log.log("[VTK] poll: death+ironman latched from " + str(gd.get_class()) + " isDead=" + str(bool(gd.get("isDead", false))) + " permadeath=" + str(bool(gd.get("permadeath", false))) + " death_scene=" + str(dead_scene))
 		elif not is_dead:
 			# Back in a live run (or on the main menu): release the latch so a
 			# missing GameData later cannot resurrect the death screen.
@@ -145,7 +147,7 @@ func _poll_death() -> void:
 			var pnow := Time.get_ticks_msec()
 			if pnow - _death_probe_at > 1000:
 				_death_probe_at = pnow
-				print("[VTK] poll: raw isDead=" + str(gd.get("isDead", false)) + " permadeath=" + str(gd.get("permadeath", false)) + " death_scene=" + str(dead_scene))
+				Log.log("[VTK] poll: raw isDead=" + str(gd.get("isDead", false)) + " permadeath=" + str(gd.get("permadeath", false)) + " death_scene=" + str(dead_scene))
 	_handle_death_screen(gd, is_dead, is_ironman)
 
 func _try_register() -> void:
@@ -170,9 +172,9 @@ func _do_register() -> void:
 	if _lib == null and Engine.has_meta("RTVModLib"):
 		_lib = Engine.get_meta("RTVModLib")
 	if _lib == null or not _lib.has_method("hook"):
-		print("[VTK] Cannot register hooks: no RTVModLib")
+		Log.log("[VTK] Cannot register hooks: no RTVModLib")
 		return
-	print("[VTK] Registering hooks...")
+	Log.log("[VTK] Registering hooks...")
 	_lib.hook("controller-_physics_process-post", _on_controller_process)
 	_hooks_kc.append(_lib.hook("ai-weapondamage-pre", _on_ai_weapon_damage))
 	_hooks_kc.append(_lib.hook("ai-explosiondamage-pre", _on_ai_explosion))
@@ -186,7 +188,7 @@ func _do_register() -> void:
 	_hooks_equip.append(_lib.hook("loader-loadcharacter-post", _on_loadcharacter_post))
 	_hooks_context.append(_lib.hook("context-update-post", _on_context_update_post))
 	_registered = true
-	print("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + _hooks_notes.size() + _hooks_deposits.size() + _hooks_equip.size() + _hooks_context.size() + 1) + " hooks)")
+	Log.log("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + _hooks_notes.size() + _hooks_deposits.size() + _hooks_equip.size() + _hooks_context.size() + 1) + " hooks)")
 
 # Late Start (and any mod that saves the world from its own loader-newgame-post
 # handler) writes world.difficulty from gameData.difficulty. That value is stale:
@@ -204,7 +206,7 @@ func _on_newgame_post(difficulty, _season) -> void:
 			gd.set("permadeath", true)
 	patch_world_difficulty(diff)
 	_arm_equip(EQUIP_ARM_MS)
-	print("[VTK] newgame-post: difficulty=" + str(diff))
+	Log.log("[VTK] newgame-post: difficulty=" + str(diff))
 
 func patch_world_difficulty(diff: int) -> void:
 	var path := "user://World.tres"
@@ -219,7 +221,7 @@ func patch_world_difficulty(diff: int) -> void:
 func _on_loadcharacter_post() -> void:
 	_arm_equip(EQUIP_ARM_MS)
 	if _equip_debug:
-		print("[VTK] loadcharacter-post: equip armed")
+		Log.log("[VTK] loadcharacter-post: equip armed")
 
 func _arm_equip(delay_ms: int) -> void:
 	_equip_armed_at = Time.get_ticks_msec() + delay_ms
@@ -260,18 +262,18 @@ func _make_context_delete_button(ctx, buttons) -> Button:
 	var btn := Button.new()
 	btn.name = "VTKDelete"
 	btn.text = "Delete"
-	btn.add_theme_font_size_override("font_size", _context_button_font_size(buttons))
+	btn.add_theme_font_size_override("font_size", _sibling_button_font_size(buttons))
 	btn.pressed.connect(_on_context_delete_pressed.bind(ctx))
 	buttons.add_child(btn)
 	return btn
 
-# Ванильные кнопки контекста несут персональный theme_override_font_sizes/
-# font_size (12), а не общий для темы Button; новый Button унаследовал бы
-# размер темы (16). Берём размер у соседа, чтобы совпасть и не привязываться
+# Ванильные кнопки несут персональный theme_override_font_sizes/font_size (12),
+# а не общий для темы Button; новый Button унаследовал бы дефолт темы (16).
+# Берём размер у соседа-ванилы, пропуская наши VTK*-кнопки, и не привязываемся
 # к жёсткому числу, если игра его сменит.
-func _context_button_font_size(buttons) -> int:
+func _sibling_button_font_size(buttons) -> int:
 	for child in buttons.get_children():
-		if child is Button and child.name != "VTKDelete":
+		if child is Button and not str(child.name).begins_with("VTK"):
 			return child.get_theme_font_size("font_size")
 	return 12
 
@@ -289,7 +291,7 @@ func _resolve_interface() -> Node:
 	var root = get_tree().root
 	if root == null:
 		return null
-	return root.get_node_or_null("Map/Core/UI/Interface")
+	return root.get_node_or_null(Paths.INTERFACE)
 
 func _poll_equip() -> void:
 	var iface = _resolve_interface()
@@ -303,15 +305,26 @@ func _poll_equip() -> void:
 	var ig = iface.get("inventoryGrid")
 	if ig == null or not is_instance_valid(ig):
 		return
+	# "Свежими" считаем только детей инвентаря (подбор из мира). Но множество
+	# уже виденных узлов пополняем и содержимым слотов экипировки: игрок
+	# переносит предмет из слота в инвентарь тем же узлом (reparent), и без
+	# этого он выглядел бы новым и авто-экипировка возвращала бы его в слот.
 	var current := {}
+	var fresh: Array = []
 	for c in ig.get_children():
 		if is_instance_valid(c):
-			current[c.get_instance_id()] = c
-	var fresh: Array = []
-	for id in current.keys():
-		if not _equip_seen.has(id):
-			fresh.append(current[id])
+			var id: int = c.get_instance_id()
+			current[id] = c
+			if not _equip_seen.has(id):
+				fresh.append(c)
+	var equip_root = iface.get("equipment")
+	if equip_root != null and is_instance_valid(equip_root):
+		var eq_ids := {}
+		_collect_equip_ids(equip_root, eq_ids, 0)
+		for eid in eq_ids.keys():
+			current[eid] = true
 	_equip_seen = current
+
 	if fresh.is_empty():
 		return
 	if not _equip_on:
@@ -322,10 +335,20 @@ func _poll_equip() -> void:
 		return
 	if fresh.size() > EQUIP_BULK_LIMIT:
 		if _equip_debug:
-			print("[VTK] equip: bulk jump skipped (" + str(fresh.size()) + " nodes)")
+			Log.log("[VTK] equip: bulk jump skipped (" + str(fresh.size()) + " nodes)")
 		return
 	for n in fresh:
 		_equip_handle(iface, ig, n)
+
+func _collect_equip_ids(node, out: Dictionary, depth: int) -> void:
+	if node == null or not is_instance_valid(node) or depth > 3:
+		return
+	for c in node.get_children():
+		if not is_instance_valid(c):
+			continue
+		if c.get("slotData") != null:
+			out[c.get_instance_id()] = true
+		_collect_equip_ids(c, out, depth + 1)
 
 func _equip_handle(iface, ig, node) -> void:
 	if node == null or not is_instance_valid(node):
@@ -366,7 +389,7 @@ func _equip_move(iface, ig, node, sl) -> void:
 	if iface.has_method("UpdateStats"):
 		iface.UpdateStats(true)
 	if _equip_debug:
-		print("[VTK] equip: moved item -> " + str(sl.name))
+		Log.log("[VTK] equip: moved item -> " + str(sl.name))
 
 func _merge_into(iface, ig, node, sd, occ, occ_sd, res) -> void:
 	var plan := EquipFlow.merge_amounts(sd.get("amount"), occ_sd.get("amount"), res.get("maxAmount"))
@@ -390,7 +413,7 @@ func _merge_into(iface, ig, node, sd, occ, occ_sd, res) -> void:
 	if iface.has_method("UpdateStats"):
 		iface.UpdateStats(true)
 	if _equip_debug:
-		print("[VTK] equip: merged " + str(moved) + " into stack (leftover " + str(leftover) + ")")
+		Log.log("[VTK] equip: merged " + str(moved) + " into stack (leftover " + str(leftover) + ")")
 
 func _on_ai_weapon_damage(_hitbox, _damage, _vector, id) -> void:
 	var victim_ai = _lib._caller if _lib else null
@@ -529,7 +552,7 @@ func _player_weapon_name() -> String:
 # Ни GameData, ни узел игрока не несут имени оружия (probe, Task 1): настоящее
 # оружие — WeaponRig под Camera/Manager, у него data.file (AKM, M4A1...).
 func _rig_weapon_name() -> String:
-	var mgr = get_tree().root.get_node_or_null("Map/Core/Camera/Manager")
+	var mgr = get_tree().root.get_node_or_null(Paths.CAMERA_MANAGER)
 	if mgr == null:
 		return ""
 	var first := ""
@@ -586,7 +609,7 @@ func _weapon_str(v) -> String:
 func _is_grenade(weapon: String) -> bool:
 	if weapon == "":
 		return false
-	var db = get_tree().root.get_node_or_null("Database")
+	var db = get_tree().root.get_node_or_null(Paths.DATABASE)
 	if db == null or not ("master" in db):
 		return false
 	var master = db.get("master")
@@ -645,7 +668,7 @@ func _on_task_completed(task_data) -> void:
 	if task_data == null:
 		return
 	_clear_ledger_key(task_data)
-	var ldr = get_node_or_null("/root/Loader")
+	var ldr = get_node_or_null(Paths.LOADER)
 	if ldr == null or not ldr.has_method("LoadTaskNotes") or not ldr.has_method("SaveTaskNotes"):
 		return
 	var inst = Notes.find_note(ldr.call("LoadTaskNotes"), task_data)
@@ -662,10 +685,10 @@ func _on_notes_rendered(_result) -> void:
 	var list = iface.get("notesList")
 	if list == null or not (list is Node):
 		return
-	var ldr = get_node_or_null("/root/Loader")
+	var ldr = get_node_or_null(Paths.LOADER)
 	var traders = null
-	if FileAccess.file_exists("user://Traders.tres"):
-		traders = load("user://Traders.tres")
+	if FileAccess.file_exists(Paths.TRADER_SAVE):
+		traders = load(Paths.TRADER_SAVE)
 	var completed = Notes.completed_lists(traders)
 	var notes = []
 	if ldr != null and ldr.has_method("LoadTaskNotes"):
@@ -683,13 +706,13 @@ func _on_notes_rendered(_result) -> void:
 			continue
 		Notes.augment_note(card, _notes_cov_map(task_data))
 
-const TRADERS_RES := "user://Traders.tres"
+const TRADERS_RES := Paths.TRADER_SAVE
 const DEPOSITS_META := "vtk_deposits"
 
 func _traders() -> Variant:
-	if not FileAccess.file_exists("user://Traders.tres"):
+	if not FileAccess.file_exists(Paths.TRADER_SAVE):
 		return null
-	return load("user://Traders.tres")
+	return load(Paths.TRADER_SAVE)
 
 func _ledger() -> Dictionary:
 	var traders = _traders()
@@ -703,7 +726,7 @@ func _ledger_set(data: Dictionary) -> void:
 	if traders == null:
 		return
 	traders.set_meta("vtk_deposits", data)
-	ResourceSaver.save(traders, "user://Traders.tres")
+	ResourceSaver.save(traders, Paths.TRADER_SAVE)
 
 func _key_of(task_data) -> String:
 	return VTKDeposits.task_key(str(task_data.get("resource_path")), str(task_data.get("name")), str(task_data.get("trader")))
@@ -877,6 +900,7 @@ func _make_deposit_button(card) -> Button:
 	btn.name = "VTKDepositButton"
 	btn.text = Loc.txt("Deposit")
 	btn.tooltip_text = Loc.txt("Deposit selected items toward this task")
+	btn.add_theme_font_size_override("font_size", _sibling_button_font_size(buttons))
 	btn.pressed.connect(_on_deposit_pressed.bind(card))
 	buttons.add_child(btn)
 	_balance_buttons(buttons)
@@ -1068,7 +1092,7 @@ func _handle_death_screen(gd, is_dead: bool, is_ironman: bool) -> void:
 	var now := Time.get_ticks_msec()
 	if _death_find_since == 0:
 		_death_find_since = now
-		print("[VTK] death screen tracking started @" + str(now))
+		Log.log("[VTK] death screen tracking started @" + str(now))
 
 	# Only ever touch the Death scene. Walking the root re-found a dozen
 	# unrelated buttons ("Continue to Main Menu", JCM, the Settings tree) and
@@ -1088,7 +1112,7 @@ func _handle_death_screen(gd, is_dead: bool, is_ironman: bool) -> void:
 	var waited := now - _death_find_since
 	if waited >= DEATH_FIND_TIMEOUT_MS:
 		_death_gave_up = true
-		print("[VTK] No 'Load Game' button after " + str(waited) + "ms; leaving vanilla death screen")
+		Log.log("[VTK] No 'Load Game' button after " + str(waited) + "ms; leaving vanilla death screen")
 		return
 	_dump_death_tree(root, waited, now)
 
@@ -1140,7 +1164,7 @@ func _dump_death_tree(root: Node, waited: int, now: int) -> void:
 				lines.append("[VTK]   " + c.get_class() + " path='" + str(c.get_path()) + "' text='" + txt + "' vis=" + str(c.visible))
 		for ch in n.get_children():
 			stack.push_back(ch)
-	print("[VTK] death tree @" + str(waited) + "ms:\n" + "\n".join(lines))
+	Log.log("[VTK] death tree @" + str(waited) + "ms:\n" + "\n".join(lines))
 
 func _repurpose_load_button(btn: BaseButton, gd, root) -> void:
 	_death_load_btn = btn
@@ -1155,7 +1179,7 @@ func _repurpose_load_button(btn: BaseButton, gd, root) -> void:
 	btn.pressed.connect(_death_load_bound)
 	btn.text = "Restart"
 	btn.disabled = false
-	print("[VTK] Death 'Load Game' button repurposed to Restart")
+	Log.log("[VTK] Death 'Load Game' button repurposed to Restart")
 
 func _restore_load_button() -> void:
 	if _death_load_btn == null:
@@ -1176,7 +1200,7 @@ func _restore_load_button() -> void:
 	_death_load_orig_conns = []
 
 func _resolve_start_season() -> int:
-	var sim = get_node_or_null("/root/Simulation")
+	var sim = get_node_or_null(Paths.SIMULATION)
 	if sim != null:
 		var s = sim.get("season")
 		if s != null:
@@ -1184,14 +1208,14 @@ func _resolve_start_season() -> int:
 	return 1
 
 func _wipe_saves_for_restart() -> void:
-	var ldr = get_node_or_null("/root/Loader")
+	var ldr = get_node_or_null(Paths.LOADER)
 	if ldr != null and ldr.has_method("FormatSave"):
-		print("[VTK] Restart: wiping saves via Loader.FormatSave()")
+		Log.log("[VTK] Restart: wiping saves via Loader.FormatSave()")
 		ldr.call("FormatSave")
 		return
 	var dir = DirAccess.open("user://")
 	if dir == null:
-		print("[VTK] Restart: ERROR cannot open user://")
+		Log.log("[VTK] Restart: ERROR cannot open user://")
 		return
 	var names: Array = []
 	dir.list_dir_begin()
@@ -1204,13 +1228,13 @@ func _wipe_saves_for_restart() -> void:
 	for n in names:
 		var path := "user://" + String(n)
 		if dir.remove(path) == OK:
-			print("[VTK] Restart: removed " + String(n))
+			Log.log("[VTK] Restart: removed " + String(n))
 		else:
-			print("[VTK] Restart: FAILED to remove " + String(n))
+			Log.log("[VTK] Restart: FAILED to remove " + String(n))
 
 
 func _on_restart_pressed(gd, root) -> void:
-	print("[VTK] Restart: starting new game...")
+	Log.log("[VTK] Restart: starting new game...")
 	_death_latched = false
 	_gd_node = null
 	_death_load_btn = null
@@ -1218,7 +1242,7 @@ func _on_restart_pressed(gd, root) -> void:
 	_death_load_orig_conns = []
 	_death_gave_up = false
 	if gd == null:
-		print("[VTK] Restart: no GameData, aborting")
+		Log.log("[VTK] Restart: no GameData, aborting")
 		return
 	gd.set("isDead", false)
 	gd.set("previousMap", "")
@@ -1232,9 +1256,9 @@ func _on_restart_pressed(gd, root) -> void:
 		gd.set("shelter", true)
 		gd.set("permadeath", false)
 	gd.set("currentMap", start_map)
-	var ldr = get_node_or_null("/root/Loader")
+	var ldr = get_node_or_null(Paths.LOADER)
 	if ldr == null:
-		print("[VTK] Restart: ERROR - Loader not found")
+		Log.log("[VTK] Restart: ERROR - Loader not found")
 		return
 	var difficulty := 1
 	if _death_is_ironman:
@@ -1246,4 +1270,4 @@ func _on_restart_pressed(gd, root) -> void:
 	else:
 		_wipe_saves_for_restart()
 	ldr.LoadScene(start_map)
-	print("[VTK] Restart: loading " + start_map + " ironman=" + str(_death_is_ironman))
+	Log.log("[VTK] Restart: loading " + start_map + " ironman=" + str(_death_is_ironman))

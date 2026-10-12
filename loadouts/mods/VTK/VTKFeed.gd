@@ -1,4 +1,5 @@
 extends Control
+const Paths = preload("res://mods/VTK/VTKPaths.gd")
 
 # Лента убийств. Чистая логика (цвета, сегменты, вытеснение, fade) — static,
 # чтобы тестировалась headless; рендер и игровые пути — только в экземпляре.
@@ -196,7 +197,7 @@ static func norm_weapon(s: String) -> String:
 func _weapon_texture(weapon: String) -> Texture2D:
 	if weapon == "":
 		return null
-	var db = get_tree().root.get_node_or_null("Database")
+	var db = get_tree().root.get_node_or_null(Paths.DATABASE)
 	if db == null or not ("master" in db):
 		return null
 	var master = db.get("master")
@@ -230,7 +231,7 @@ func _process(delta: float) -> void:
 		_scene_ref = cs
 		clear()
 	var in_shelter := false
-	var iface = get_tree().root.get_node_or_null("Map/Core/UI/Interface")
+	var iface = get_tree().root.get_node_or_null(Paths.INTERFACE)
 	if iface != null and "gameData" in iface:
 		var gd = iface.get("gameData")
 		if gd != null:

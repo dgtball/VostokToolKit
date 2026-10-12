@@ -1,4 +1,6 @@
 extends Node
+const Paths = preload("res://mods/VTK/VTKPaths.gd")
+const Log = preload("res://mods/VTK/VTKLog.gd")
 const Loc = preload("res://mods/VTK/VTKLoc.gd")
 
 const SAVE_FILE := "user://MCM/vostok-toolkit/VTKsets.json"
@@ -31,23 +33,23 @@ static func _migrate_one(src_path: String, dst_name: String) -> void:
 		return
 	var src = FileAccess.open(src_path, FileAccess.READ)
 	if src == null:
-		print("[VTK] save file migration failed: cannot open ", src_path)
+		Log.log("[VTK] save file migration failed: cannot open " + str(src_path))
 		return
 	var text := src.get_as_text()
 	src.close()
 	var dst_path := SAVE_FILE.get_base_dir() + "/" + dst_name
 	var dst = FileAccess.open(dst_path, FileAccess.WRITE)
 	if dst == null:
-		print("[VTK] save file migration failed: cannot write ", dst_path)
+		Log.log("[VTK] save file migration failed: cannot write " + dst_path)
 		return
 	dst.store_string(text)
 	dst.close()
 	var r := DirAccess.remove_absolute(ProjectSettings.globalize_path(src_path))
 	if r != OK:
-		print("[VTK] save file migration: copied ", dst_name,
-			", failed to remove ", src_path, " (code ", str(r), ")")
+		Log.log("[VTK] save file migration: copied " + dst_name
+			+ ", failed to remove " + src_path + " (code " + str(r) + ")")
 		return
-	print("[VTK] save file migrated: ", src_path.get_file(), " -> ", dst_name)
+	Log.log("[VTK] save file migrated: " + src_path.get_file() + " -> " + dst_name)
 
 static func _root_node() -> Node:
 	var tree = Engine.get_main_loop()
@@ -265,19 +267,19 @@ static func apply_loadout(name: String, equip: bool) -> void:
 	var root = _root_node()
 	if not root:
 		return
-	var interface = root.get_node_or_null("Map/Core/UI/Interface")
+	var interface = root.get_node_or_null(Paths.INTERFACE)
 	if not interface:
-		print("[VTK] apply_loadout: no Interface node")
+		Log.log("[VTK] apply_loadout: no Interface node")
 		return
 	var loader = root.get_node_or_null("Loader")
 	var ig = interface.get("inventoryGrid")
 	if ig == null or not is_instance_valid(ig):
-		print("[VTK] apply_loadout: no inventoryGrid")
+		Log.log("[VTK] apply_loadout: no inventoryGrid")
 		return
 
 	var will_equip := equip and interface.has_method("Equip")
 	if equip and not will_equip:
-		print("[VTK] interface.Equip unavailable, inventory only")
+		Log.log("[VTK] interface.Equip unavailable, inventory only")
 	var equip_root = interface.get("equipment") if will_equip else null
 	if will_equip and (equip_root == null or not is_instance_valid(equip_root)):
 		will_equip = false
@@ -297,7 +299,7 @@ static func apply_loadout(name: String, equip: bool) -> void:
 				fitted += 1
 			else:
 				skipped += 1
-				print("[VTK] slot busy or missing: " + str(desc.get("name")) + " -> " + str(slot_name))
+				Log.log("[VTK] slot busy or missing: " + str(desc.get("name")) + " -> " + str(slot_name))
 
 	var cat_grid = interface.get("catalogGrid")
 	var cat_before := _grid_count(cat_grid)
@@ -320,7 +322,7 @@ static func apply_loadout(name: String, equip: bool) -> void:
 		if is_instance_valid(child) and child.get("slotData") != null:
 			grid_count += 1
 
-	print("[VTK] apply '" + name + "' equip=" + str(equip)
+	Log.log("[VTK] apply '" + name + "' equip=" + str(equip)
 		+ " fitted=" + str(fitted) + " skipped=" + str(skipped)
 		+ " grid=" + str(grid_count) + " catalog=" + str(to_catalog)
 		+ " reset=skipped saved=1")
@@ -400,14 +402,14 @@ static func spawn_gear(desc: Dictionary) -> int:
 	var root = _root_node()
 	if not root:
 		return 0
-	var interface = root.get_node_or_null("Map/Core/UI/Interface")
+	var interface = root.get_node_or_null(Paths.INTERFACE)
 	if not interface:
-		print("[VTK] spawn_gear: no Interface node")
+		Log.log("[VTK] spawn_gear: no Interface node")
 		return 0
 	var loader = root.get_node_or_null("Loader")
 	var ig = interface.get("inventoryGrid")
 	if ig == null or not is_instance_valid(ig):
-		print("[VTK] spawn_gear: no inventoryGrid")
+		Log.log("[VTK] spawn_gear: no inventoryGrid")
 		return 0
 	var placed := _insert_desc(interface, ig, desc)
 	if loader and loader.has_method("SaveCharacter"):
@@ -464,7 +466,7 @@ static func _build_slot_data(item_data):
 		return null
 	var res = load(path)
 	if not res:
-		print("[VTK] _build_slot_data: can't load " + path)
+		Log.log("[VTK] _build_slot_data: can't load " + path)
 		return null
 	var amount = float(item_data.get("amount")) if item_data.has("amount") else 1.0
 	var slotData = SlotData.new()
@@ -648,7 +650,7 @@ static func _equip_sd(interface, ig, equip_root, sd, preferred: String) -> bool:
 		return false
 	var node := _insert(interface, ig, sd)
 	if node == null:
-		print("[VTK] _equip_sd: no grid node for " + str(res.get("name")))
+		Log.log("[VTK] _equip_sd: no grid node for " + str(res.get("name")))
 		return false
 	if ig.has_method("Pick"):
 		ig.Pick(node)

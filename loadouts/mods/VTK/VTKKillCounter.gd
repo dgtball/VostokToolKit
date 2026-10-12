@@ -1,4 +1,5 @@
 extends Control
+const Paths = preload("res://mods/VTK/VTKPaths.gd")
 
 var _enabled: bool = false
 var _label: Label = null
@@ -142,7 +143,7 @@ func _get_iface() -> Node:
 	if _iface != null and is_instance_valid(_iface):
 		return _iface
 	var root = get_tree().root
-	_iface = root.get_node_or_null("Map/Core/UI/Interface")
+	_iface = root.get_node_or_null(Paths.INTERFACE)
 	return _iface
 
 func _get_hooks() -> Node:

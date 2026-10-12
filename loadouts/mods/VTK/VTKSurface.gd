@@ -4,8 +4,12 @@ extends RefCounted
 ## перестройку UI (mod.tres не перегружается, кэш чистить не нужно).
 
 const GOLD := Color("#d48a3a")
+const GOLD_SOFT := Color("#e0b55a")
 const INK := Color("#d8cdbe")
 const MUTED := Color("#8a7a6a")
+const BROWN := Color("#5f5347")
+const GREY := Color("#888888")
+const GREY_DIM := Color("#666666")
 
 static var _surfaces: Dictionary = {}
 static var _textures: Dictionary = {}
