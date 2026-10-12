@@ -3216,6 +3216,7 @@ func _register_mcm() -> void:
 	cfg.set_value("Keycode", "key_ui_toggle", {"name": "Hotkey: Toggle UI", "default": 0, "default_type": "Keycode", "value": 0, "category": CAT, "menu_pos": 0, "tooltip": "Press once to open/close the Loadouts UI."})
 	cfg.set_value("Bool", "nvg_debug_probe", {"name": "Debug logging", "default": false, "value": false, "category": CAT, "menu_pos": 1, "tooltip": "Writes probes to user://loadouts_debug.log and enables the F4 detection overlay. Leave off during normal play; turn on only to diagnose something."})
 	cfg.set_value("Dropdown", "language", {"name": "Language", "default": Loc.DEFAULT, "value": Loc.get_lang(), "options": {"en": "English", "ru": "Русский"}, "category": CAT, "menu_pos": 2, "tooltip": "Interface language of the Loadouts window. English is the source language."})
+	cfg.set_value("Bool", "auto_equip", {"name": "Auto-equip on pickup", "default": true, "value": true, "category": CAT, "menu_pos": 3, "tooltip": "When a picked-up item fits an empty equipment slot it is equipped right away. Stackables top up an already equipped stack; loading a save or starting a new game is left untouched."})
 	var TP := "02. ThermalVision"
 	cfg.set_value("Bool", "thermal_enabled", {"name": "Thermal vision", "default": false, "value": false, "category": TP, "menu_pos": 0, "tooltip": "Master switch for the thermal vision layer: bot heat glow, mines and the Nomad marker. Plain green NVG is unaffected while this is off."})
 	cfg.set_value("Bool", "thermal_mines", {"name": "Mine highlighting", "default": true, "value": true, "category": TP, "menu_pos": 1, "tooltip": "Highlight mines while thermal vision is on."})
@@ -3321,6 +3322,9 @@ func _mcm_apply(cfg: ConfigFile) -> void:
 	_kc_mcm = bool(_mcm_key_val(cfg, "Bool", "kill_counter_enabled", true))
 	_feed_mcm = bool(_mcm_key_val(cfg, "Bool", "kill_feed_enabled", true))
 	_apply_hud()
+	if _hooks != null and is_instance_valid(_hooks):
+		_hooks.set_equip_enabled(bool(_mcm_key_val(cfg, "Bool", "auto_equip", true)))
+		_hooks.set_equip_debug(bool(_mcm_key_val(cfg, "Bool", "nvg_debug_probe", false)))
 	_ensure_travel()
 	if _travel != null and is_instance_valid(_travel):
 		var tp_unlocked = bool(_mcm_key_val(cfg, "Bool", "tp_unlocked_shelters_only", false))

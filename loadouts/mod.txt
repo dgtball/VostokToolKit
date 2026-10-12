@@ -1,1 +1,10 @@
-[mod]name="Vostok Toolkit"id="vostok-toolkit"version="4.14.0"[autoload]VTKUI="res://mods/VTK/VTKUI.gd"
+[mod]
+name="Vostok Toolkit"
+id="vostok-toolkit"
+version="4.15.2"
+
+[autoload]
+VTKUI="res://mods/VTK/VTKUI.gd"
+
+[hooks]
+res://Scripts/Context.gd = Update

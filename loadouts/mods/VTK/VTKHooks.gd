@@ -7,13 +7,31 @@ var _player_hits: Dictionary = {}
 var _hooks_kc: Array = []
 var _hooks_notes: Array = []
 var _hooks_deposits: Array = []
+var _hooks_equip: Array = []
+var _hooks_context: Array = []
 
 const KC = preload("res://mods/VTK/VTKKillCounter.gd")
 const Notes = preload("res://mods/VTK/VTKNotes.gd")
 const VTKDeposits = preload("res://mods/VTK/VTKDeposits.gd")
+const VTKData = preload("res://mods/VTK/VTKData.gd")
+const EquipFlow = preload("res://mods/VTK/VTKEquip.gd")
 const Loc = preload("res://mods/VTK/VTKLoc.gd")
 const HIT_WINDOW_MSEC := 15000
 const SEEN_DEATHS_TTL_MSEC := 600000
+
+# Авто-экипировка: пофреймовый diff детей inventoryGrid вместо хрупких
+# add-item хуков (арности их post-колбэков не восстановимы из .gdc). Интерфейс
+# при загрузке мира и при возврате из сохранения создаётся заново — это видно
+# по смене instance_id и включает окно оседания (ARM), чтобы стартовое
+# снаряжение не разъехалось по слотам.
+const EQUIP_ARM_MS := 6000
+const EQUIP_BULK_LIMIT := 10
+const EQUIP_OWN_WINDOW_MS := 1500
+var _equip_on: bool = true
+var _equip_debug: bool = false
+var _equip_armed_at: int = 0
+var _equip_iface_id: int = 0
+var _equip_seen: Dictionary = {}
 
 signal kill_event(ev: Dictionary)
 
@@ -71,6 +89,13 @@ func _process(_delta: float) -> void:
 	if not _registered:
 		_try_register()
 	_poll_death()
+	_poll_equip()
+
+func set_equip_enabled(on: bool) -> void:
+	_equip_on = on
+
+func set_equip_debug(on: bool) -> void:
+	_equip_debug = on
 
 const GAME_DATA_RES := "res://Resources/GameData.tres"
 
@@ -158,8 +183,10 @@ func _do_register() -> void:
 	_hooks_deposits.append(_lib.hook("interface-startinput-post", _on_tasks_startinput))
 	_hooks_deposits.append(_lib.hook("task-_on_complete_pressed", _on_task_complete_pressed))
 	_lib.hook("loader-newgame-post", _on_newgame_post)
+	_hooks_equip.append(_lib.hook("loader-loadcharacter-post", _on_loadcharacter_post))
+	_hooks_context.append(_lib.hook("context-update-post", _on_context_update_post))
 	_registered = true
-	print("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + _hooks_notes.size() + _hooks_deposits.size() + 1) + " hooks)")
+	print("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + _hooks_notes.size() + _hooks_deposits.size() + _hooks_equip.size() + _hooks_context.size() + 1) + " hooks)")
 
 # Late Start (and any mod that saves the world from its own loader-newgame-post
 # handler) writes world.difficulty from gameData.difficulty. That value is stale:
@@ -176,6 +203,7 @@ func _on_newgame_post(difficulty, _season) -> void:
 		if diff == 3:
 			gd.set("permadeath", true)
 	patch_world_difficulty(diff)
+	_arm_equip(EQUIP_ARM_MS)
 	print("[VTK] newgame-post: difficulty=" + str(diff))
 
 func patch_world_difficulty(diff: int) -> void:
@@ -187,6 +215,182 @@ func patch_world_difficulty(diff: int) -> void:
 		return
 	world.set("difficulty", diff)
 	ResourceSaver.save(world, path)
+
+func _on_loadcharacter_post() -> void:
+	_arm_equip(EQUIP_ARM_MS)
+	if _equip_debug:
+		print("[VTK] loadcharacter-post: equip armed")
+
+func _arm_equip(delay_ms: int) -> void:
+	_equip_armed_at = Time.get_ticks_msec() + delay_ms
+
+# --- Контекстное меню предмета: кнопка Delete ------------------------------
+# Пост-хук Context.Update добавляет кнопку Delete, которая мгновенно удаляет
+# весь стак через ванильный Interface.ContextDestroy() -- та же операция, что
+# и hold-to-Destroy, но без удержания. Кнопка живёт в Panel/Margin/Buttons и
+# пере-показывается после каждого Update, потому что сам ванильный Update в
+# начале прячет всех детей контейнера. Показываем только для предметов в гриде
+# (contextGrid != null), как и ванильный ContextDestroy; в декоре не прячем.
+func _on_context_update_post(_slot_data) -> void:
+	var ctx = _lib._caller if _lib else null
+	if ctx == null or not is_instance_valid(ctx):
+		return
+	var buttons = ctx.get_node_or_null("Panel/Margin/Buttons")
+	if buttons == null or not (buttons is Node):
+		return
+	var btn := _find_context_delete_button(buttons)
+	if btn == null:
+		btn = _make_context_delete_button(ctx, buttons)
+	if btn == null:
+		return
+	var iface = _context_interface(ctx)
+	btn.visible = iface != null and iface.get("contextGrid") != null
+
+func _context_interface(ctx):
+	var iface = ctx.get("interface") if ctx != null else null
+	if iface == null:
+		iface = _resolve_interface()
+	return iface
+
+func _find_context_delete_button(buttons) -> Button:
+	var b = buttons.get_node_or_null("VTKDelete")
+	return b if (b != null and b is Button) else null
+
+func _make_context_delete_button(ctx, buttons) -> Button:
+	var btn := Button.new()
+	btn.name = "VTKDelete"
+	btn.text = "Delete"
+	btn.add_theme_font_size_override("font_size", _context_button_font_size(buttons))
+	btn.pressed.connect(_on_context_delete_pressed.bind(ctx))
+	buttons.add_child(btn)
+	return btn
+
+# Ванильные кнопки контекста несут персональный theme_override_font_sizes/
+# font_size (12), а не общий для темы Button; новый Button унаследовал бы
+# размер темы (16). Берём размер у соседа, чтобы совпасть и не привязываться
+# к жёсткому числу, если игра его сменит.
+func _context_button_font_size(buttons) -> int:
+	for child in buttons.get_children():
+		if child is Button and child.name != "VTKDelete":
+			return child.get_theme_font_size("font_size")
+	return 12
+
+func _on_context_delete_pressed(ctx) -> void:
+	var iface = _context_interface(ctx)
+	if iface == null or not is_instance_valid(iface):
+		return
+	if iface.get("visible") != true:
+		return
+	if iface.get("contextGrid") == null or iface.get("contextItem") == null:
+		return
+	iface.call("ContextDestroy")
+
+func _resolve_interface() -> Node:
+	var root = get_tree().root
+	if root == null:
+		return null
+	return root.get_node_or_null("Map/Core/UI/Interface")
+
+func _poll_equip() -> void:
+	var iface = _resolve_interface()
+	if iface == null or not is_instance_valid(iface):
+		return
+	var iid := iface.get_instance_id()
+	if iid != _equip_iface_id:
+		_equip_iface_id = iid
+		_equip_seen = {}
+		_arm_equip(EQUIP_ARM_MS)
+	var ig = iface.get("inventoryGrid")
+	if ig == null or not is_instance_valid(ig):
+		return
+	var current := {}
+	for c in ig.get_children():
+		if is_instance_valid(c):
+			current[c.get_instance_id()] = c
+	var fresh: Array = []
+	for id in current.keys():
+		if not _equip_seen.has(id):
+			fresh.append(current[id])
+	_equip_seen = current
+	if fresh.is_empty():
+		return
+	if not _equip_on:
+		return
+	if Time.get_ticks_msec() < _equip_armed_at:
+		return
+	if VTKData._own_op_recent(EQUIP_OWN_WINDOW_MS):
+		return
+	if fresh.size() > EQUIP_BULK_LIMIT:
+		if _equip_debug:
+			print("[VTK] equip: bulk jump skipped (" + str(fresh.size()) + " nodes)")
+		return
+	for n in fresh:
+		_equip_handle(iface, ig, n)
+
+func _equip_handle(iface, ig, node) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	var sd = node.get("slotData")
+	if sd == null:
+		return
+	var res = sd.get("itemData")
+	if res == null or not EquipFlow.is_equipment(res):
+		return
+	var equip_root = iface.get("equipment")
+	if equip_root == null or not is_instance_valid(equip_root):
+		return
+	var free_sl = VTKData._find_free_slot(equip_root, EquipFlow.wanted_slots(res), 0)
+	if free_sl != null:
+		_equip_move(iface, ig, node, free_sl)
+		return
+	var occ_sl = VTKData._find_occupied_slot(equip_root, res, 0)
+	if occ_sl == null:
+		return
+	var occ = VTKData._slot_item(occ_sl)
+	if occ == null:
+		return
+	var occ_sd = occ.get("slotData")
+	if occ_sd == null:
+		return
+	if EquipFlow.decide(res, occ_sd.get("itemData")) != "merge":
+		return
+	_merge_into(iface, ig, node, sd, occ, occ_sd, res)
+
+func _equip_move(iface, ig, node, sl) -> void:
+	if ig.has_method("Pick"):
+		ig.Pick(node)
+	if iface.has_method("Equip"):
+		iface.Equip(node, sl)
+	if iface.has_method("PlayEquip"):
+		iface.PlayEquip()
+	if iface.has_method("UpdateStats"):
+		iface.UpdateStats(true)
+	if _equip_debug:
+		print("[VTK] equip: moved item -> " + str(sl.name))
+
+func _merge_into(iface, ig, node, sd, occ, occ_sd, res) -> void:
+	var plan := EquipFlow.merge_amounts(sd.get("amount"), occ_sd.get("amount"), res.get("maxAmount"))
+	var moved := float(plan["moved"])
+	if moved <= 0.0:
+		return
+	occ_sd.set("amount", VTKData._whole(float(occ_sd.get("amount")) + moved))
+	var leftover := float(plan["leftover"])
+	if leftover <= 0.0:
+		if ig.has_method("Pick"):
+			ig.Pick(node)
+		node.queue_free()
+		if occ.has_method("UpdateDetails"):
+			occ.UpdateDetails()
+	else:
+		sd.set("amount", VTKData._whole(leftover))
+		if occ.has_method("UpdateDetails"):
+			occ.UpdateDetails()
+		if node.has_method("UpdateDetails"):
+			node.UpdateDetails()
+	if iface.has_method("UpdateStats"):
+		iface.UpdateStats(true)
+	if _equip_debug:
+		print("[VTK] equip: merged " + str(moved) + " into stack (leftover " + str(leftover) + ")")
 
 func _on_ai_weapon_damage(_hitbox, _damage, _vector, id) -> void:
 	var victim_ai = _lib._caller if _lib else null

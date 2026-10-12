@@ -4,6 +4,17 @@ const Loc = preload("res://mods/VTK/VTKLoc.gd")
 const SAVE_FILE := "user://MCM/vostok-toolkit/VTKsets.json"
 const LEGACY_SAVE_FILE := "user://MCM/vostok-toolkit/loadouts.json"
 
+# Метка последней операции мода, кладущей предметы в инвентарь (сборка сета,
+# спавн снаряжения). Пофреймовый обход инвентаря в VTKHooks пропускает кадры
+# сразу после неё, иначе авто-экипировка подхватила бы собственные вставки.
+static var _own_op_msec: int = 0
+
+static func _touch_own_op() -> void:
+	_own_op_msec = Time.get_ticks_msec()
+
+static func _own_op_recent(window_ms: int) -> bool:
+	return _own_op_msec != 0 and (Time.get_ticks_msec() - _own_op_msec) < window_ms
+
 # Одноразовый перенос loadouts.json -> VTKsets.json. Файл сетов переехал под
 # префикс VTK*, как остальные сущности мода, но имя не привязано к коду, поэтому
 # старые данные живут на диске и должны быть перенесены один раз.
@@ -421,13 +432,11 @@ static func apply_loadout(name: String, equip: bool) -> void:
 			var sd = _build_slot_data(desc)
 			if sd == null:
 				continue
-			var node := _insert(interface, ig, sd)
-			var used := _equip_into(interface, ig, equip_root, sd, str(slot_name), node)
-			if used == "":
+			if _equip_sd(interface, ig, equip_root, sd, str(slot_name)):
+				fitted += 1
+			else:
 				skipped += 1
 				print("[VTK] slot busy or missing: " + str(desc.get("name")) + " -> " + str(slot_name))
-			else:
-				fitted += 1
 
 	var cat_grid = interface.get("catalogGrid")
 	var cat_before := _grid_count(cat_grid)
@@ -649,6 +658,7 @@ static func _nested_array(slotData) -> Array:
 	return arr
 
 static func _insert(interface, ig, slotData) -> Node:
+	_touch_own_op()
 	var before := {}
 	if ig != null and is_instance_valid(ig):
 		for child in ig.get_children():
@@ -721,15 +731,47 @@ static func _find_free_slot(node, wanted: Dictionary, depth: int) -> Node:
 				return r
 	return null
 
-static func _equip_into(interface, ig, equip_root, sd, preferred: String, node) -> String:
+# Занятый слот, в котором лежит ровно тот же itemData. Нужен авто-экипировке:
+# свободных слотов нет, но экипированный стак совпадает — туда можно доложить.
+static func _find_occupied_slot(node, item_res, depth: int) -> Node:
+	if node == null or not is_instance_valid(node) or depth > 3 or item_res == null:
+		return null
+	for sl in node.get_children():
+		if is_instance_valid(sl) and _is_equip_slot(sl) and not _slot_is_free(sl):
+			for c in sl.get_children():
+				if is_instance_valid(c):
+					var csd = c.get("slotData")
+					if csd != null and csd.get("itemData") == item_res:
+						return sl
+	for sl in node.get_children():
+		if is_instance_valid(sl):
+			var r = _find_occupied_slot(sl, item_res, depth + 1)
+			if r != null:
+				return r
+	return null
+
+static func _slot_item(sl) -> Node:
+	if sl == null or not is_instance_valid(sl):
+		return null
+	for c in sl.get_children():
+		if is_instance_valid(c) and c.get("slotData") != null:
+			return c
+	return null
+
+# Вставить предмет в слот экипировки и вернуть true при успехе. Свободный слот
+# ищется ДО interface.Create: иначе на занятом слоте предмет успевал лечь в
+# inventoryGrid и оставался там — повторный Apply каждого предмета плодил дубль
+# и переполнял сетку (иконки-призраки поверх HUD). Занятый или отсутствующий
+# слот теперь пропускается, не создавая узла.
+static func _equip_sd(interface, ig, equip_root, sd, preferred: String) -> bool:
 	if equip_root == null or not is_instance_valid(equip_root):
-		return ""
+		return false
 	var res = sd.get("itemData")
 	if res == null:
-		return ""
+		return false
 	var slots = res.get("slots")
 	if not (slots is Array) or slots.size() == 0:
-		return ""
+		return false
 	var order := []
 	if preferred != "" and slots.has(preferred):
 		order.append(preferred)
@@ -740,18 +782,17 @@ static func _equip_into(interface, ig, equip_root, sd, preferred: String, node) 
 	var wanted := {}
 	for n in order:
 		wanted[str(n).to_lower()] = true
-	if node == null:
-		node = _find_node_for_sd(ig, sd)
-	if node == null:
-		print("[VTK] _equip_into: no grid node for " + str(res.get("name")))
-		return ""
 	var sl = _find_free_slot(equip_root, wanted, 0)
 	if sl == null:
-		return ""
+		return false
+	var node := _insert(interface, ig, sd)
+	if node == null:
+		print("[VTK] _equip_sd: no grid node for " + str(res.get("name")))
+		return false
 	if ig.has_method("Pick"):
 		ig.Pick(node)
 	interface.Equip(node, sl)
-	return str(sl.name)
+	return true
 
 static func _notify(loader, text: String, color: Color) -> void:
 	if loader and loader.has_method("Message"):
