@@ -1,56 +1,60 @@
 # Vostok Toolkit
 
-Мод для **Road to Vostok**: панель с наборами снаряжения .... дополнить
+A quality-of-life toolkit for **Road to Vostok** — loadout presets, smarter tasks, thermal vision, kill stats, a dynamic killfeed and fast travel, all in one mod.
 
-![Vostok Toolkit](assets/logo.jpg)
+![Ironman Restart](assets/ironman-restart.jpg)
 
-**Версия:** 4.14.0 · **Загрузчик:** Metro Mod Loader 3.4.2 · **Язык:** RU / EN
+**Version:** 4.15.2 · **Loader:** Metro Mod Loader 3.4.2 · **Game:** 0.2.1.0 · **Language:** RU / EN
 
-## Возможности
+## Features
 
-| Раздел | Что делает |
+| Feature | What it does |
 |---|---|
-| **Ironman-RESTART** | После смерти в Ironman неактивная кнопка Load Game подменяется кнопкой Restart перезапуская permadeath! + добавлена карта Apartments (почему бы и нет) |
-| **Сеты** | Возможность сохранить сет экипировки/инвентаря с назначением горячих клавиш |
-| **Счётчик NPS** | HUD показывает Счетчик убитых, Количество Врагов/Качевников на данный момент  |
-| **KillFeed** | Динамичная лента убийств  |
-| **Тепловизор (NVG)** | Замена ПНВ. Тепловое свечение мира: подсвечивает мины и помечает дружественных Nomad'ов, облегчая обнаружение в условиях плохой видимости |
-| **Better Tasks** | Автоочистка выполненных заданий, выполнение задач по частям, косметика UI |
-| **Телепорт** | Между Картами/Убежищами/Торговцами |
+| **Loadout Presets** | Save equipment/inventory as a preset and bind it to a hotkey. |
+| **Auto-equip** | Items with slots are equipped on pickup (MCM toggle). |
+| **Matches stack in equip** | Matches stack right into the equipment slot. |
+| **Better Tasks** | Completed-quest auto-cleanup, partial hand-in, Notes icon rows. |
+| **Thermal Vision (NVG)** | World heat glow, mine highlighting, friendly Nomad markers. |
+| **Kill Stats & Killfeed** | HUD kill/enemy counter and a dynamic killfeed. |
+| **Fast Travel** | Move between maps, shelters and traders. |
+| **Ironman Restart** | Death-screen Restart button for permadeath runs (+ Apartments map). |
 
-## Установка
+## Installation
 
-1. Установи Metro Mod Loader для Road to Vostok.
-2. Скачай `Loadouts.vmz` из [Releases](https://github.com/dgtball/VostokToolKit/releases).
-3. Положи файл в `Road to Vostok\mods\`.
-4. Запусти игру.
+1. Install Metro Mod Loader for Road to Vostok.
+2. Download `Loadouts.vmz` from [Releases](https://github.com/dgtball/VostokToolKit/releases).
+3. Drop it into `Road to Vostok\mods\`.
+4. Launch the game.
 
-## Использование
+## Usage
 
-- Панель вызывается клавишей `key_ui_toggle` — она настраивается в MCM. По умолчанию - F3
-- Сеты хранятся в `user://MCM/vostok-toolkit/VTKsets.json`; язык интерфейса — в MCM (General → Language).
+- Toggle panel: `F3` (configurable in MCM).
+- Presets live in `user://MCM/vostok-toolkit/VTKsets.json`; interface language in MCM (General → Language).
 
-## Сборка из исходников
+## Building from source
 
-`.vmz` — это zip содержимого папки `loadouts/`: на верхнем уровне архива должны лежать `mod.txt` и `mods/` (без корневой папки `loadouts`). Запакуй папку любым zip-архиватором и переименуй в `.vmz`.
+`Loadouts.vmz` is a zip of the contents of `loadouts/`: `mod.txt` and `mods/` at the archive root (no top-level `loadouts` folder). Zip the folder and rename to `.vmz`, or run `pack.ps1`.
 
-## Структура репозитория
+## Repository layout
 
-- `loadouts/mod.txt` — имя, id, версия, автолоад
-- `loadouts/mods/VTK/*.gd` — исходники мода (префикс `VTK`)
-- `assets/` — изображения для README
+- `loadouts/mod.txt` — name, id, version, autoload
+- `loadouts/mods/VTK/*.gd` — mod source (prefix `VTK`)
+- `assets/` — images for the README and the Vostok Mods listing
 
-## Совместимость
+## Compatibility
 
-Совместим с LateStart
-Проверялся в связке с ElegantHUD, JCM и другими распространенными модами. Конфликты маловероятны, но не равны нулю.
+Compatible with LateStart. Tested alongside ElegantHUD, JCM and other common mods. Conflicts are unlikely but not impossible.
 
-## Благодарности
-Juuzoz' Cheat Menu [JCM] by juuzoz_ https://vostokmods.net/mod/juuzoz-cheat-menu-jcm с использования этого мода собственно и родилась идея по созданию собственного мода с сетами
-Thermal Vision Mod by Vito921 https://www.nexusmods.com/roadtovostok/mods/141  - послужил вдохновением к переосмыслению ESP
-Partial Task Hand-In by Ryujiro -  https://modworkshop.net/mod/56789 - дополнил идею по задачам
-и остальным мододелам которые позволяют делать игру интереснее и насыщенее
+## Credits
 
-## Лицензия
+- Juuzoz' Cheat Menu [JCM](https://vostokmods.net/mod/juuzoz-cheat-menu-jcm) by juuzoz_ — the starting point for the loadout idea
+- [Thermal Vision](https://www.nexusmods.com/roadtovostok/mods/141) by Vito921 — inspiration for the thermal rework
+- [Partial Task Hand-In](https://modworkshop.net/mod/56789) by Ryujiro — inspired partial task hand-in
 
-[MIT](LICENSE). Независимый мод сообщества, не связан с Road to Vostok и его автором.
+## Development note
+
+This project is developed with the assistance of generative AI.
+
+## License
+
+[MIT](LICENSE). Community mod, not affiliated with Road to Vostok or its author.
