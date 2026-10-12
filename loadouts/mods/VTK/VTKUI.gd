@@ -217,10 +217,6 @@ func _init_later() -> void:
 	_register_mcm()
 	print("[VTK] UI init done")
 
-func _get_iface():
-	var root = get_tree().root
-	return root.get_node_or_null("Map/Core/UI/Interface")
-
 func _is_toggle_event(event: InputEvent) -> bool:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return false
@@ -1233,22 +1229,11 @@ func _is_magazine(path: String) -> bool:
 	var info := _item_info(path)
 	return str(info.get("type")) == "Attachment" and str(info.get("subtype")) == "Magazine"
 
-# Кнопка обвеса нужна только там, где есть что вешать. Picker.has_panel ловит
-# и maxAmount>0, а у патронов он 300 (вместимость стака в инвентаре) - так
-# патроны получали кнопку обвеса без единого совместимого ствола.
+# Кнопка обвеса нужна только там, где есть что вешать: непустой compatible.
+# У патронов maxAmount = 300 (вместимость стака), поэтому maxAmount в проверке
+# не участвует - иначе патроны получали бы кнопку обвеса без обвесов.
 func _att_panel_needed(info: Dictionary) -> bool:
-	var compat = info.get("compatible")
-	if compat is Array and compat.size() > 0:
-		return true
-	return false
-
-func _make_step_btn(label: String) -> Button:
-	var b := Button.new()
-	b.text = label
-	b.custom_minimum_size = Vector2(24, 24)
-	b.add_theme_font_size_override("font_size", 10)
-	VTKSurface.style_button(b, false, false, 2, 2, 4, 4)
-	return b
+	return Picker.att_panel_needed(info)
 
 # Микро-кнопка: крестик чипа слота и ряды управления клеткой снаряжения.
 # Дефолт 15×16/font 8 - слот-строка; клетка шага 2 передаёт размер крупнее,
@@ -2695,9 +2680,6 @@ func _item_slots(item) -> Array:
 # Клик по предмету. Цель решает всё: при явной цели предмет вытесняет то, что
 # стояло в этом слоте, при пустой занимает первый свободный слот сам, а если
 # слотов нет - уходит в снаряжение.
-func _place_item(item) -> void:
-	_place_into(item, _target_slot)
-
 # Клик по предмету. Слот-цель решает всё: при явной цели предмет вытесняет то,
 # что стояло в этом слоте, при пустой занимает первый свободный слот сам, а если
 # слотов нет - уходит в снаряжение.
@@ -3161,10 +3143,6 @@ func _save_loadout() -> void:
 	_editing_name = name_new
 	_clear_problem()
 	_refresh_loadout_list()
-
-func _load_loadout(name: String) -> void:
-	var LD = preload("res://mods/VTK/VTKData.gd")
-	LD.load_loadout(name)
 
 func _edit_loadout(name: String) -> void:
 	var LD = preload("res://mods/VTK/VTKData.gd")

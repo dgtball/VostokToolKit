@@ -527,9 +527,6 @@ func _probe_pixels() -> void:
 		if not bool(e.get("painted")):
 			skip_unpainted += 1
 			continue
-		if not bool(e.get("painted")):
-			skip_unpainted += 1
-			continue
 		var sp := cam.unproject_position(node.global_position + Vector3(0.0, 1.0, 0.0))
 		if sp.x < 1.0 or sp.y < 1.0 or sp.x >= float(w - 1) or sp.y >= float(h - 1):
 			skip_bounds += 1

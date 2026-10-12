@@ -565,17 +565,15 @@ static func facets_of(items, query) -> Array:
 		out.append({"key": str(c), "items": buckets[c], "count": (buckets[c] as Array).size()})
 	return out
 
-# Есть ли что показать в панели предмета: обвесы или тумблер заполнения обоймы.
-# Единая проверка для клетки, строки слота, чипа и самой панели - иначе метка
-# и содержимое панели могут разойтись. На вход - {"compatible": ..., "maxAmount": ...}.
-static func has_panel(info) -> bool:
+# Есть ли что показать в панели обвесов: непустой compatible. Тумблер заполнения
+# обоймы обрабатывается отдельно (_is_magazine), поэтому maxAmount здесь не
+# участвует (у патронов он равен вместимости стака). Единая проверка для клетки,
+# строки слота, чипа и самой панели - иначе метка и содержимое панели разойдутся.
+static func att_panel_needed(info) -> bool:
 	if typeof(info) != TYPE_DICTIONARY:
 		return false
 	var compat = info.get("compatible")
-	if compat is Array and compat.size() > 0:
-		return true
-	var max_a = info.get("maxAmount")
-	return max_a != null and float(max_a) > 0.0
+	return compat is Array and compat.size() > 0
 
 # Обвесы, сгруппированные по их собственному subtype: оптику нельзя надеть
 # вместе с оптикой, а дуло с дулом. Элемент группы: {"grp": String, "items": Array},

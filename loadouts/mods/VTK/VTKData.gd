@@ -183,42 +183,7 @@ static func _preferred_slot(path: String) -> String:
 		return ""
 	return str(slots[0])
 
-static func _slots_of(desc) -> Array:
-	if typeof(desc) != TYPE_DICTIONARY:
-		return []
-	var res = load(str(desc.get("path")))
-	if res == null:
-		return []
-	var slots = res.get("slots")
-	if not (slots is Array):
-		return []
-	return slots
-
-# ---------- legacy-compatible writes (used by the old panel) ----------
-
-static func add(set_name: String, items: Array) -> void:
-	var all = get_all()
-	for i in range(all.size()):
-		if typeof(all[i]) == TYPE_DICTIONARY and str(all[i].get("name")) == set_name:
-			all[i] = _from_items(set_name, items, all[i])
-			save_all(all)
-			return
-	all.append(_from_items(set_name, items, {}))
-	save_all(all)
-
-static func update(old: String, new_name: String, items: Array) -> void:
-	var all = get_all()
-	for i in range(all.size()):
-		if typeof(all[i]) == TYPE_DICTIONARY and str(all[i].get("name")) == old:
-			all[i] = _from_items(new_name, items, all[i])
-			save_all(all)
-			return
-
-static func _from_items(set_name: String, items: Array, keep) -> Dictionary:
-	var out := _norm(keep)
-	out["name"] = set_name
-	_split_legacy(items, out)
-	return out
+# ---------- set writes ----------
 
 static func remove(name: String) -> void:
 	var all = get_all()
@@ -228,77 +193,6 @@ static func remove(name: String) -> void:
 			continue
 		kept.append(ld)
 	save_all(kept)
-
-static func rename(old: String, new_name: String) -> void:
-	var all = get_all()
-	for i in range(all.size()):
-		if typeof(all[i]) == TYPE_DICTIONARY and str(all[i].get("name")) == old:
-			all[i]["name"] = new_name
-			save_all(all)
-			return
-
-# ---------- item-level edits ----------
-
-static func set_equip_item(set_name: String, slot: String, src) -> void:
-	var all = get_all()
-	for i in range(all.size()):
-		if typeof(all[i]) != TYPE_DICTIONARY or str(all[i].get("name")) != set_name:
-			continue
-		var n := _norm(all[i])
-		var eq: Dictionary = n["equip"]
-		if src == null:
-			eq.erase(slot)
-		else:
-			eq[slot] = _desc(src)
-		n["equip"] = eq
-		all[i] = n
-		save_all(all)
-		return
-
-static func add_gear_item(set_name: String, src) -> void:
-	var all = get_all()
-	for i in range(all.size()):
-		if typeof(all[i]) != TYPE_DICTIONARY or str(all[i].get("name")) != set_name:
-			continue
-		var n := _norm(all[i])
-		var gr: Array = n["gear"]
-		gr.append(_desc(src))
-		n["gear"] = gr
-		all[i] = n
-		save_all(all)
-		return
-
-static func remove_gear_item(set_name: String, index: int) -> void:
-	var all = get_all()
-	for i in range(all.size()):
-		if typeof(all[i]) != TYPE_DICTIONARY or str(all[i].get("name")) != set_name:
-			continue
-		var n := _norm(all[i])
-		var gr: Array = n["gear"]
-		if index < 0 or index >= gr.size():
-			return
-		gr.remove_at(index)
-		n["gear"] = gr
-		all[i] = n
-		save_all(all)
-		return
-
-static func set_gear_amount(set_name: String, index: int, amount: float) -> void:
-	var all = get_all()
-	for i in range(all.size()):
-		if typeof(all[i]) != TYPE_DICTIONARY or str(all[i].get("name")) != set_name:
-			continue
-		var n := _norm(all[i])
-		var gr: Array = n["gear"]
-		if index < 0 or index >= gr.size():
-			return
-		var d := _desc(gr[index])
-		d["amount"] = maxf(0.0, amount)
-		gr[index] = d
-		n["gear"] = gr
-		all[i] = n
-		save_all(all)
-		return
 
 static func replace_set(set_name: String, equip_dict: Dictionary, gear_list: Array) -> void:
 	var all = get_all()
@@ -320,36 +214,6 @@ static func replace_set(set_name: String, equip_dict: Dictionary, gear_list: Arr
 			"gear": gear_list.duplicate(true),
 		})
 	save_all(all)
-
-static func create_empty(set_name: String) -> bool:
-	var all = get_all()
-	for ld in all:
-		if typeof(ld) == TYPE_DICTIONARY and str(ld.get("name")) == set_name:
-			return false
-	all.append({"name": set_name, "quick_key": 0, "equip": {}, "gear": []})
-	save_all(all)
-	return true
-
-static func item_count(name: String) -> int:
-	var p = get_set(name)
-	if p.is_empty():
-		return 0
-	var eq: Dictionary = p["equip"]
-	var gr: Array = p["gear"]
-	return eq.size() + gr.size()
-
-static func flat_items(ld) -> Array:
-	var n := _norm(ld)
-	var out := []
-	var eq: Dictionary = n["equip"]
-	for k in eq.keys():
-		var d := _desc(eq[k])
-		d["slot"] = str(k)
-		out.append(d)
-	var gr: Array = n["gear"]
-	for g in gr:
-		out.append(_desc(g))
-	return out
 
 # ---------- hotkeys ----------
 
@@ -393,9 +257,6 @@ static func get_name_by_quick_key(keycode: int) -> String:
 
 static func load_loadout(name: String) -> void:
 	apply_loadout(name, true)
-
-static func spawn_loadout(name: String) -> void:
-	apply_loadout(name, false)
 
 static func apply_loadout(name: String, equip: bool) -> void:
 	var pack = get_set(name)
