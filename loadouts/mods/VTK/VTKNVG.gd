@@ -164,7 +164,6 @@ var _bot_shader: Shader = null
 var _bots: Dictionary = {}
 var _mines: Dictionary = {}
 var _mine_watch: Dictionary = {}
-var _dumped_bots: Dictionary = {}
 var _tick_cd: float = 0.0
 var _scene_ref: Node = null
 var _debug_detect: bool = false
@@ -450,13 +449,12 @@ func _process(delta: float) -> void:
 			var tm := "n/a"
 			if nvg_mat is ShaderMaterial:
 				tm = str((nvg_mat as ShaderMaterial).get_shader_parameter("thermalMode"))
-			_dbg("[sum] map=%s | installed=%s | set_thermal=%s | set_mines=%s | nvg_active=%s | shaderThermalMode=%s | palette=%s | far=%s | opacity=%s | preset=%s | bots=%d | friendly=%d | mines=%d | watch=%d | botShader=%s | player=%s" % [
+			_dbg("[sum] map=%s | installed=%s | set_thermal=%s | set_mines=%s | nvg_active=%s | shaderThermalMode=%s | palette=%s | far=%s | preset=%s | bots=%d | friendly=%d | mines=%d | watch=%d | botShader=%s | player=%s" % [
 				_dbg_map(), str(_installed), str(set_thermal), str(set_mines), str(_nvg_active()), tm,
 				str(set_palette), str(set_far_distance), str(set_bot_preset),
 				_bots.size(), _count_friendly(),
 				_mines.size(), _mine_watch.size(), str(_bot_shader != null), str(_player_pos())])
 			_mine_report()
-			_bot_report()
 			_probe_pixels()
 
 
@@ -577,95 +575,6 @@ func _log_trader(node: Node) -> void:
 		node.get_path(), _dbg_map(), str(node.global_position), nm, str(node.is_inside_tree())])
 
 
-func _bot_report() -> void:
-	for id in _bots.keys():
-		var e = _bots.get(id)
-		if e == null:
-			continue
-		var node = e.get("node")
-		if node == null or not is_instance_valid(node):
-			continue
-		if not _dumped_bots.has(id):
-			_dumped_bots[id] = true
-			_dump_bot_tree(node, 0)
-		var meshes: Array = e.get("meshes")
-		var painted := 0
-		var vis := 0
-		var parts: Array = []
-		for m in meshes:
-			if not is_instance_valid(m):
-				continue
-			var g := m as GeometryInstance3D
-			if g.material_override != null:
-				painted += 1
-			if g.visible:
-				vis += 1
-			if parts.size() < 12:
-				parts.append("%s(%s v=%s)" % [String(g.name), str(g.get_aabb().size), str(g.visible)])
-		if meshes.size() > 12:
-			parts.append("...+%d" % (meshes.size() - 12))
-		_dbg("[bots] %s | nvg=%s | meshes=%d painted=%d vis=%d | nodeMesh=%s | shader=%s | %s" % [
-			node.name, str(set_thermal and _nvg_active()),
-			meshes.size(), painted, vis,
-			str(node.get("mesh") != null), str(_bot_shader != null),
-			", ".join(parts)])
-		# The body is the largest swept mesh. Its visibility-range window tells us
-		# whether the game range-fades the painted skin out up close, revealing an
-		# unpainted proxy (the distance-dependent "key only at the edges").
-		var body: GeometryInstance3D = null
-		var best_vol := -1.0
-		for m in meshes:
-			if not is_instance_valid(m):
-				continue
-			var gb := m as GeometryInstance3D
-			var sz := gb.get_aabb().size
-			var vol := sz.x * sz.y * sz.z
-			if vol > best_vol:
-				best_vol = vol
-				body = gb
-		if body != null:
-			var surfs := 0
-			if body is MeshInstance3D:
-				surfs = (body as MeshInstance3D).get_surface_override_material_count()
-			_dbg("[bot:body] %s mesh=%s aabb=%s vis=%s visrange=[%s..%s] fade=%s layers=%s ovr=%s surfs=%d" % [
-				node.name, String(body.name), str(body.get_aabb().size), str(body.visible),
-				str(body.visibility_range_begin), str(body.visibility_range_end),
-				str(body.visibility_range_fade_mode), str(body.layers),
-				str(body.material_override != null), surfs])
-		var marker := node.get_node_or_null(MARKER_NAME) as MeshInstance3D
-		_dbg("[bot:marker] %s friendly=%s markNomads=%s has=%s vis=%s pos=%s scale=%s" % [
-			node.name, str(e["friendly"]), str(set_mark_nomads), str(marker != null),
-			str(marker.visible) if marker != null else "n/a",
-			str(marker.global_position) if marker != null else "n/a",
-			str(marker.scale) if marker != null else "n/a"])
-
-
-func _dump_bot_tree(n: Node, depth: int) -> void:
-	var pad := ""
-	var i := 0
-	while i < depth:
-		pad += "  "
-		i += 1
-	var extra := ""
-	if n is GeometryInstance3D:
-		var g := n as GeometryInstance3D
-		var surf := 0
-		var ovr_surf := 0
-		if g is MeshInstance3D:
-			var mi := g as MeshInstance3D
-			surf = mi.get_surface_override_material_count()
-			for s in surf:
-				if mi.get_surface_override_material(s) != null:
-					ovr_surf += 1
-		extra = " aabb=%s vis=%s layers=%s ovr=%s ovl=%s ovrSurf=%d/%d" % [
-			str(g.get_aabb().size), str(g.visible), str(g.layers),
-			str(g.material_override != null), str(g.material_overlay != null),
-			ovr_surf, surf]
-	_dbg("[tree] %s%s:%s%s" % [pad, String(n.name), n.get_class(), extra])
-	for c in n.get_children():
-		_dump_bot_tree(c, depth + 1)
-
-
 func _register_bot(node: Node) -> void:
 	var id := node.get_instance_id()
 	if _bots.has(id):
@@ -760,18 +669,6 @@ func _update_bot(id: int, thermal_on: bool) -> void:
 	# the close-range body unpainted while only a key sliver poked past it. A
 	# fresh sweep is cheap -- a few dozen nodes per bot, once a frame.
 	var fresh: Array = _sweep_bot_meshes(node)
-	if set_debug_probe:
-		var before := {}
-		for m in e["meshes"]:
-			if is_instance_valid(m):
-				before[m.get_instance_id()] = true
-		for m in fresh:
-			if not before.has(m.get_instance_id()):
-				var g := m as GeometryInstance3D
-				_dbg("[bot:new] %s mesh=%s class=%s aabb=%s visrange=[%s..%s] fade=%s vis=%s" % [
-					node.name, String(g.name), g.get_class(), str(g.get_aabb().size),
-					str(g.visibility_range_begin), str(g.visibility_range_end),
-					str(g.visibility_range_fade_mode), str(g.visible)])
 	e["meshes"] = fresh
 
 	# Per-bot body material off the shared shader: "cool" and "footY" are
