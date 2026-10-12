@@ -693,11 +693,24 @@ static func _slot_is_free(sl) -> bool:
 			return false
 	return true
 
+# Слот оборудования несёт скрипт Slot.gd со свойством hint. Проверяется именно
+# свойство, а не класс: оверлей Equipment/Hints состоит из Label'ов с теми же
+# именами (Primary, Helmet, ...), и без этой проверки занятый слот подменялся
+# подписью из Hints — предмет «экипировался» в Label вместо отказа и ухода в
+# инвентарь: визуальный призрак и повторный сет, посчитанный как fitted.
+static func _is_equip_slot(n) -> bool:
+	if n == null or not is_instance_valid(n):
+		return false
+	for p in n.get_property_list():
+		if str(p.get("name")) == "hint":
+			return true
+	return false
+
 static func _find_free_slot(node, wanted: Dictionary, depth: int) -> Node:
 	if node == null or not is_instance_valid(node) or depth > 3:
 		return null
 	for sl in node.get_children():
-		if is_instance_valid(sl) and wanted.has(str(sl.name).to_lower()) and _slot_is_free(sl):
+		if is_instance_valid(sl) and _is_equip_slot(sl) and wanted.has(str(sl.name).to_lower()) and _slot_is_free(sl):
 			return sl
 	if depth >= 3:
 		return null
