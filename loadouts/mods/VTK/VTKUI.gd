@@ -3228,7 +3228,6 @@ func _register_mcm() -> void:
 	cfg.set_value("Float", "thermal_world", {"default": 1.70, "value": 1.70, "minRange": 1.0, "maxRange": 4.0, "step": 0.05, "category": TP, "menu_pos": 8, "tooltip": "How bright the surrounding world reads in thermal.", "name": "World brightness"})
 	cfg.set_value("Int", "thermal_bot_preset", {"default": 0, "value": 0, "minRange": 0, "maxRange": 3, "step": 1, "category": TP, "menu_pos": 9, "tooltip": "0 = Amber, 1 = White, 2 = Orange, 3 = Red. Living bots glow in this colour; a corpse cools from the head down before disappearing.", "name": "Bot colour"})
 	cfg.set_value("Float", "thermal_far_distance", {"default": 45.0, "value": 45.0, "minRange": 5.0, "maxRange": 300.0, "step": 5.0, "category": TP, "menu_pos": 10, "tooltip": "Bots and mines only glow within this distance; past it they read as ordinary scenery. 5 = only right beside you, 300 = the whole map.", "name": "Distance"})
-	cfg.set_value("Float", "thermal_bot_opacity", {"default": 0.85, "value": 0.85, "minRange": 0.0, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 11, "tooltip": "How brightly the bot heat glow reads. 1 = solid preset colour; lower dims the glow so a bot keeps its heat shape instead of a flat blob, down to a faint trace at 0. Cosmetics only; detection is unaffected.", "name": "Bot glow strength"})
 	var TR := "03. Travel"
 	cfg.set_value("Bool", "tp_unlocked_shelters_only", {"name": "Unlocked shelters only", "default": false, "value": false, "category": TR, "menu_pos": 0, "tooltip": "When enabled, teleporting to a locked shelter is refused."})
 	var KF := "04. KillFeed"
@@ -3339,7 +3338,6 @@ func _mcm_apply(cfg: ConfigFile) -> void:
 	_nvg_node.set_winter_dim = float(_mcm_key_val(cfg, "Float", "thermal_winter_dim", 0.55))
 	_nvg_node.set_bot_preset = int(_mcm_key_val(cfg, "Int", "thermal_bot_preset", 0))
 	_nvg_node.set_far_distance = float(_mcm_key_val(cfg, "Float", "thermal_far_distance", 45.0))
-	_nvg_node.set_bot_opacity = float(_mcm_key_val(cfg, "Float", "thermal_bot_opacity", 0.85))
 	_nvg_node.apply_debug_probe()
 	# Mines/thermal moved out of the Settings tab into MCM; read them here.
 	_thermal_active = bool(_mcm_key_val(cfg, "Bool", "thermal_enabled", false))

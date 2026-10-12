@@ -100,6 +100,19 @@ const TICK := 0.1
 # shader's mineKey uniform and the unshaded overlay material that emits it.
 const MINE_KEY := Color(0.0, 0.0, 1.0)
 
+# Detection targets, NOT the emitted keys. The vanilla NVG WorldEnvironment
+# (glow + tonemap) desaturates the unshaded key colours toward white BEFORE the
+# frame reaches our screen shader, so matching the raw keys above always misses.
+# These are the measured post-NVG values for each emitted key (calibration bands,
+# F8 / F9 screenshot): warm (1,0,1)->(0.94,0.69,0.94), mid (1,1,0)->(0.94,0.94,
+# 0.88), cold (0,0.7,1)->(0.88,0.94,0.94), mine (0,0,1)->(0.50,0.06,0.94). The
+# materials still EMIT the raw keys; only the detector compares against these.
+const DET_WARM := Color(0.94, 0.69, 0.94)
+const DET_MID := Color(0.94, 0.94, 0.88)
+const DET_COLD := Color(0.88, 0.94, 0.94)
+const DET_MINE := Color(0.50, 0.06, 0.94)
+const DET_MARKER := Color(0.82, 0.96, 0.82)
+
 # Bot glow substitution colours, per preset: [warm, mid, cold]. These never
 # reach the detector -- the keys in BOT_WARM_KEY/BOT_MID_KEY/BOT_COLD_KEY are
 # fixed and the display colours are driven from here, so switching a preset
@@ -120,10 +133,6 @@ var set_thermal: bool = false
 var set_mines: bool = true
 var set_palette: int = 0
 var set_world: float = 1.70
-# Bot glow. 0.85 is the default on purpose: at 0 the glow dims to a faint trace
-# of the preset colour (0.2 of it), which around night-time scenery reads near
-# black and made bots effectively invisible. Raise/lower from MCM.
-var set_bot_opacity: float = 0.85
 var set_bot_preset: int = 0
 # Glow range: bots and mines only glow within this distance (MCM "Glow range").
 # Past it they read as ordinary scenery, the way real optics lose a signature.
@@ -155,6 +164,7 @@ var _bot_shader: Shader = null
 var _bots: Dictionary = {}
 var _mines: Dictionary = {}
 var _mine_watch: Dictionary = {}
+var _dumped_bots: Dictionary = {}
 var _tick_cd: float = 0.0
 var _scene_ref: Node = null
 var _debug_detect: bool = false
@@ -212,6 +222,12 @@ func _ready() -> void:
 	_marker_mesh = _make_marker_mesh()
 
 	get_tree().node_added.connect(_on_node_added)
+	# The game rewrites a bot's body material during its own update (seasonal
+	# camo, damage flashes). This autoload's _process runs BEFORE the game's
+	# nodes, so that write would land after ours and win the frame; re-assert the
+	# paint right before the frame is drawn instead, which is after every node's
+	# _process/_physics_process has run.
+	RenderingServer.frame_pre_draw.connect(_frame_pre_draw)
 	_scene_ref = get_tree().current_scene
 	_reseed(get_tree().current_scene)
 
@@ -375,12 +391,11 @@ func _apply_uniforms() -> void:
 	nvg_mat.set_shader_parameter("debugDetect", _debug_detect)
 	nvg_mat.set_shader_parameter("markNomads", set_mark_nomads)
 	nvg_mat.set_shader_parameter("nvgWhite", set_nvg_white)
-	nvg_mat.set_shader_parameter("botHighlightOpacity", set_bot_opacity)
-	nvg_mat.set_shader_parameter("warmKey", BOT_WARM_KEY)
-	nvg_mat.set_shader_parameter("midKey", BOT_MID_KEY)
-	nvg_mat.set_shader_parameter("coldKey", BOT_COLD_KEY)
-	nvg_mat.set_shader_parameter("mineKey", MINE_KEY)
-	nvg_mat.set_shader_parameter("markerKey", MARKER_KEY)
+	nvg_mat.set_shader_parameter("warmKey", DET_WARM)
+	nvg_mat.set_shader_parameter("midKey", DET_MID)
+	nvg_mat.set_shader_parameter("coldKey", DET_COLD)
+	nvg_mat.set_shader_parameter("mineKey", DET_MINE)
+	nvg_mat.set_shader_parameter("markerKey", DET_MARKER)
 	var p: Array = BOT_PRESETS[clampi(set_bot_preset, 0, BOT_PRESETS.size() - 1)]
 	nvg_mat.set_shader_parameter("warmColor", p[0])
 	nvg_mat.set_shader_parameter("midColor", p[1])
@@ -410,9 +425,9 @@ func _process(delta: float) -> void:
 		_tick_cd = 0.0
 	var on := set_thermal and _nvg_active()
 
-	# Overlay visibility tracks NVG state every frame, not every TICK: the tick
-	# gate below runs the world scan, but if key overlays waited for it, a quick
-	# NVG toggle left them a frame behind on the flash of raw key pixels.
+	# Key paint tracks NVG state every frame, not every TICK: the tick gate below
+	# runs the world scan, but if painting waited for it, a quick NVG toggle left
+	# bots a frame behind on the flash of raw key pixels.
 	for id in _bots.keys():
 		_update_bot(id, on)
 	for id in _mines.keys():
@@ -435,12 +450,13 @@ func _process(delta: float) -> void:
 			var tm := "n/a"
 			if nvg_mat is ShaderMaterial:
 				tm = str((nvg_mat as ShaderMaterial).get_shader_parameter("thermalMode"))
-			_dbg("[sum] map=%s | installed=%s | set_thermal=%s | set_mines=%s | nvg_active=%s | shaderThermalMode=%s | palette=%s | far=%s | opacity=%s | preset=%s | bots=%d | friendly=%d | mines=%d | watch=%d | player=%s" % [
+			_dbg("[sum] map=%s | installed=%s | set_thermal=%s | set_mines=%s | nvg_active=%s | shaderThermalMode=%s | palette=%s | far=%s | opacity=%s | preset=%s | bots=%d | friendly=%d | mines=%d | watch=%d | botShader=%s | player=%s" % [
 				_dbg_map(), str(_installed), str(set_thermal), str(set_mines), str(_nvg_active()), tm,
-				str(set_palette), str(set_far_distance), str(set_bot_opacity), str(set_bot_preset),
+				str(set_palette), str(set_far_distance), str(set_bot_preset),
 				_bots.size(), _count_friendly(),
-				_mines.size(), _mine_watch.size(), str(_player_pos())])
+				_mines.size(), _mine_watch.size(), str(_bot_shader != null), str(_player_pos())])
 			_mine_report()
+			_bot_report()
 			_probe_pixels()
 
 
@@ -484,7 +500,7 @@ func _probe_pixels() -> void:
 		"marker": MARKER_KEY,
 	}
 	var p: Array = BOT_PRESETS[clampi(set_bot_preset, 0, BOT_PRESETS.size() - 1)]
-	var g: float = 0.2 + 0.8 * set_bot_opacity
+	var g: float = 0.88
 	var disp := {
 		"warm": p[0] * g,
 		"mid": p[1] * g,
@@ -510,8 +526,10 @@ func _probe_pixels() -> void:
 		if "active" in node and not bool(node.get("active")):
 			skip_noview += 1
 			continue
-		var overlay = e.get("overlay")
-		if overlay == null or not is_instance_valid(overlay):
+		if not bool(e.get("painted")):
+			skip_unpainted += 1
+			continue
+		if not bool(e.get("painted")):
 			skip_unpainted += 1
 			continue
 		var sp := cam.unproject_position(node.global_position + Vector3(0.0, 1.0, 0.0))
@@ -559,22 +577,114 @@ func _log_trader(node: Node) -> void:
 		node.get_path(), _dbg_map(), str(node.global_position), nm, str(node.is_inside_tree())])
 
 
+func _bot_report() -> void:
+	for id in _bots.keys():
+		var e = _bots.get(id)
+		if e == null:
+			continue
+		var node = e.get("node")
+		if node == null or not is_instance_valid(node):
+			continue
+		if not _dumped_bots.has(id):
+			_dumped_bots[id] = true
+			_dump_bot_tree(node, 0)
+		var meshes: Array = e.get("meshes")
+		var painted := 0
+		var vis := 0
+		var parts: Array = []
+		for m in meshes:
+			if not is_instance_valid(m):
+				continue
+			var g := m as GeometryInstance3D
+			if g.material_override != null:
+				painted += 1
+			if g.visible:
+				vis += 1
+			if parts.size() < 12:
+				parts.append("%s(%s v=%s)" % [String(g.name), str(g.get_aabb().size), str(g.visible)])
+		if meshes.size() > 12:
+			parts.append("...+%d" % (meshes.size() - 12))
+		_dbg("[bots] %s | nvg=%s | meshes=%d painted=%d vis=%d | nodeMesh=%s | shader=%s | %s" % [
+			node.name, str(set_thermal and _nvg_active()),
+			meshes.size(), painted, vis,
+			str(node.get("mesh") != null), str(_bot_shader != null),
+			", ".join(parts)])
+		# The body is the largest swept mesh. Its visibility-range window tells us
+		# whether the game range-fades the painted skin out up close, revealing an
+		# unpainted proxy (the distance-dependent "key only at the edges").
+		var body: GeometryInstance3D = null
+		var best_vol := -1.0
+		for m in meshes:
+			if not is_instance_valid(m):
+				continue
+			var gb := m as GeometryInstance3D
+			var sz := gb.get_aabb().size
+			var vol := sz.x * sz.y * sz.z
+			if vol > best_vol:
+				best_vol = vol
+				body = gb
+		if body != null:
+			var surfs := 0
+			if body is MeshInstance3D:
+				surfs = (body as MeshInstance3D).get_surface_override_material_count()
+			_dbg("[bot:body] %s mesh=%s aabb=%s vis=%s visrange=[%s..%s] fade=%s layers=%s ovr=%s surfs=%d" % [
+				node.name, String(body.name), str(body.get_aabb().size), str(body.visible),
+				str(body.visibility_range_begin), str(body.visibility_range_end),
+				str(body.visibility_range_fade_mode), str(body.layers),
+				str(body.material_override != null), surfs])
+		var marker := node.get_node_or_null(MARKER_NAME) as MeshInstance3D
+		_dbg("[bot:marker] %s friendly=%s markNomads=%s has=%s vis=%s pos=%s scale=%s" % [
+			node.name, str(e["friendly"]), str(set_mark_nomads), str(marker != null),
+			str(marker.visible) if marker != null else "n/a",
+			str(marker.global_position) if marker != null else "n/a",
+			str(marker.scale) if marker != null else "n/a"])
+
+
+func _dump_bot_tree(n: Node, depth: int) -> void:
+	var pad := ""
+	var i := 0
+	while i < depth:
+		pad += "  "
+		i += 1
+	var extra := ""
+	if n is GeometryInstance3D:
+		var g := n as GeometryInstance3D
+		var surf := 0
+		var ovr_surf := 0
+		if g is MeshInstance3D:
+			var mi := g as MeshInstance3D
+			surf = mi.get_surface_override_material_count()
+			for s in surf:
+				if mi.get_surface_override_material(s) != null:
+					ovr_surf += 1
+		extra = " aabb=%s vis=%s layers=%s ovr=%s ovl=%s ovrSurf=%d/%d" % [
+			str(g.get_aabb().size), str(g.visible), str(g.layers),
+			str(g.material_override != null), str(g.material_overlay != null),
+			ovr_surf, surf]
+	_dbg("[tree] %s%s:%s%s" % [pad, String(n.name), n.get_class(), extra])
+	for c in n.get_children():
+		_dump_bot_tree(c, depth + 1)
+
+
 func _register_bot(node: Node) -> void:
 	var id := node.get_instance_id()
 	if _bots.has(id):
 		return
-	# No overlay is built here: the bot's visual (variant mesh, LODs, weapon
-	# rig) is assembled by AI.Initialize() at runtime, so node.mesh can be null
-	# at registration. The bot is tracked from the start (a friendly Nomad still
-	# gets its ▼) and its key overlay is built lazily in _ensure_bot_overlay
-	# once the real mesh exists. The body is painted by a DUPLICATE of the real
-	# mesh carrying VTKBot.gdshader, with the real mesh hidden -- overriding the
-	# game's own bot geometry with material_override does not reach the screen,
-	# which is exactly why the duplicate-overlay path exists.
+	# The bot's visual (variant skin, LODs, gear) is assembled by AI.Initialize()
+	# at runtime as a whole subtree, and the exported node.mesh is only ONE inner
+	# piece of it -- duplicating that single mesh highlighted just the sliver that
+	# pokes past the real skin, so the body read as scenery. Instead we paint the
+	# bot's own geometry directly, exactly like mines: sweep every
+	# GeometryInstance3D under the node and override its material. The sweep is
+	# (re)done lazily in _update_bot, because the subtree does not exist yet at
+	# registration and AI.Initialize() can rewire it later.
 	_bots[id] = {
-		"mesh": null,
-		"overlay": null,
+		"node": node,
+		"meshes": [],
 		"mat": null,
+		"painted": false,
+		"paint": null,
+		"probed": false,
 		"friendly": _is_friendly(node),
 		"death": 0.0,
 		"recorded": false,
@@ -583,26 +693,20 @@ func _register_bot(node: Node) -> void:
 		_dbg("[bot] %s tracked pos=%s" % [node.get_path(), str(node.global_position)])
 
 
-# Lazily builds the key overlay -- a duplicate of the bot's real mesh emitting
-# the detector keys, sibling to the real one so it rides the skeleton's pose --
-# once node.mesh exists. Retried every frame until it lands. Duplicating rather
-# than overriding the real mesh is the proven path: the game's own bot geometry
-# ignores an external material_override on the instance, so the key never
-# reaches the screen and the body just reads as ordinary scenery.
-func _ensure_bot_overlay(e: Dictionary, node: Node) -> void:
-	if e.get("overlay") != null and is_instance_valid(e["overlay"]):
-		return
-	var mesh = node.get("mesh")
-	if mesh == null or not (mesh is MeshInstance3D):
-		return
-	var overlay: MeshInstance3D = mesh.duplicate()
-	overlay.visible = false
-	mesh.get_parent().add_child(overlay)
-	overlay.transform = mesh.transform
-	e["mesh"] = mesh
-	e["overlay"] = overlay
-	if set_debug_probe:
-		_dbg("[bot] %s overlay built %s" % [node.name, node.get_path()])
+# Sweeps the bot's whole visual subtree and returns its geometry nodes. The
+# exported node.mesh is only an inner piece of the rig -- the visible skin is
+# separate LOD/gear meshes -- so painting that one node (or a duplicate of it)
+# left the real body as scenery with just a key sliver at the silhouette. This
+# is the same route mines already take.
+func _sweep_bot_meshes(node: Node) -> Array:
+	var all: Array = []
+	_collect_meshes(node, all)
+	var out: Array = []
+	for m in all:
+		# Skip the friendly ▼ we add ourselves; it carries its own key material.
+		if is_instance_valid(m) and String(m.name) != MARKER_NAME:
+			out.append(m)
+	return out
 
 
 func _is_friendly(node: Node) -> bool:
@@ -642,65 +746,87 @@ func _update_bot(id: int, thermal_on: bool) -> void:
 	else:
 		e["recorded"] = false
 
-	# A friendly Nomad gets a floating ▼ on top of its body glow.
-	var mark := thermal_on and set_mark_nomads and friendly and not dead
+	# A friendly Nomad gets a floating ▼ on top of its body glow, but only inside
+	# the same glow range as the body -- otherwise it reads through the whole map.
+	var mark_dist := _player_pos().distance_to(node.global_position)
+	var mark := thermal_on and set_mark_nomads and friendly and not dead \
+		and mark_dist <= maxf(set_far_distance, 1.0)
 	_update_nomad_marker(node, mark)
 
-	if not thermal_on:
-		# Full teardown the frame NVG drops, not a tick later: the real mesh
-		# must be back on screen immediately, otherwise a quick NVG toggle
-		# flashes the raw key mesh and leaves the bot invisible for a tick.
-		if e.get("overlay") != null and is_instance_valid(e["overlay"]):
-			(e["overlay"] as MeshInstance3D).visible = false
-			var rmesh = e.get("mesh")
-			if rmesh != null and is_instance_valid(rmesh):
-				(rmesh as MeshInstance3D).visible = true
-		return
-
-	_ensure_bot_overlay(e, node)
-	var overlay = e.get("overlay")
-	var mesh = e.get("mesh")
-	if overlay == null or not is_instance_valid(overlay):
-		return
-	if mesh == null or not is_instance_valid(mesh):
-		return
-
-	if _bot_shader == null:
-		return
-
-	# AI.Initialize() can swap the variant mesh at runtime, so keep the overlay's
-	# mesh in sync with the real one.
-	if overlay.mesh != mesh.mesh:
-		overlay.mesh = mesh.mesh
-
-	# A body only glows inside the glow range and while it still has heat left;
-	# past either bound the overlay hides and the real mesh shows through.
-	var dist := _player_pos().distance_to(node.global_position)
-	var show := dist <= maxf(set_far_distance, 1.0) and (not dead or secs < DEATH_COOLDOWN)
-	if not show:
-		overlay.visible = false
-		mesh.visible = true
-		return
+	# Re-collect the bot's geometry every frame. It does not exist at
+	# registration, AI.Initialize() can swap the variant, and the game adds,
+	# removes or range-fades LOD/body meshes as the player closes in. A stale-ref
+	# check alone missed meshes ADDED later (the old refs stay valid), which left
+	# the close-range body unpainted while only a key sliver poked past it. A
+	# fresh sweep is cheap -- a few dozen nodes per bot, once a frame.
+	var fresh: Array = _sweep_bot_meshes(node)
+	if set_debug_probe:
+		var before := {}
+		for m in e["meshes"]:
+			if is_instance_valid(m):
+				before[m.get_instance_id()] = true
+		for m in fresh:
+			if not before.has(m.get_instance_id()):
+				var g := m as GeometryInstance3D
+				_dbg("[bot:new] %s mesh=%s class=%s aabb=%s visrange=[%s..%s] fade=%s vis=%s" % [
+					node.name, String(g.name), g.get_class(), str(g.get_aabb().size),
+					str(g.visibility_range_begin), str(g.visibility_range_end),
+					str(g.visibility_range_fade_mode), str(g.visible)])
+	e["meshes"] = fresh
 
 	# Per-bot body material off the shared shader: "cool" and "footY" are
 	# per-bot uniforms. cool = secs / DEATH_COOLDOWN drives the cooling front
 	# (VTKBot.gdshader) from just above the head down past the feet.
 	var bmat: ShaderMaterial = e.get("mat")
-	if bmat == null:
+	if bmat == null and _bot_shader != null:
 		bmat = ShaderMaterial.new()
 		bmat.shader = _bot_shader
 		bmat.set_shader_parameter("warmKey", BOT_WARM_KEY)
 		bmat.set_shader_parameter("midKey", BOT_MID_KEY)
 		bmat.set_shader_parameter("coldKey", BOT_COLD_KEY)
 		e["mat"] = bmat
-	var cool := 0.0 if not dead else clampf(secs / DEATH_COOLDOWN, 0.0, 1.0)
-	bmat.set_shader_parameter("cool", cool)
-	bmat.set_shader_parameter("footY", node.global_position.y)
-	# The key body is the duplicate overlay; the real mesh is hidden so only the
-	# key shows, and the screen shader substitutes it to the preset colour.
-	overlay.material_override = bmat
-	overlay.visible = true
-	mesh.visible = false
+	if bmat != null:
+		var cool := 0.0 if not dead else clampf(secs / DEATH_COOLDOWN, 0.0, 1.0)
+		bmat.set_shader_parameter("cool", cool)
+		bmat.set_shader_parameter("footY", node.global_position.y)
+
+	# A body only glows inside the glow range and while it still has heat left;
+	# past either bound the override is cleared and the real skin shows through.
+	var dist := _player_pos().distance_to(node.global_position)
+	var show := thermal_on and bmat != null and dist <= maxf(set_far_distance, 1.0) and (not dead or secs < DEATH_COOLDOWN)
+	e["painted"] = show
+	var paint = bmat if show else null
+	e["paint"] = paint
+	for m in e["meshes"]:
+		if is_instance_valid(m):
+			(m as GeometryInstance3D).material_override = paint
+
+
+# Last write before the frame is drawn, after every node has processed. Re-assert
+# the body paint so a game-side material write (see _ready) cannot outlast ours,
+# and report the first time we catch one, so a silent overwrite becomes visible
+# in the probe log.
+func _frame_pre_draw() -> void:
+	for id in _bots.keys():
+		var e = _bots.get(id)
+		if e == null:
+			continue
+		var node = e.get("node")
+		if node == null or not is_instance_valid(node):
+			continue
+		var paint = e.get("paint")
+		for m in e.get("meshes", []):
+			if not is_instance_valid(m):
+				continue
+			var g := m as GeometryInstance3D
+			if g.material_override == paint:
+				continue
+			if set_debug_probe and not e.get("probed", false):
+				_dbg("[bot:clobber] %s mesh=%s was=%s now=%s" % [
+					node.name, String(g.name), str(paint),
+					(g.material_override.get_class() if g.material_override != null else "null")])
+				e["probed"] = true
+			g.material_override = paint
 
 
 # Lazily builds the marker on the bot itself (looked up by name, not via the

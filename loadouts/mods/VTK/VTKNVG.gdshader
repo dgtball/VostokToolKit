@@ -3,10 +3,14 @@ shader_type canvas_item;
 // NVG / thermal overlay. Replaces the vanilla NVG ColorRect shader (see
 // VTKNVG.gd for why the swap is safe). The whole frame is read back through
 // the false-colour thermal palette; bot heat, mines and the friendly Nomad
-// marker are pulled out by the EXACT detector keys their own unshaded materials
-// emit: VTKNVG.BOT_WARM_KEY / BOT_MID_KEY / BOT_COLD_KEY (VTKBot.gdshader) plus
-// MINE_KEY / MARKER_KEY. Keep that list in lockstep with VTKNVG.gd. The *Color
-// uniforms are the freely chosen substitution colours.
+// marker are pulled out by comparing the screen against the *Key uniforms.
+// Those keys are NOT the raw colours the entity materials emit -- the vanilla
+// NVG world processing washes bright keys toward white before this shader ever
+// sees them -- but the measured post-NVG values (VTKNVG.gd DET_*). The entity
+// materials still emit BOT_WARM_KEY / BOT_MID_KEY / BOT_COLD_KEY
+// (VTKBot.gdshader) plus MINE_KEY / MARKER_KEY. Keep both lists in lockstep
+// with VTKNVG.gd. The *Color uniforms are the freely chosen substitution
+// colours.
 
 uniform sampler2D screen_texture : hint_screen_texture, repeat_disable, filter_linear_mipmap;
 uniform vec4 tint : source_color = vec4(0.47, 0.67, 0.51, 1.0);
@@ -31,14 +35,14 @@ uniform vec3 mineKey : source_color = vec3(0.0, 0.0, 1.0);
 // never by scenery, so the tight tolerance below cannot be tripped by foliage.
 uniform vec3 markerKey : source_color = vec3(0.0, 1.0, 0.0);
 
-// Bot heat: three detector keys on one body. VTKBot.gdshader emits warm at the
-// feet, stepping through mid to cold up the body as a corpse cools, so the
-// detector below always sees a PURE key while the substitution colour stays a
-// free choice. The warm/mid/cold *Color uniforms are the preset readout.
+// Bot heat: three keys on one body. VTKBot.gdshader emits warm at the feet,
+// stepping through mid to cold up the body as a corpse cools; these uniforms
+// carry the post-NVG (washed) values of those keys, so the detector matches the
+// screen rather than the raw emitted colour. The warm/mid/cold *Color uniforms
+// are the preset readout.
 uniform vec3 warmKey : source_color = vec3(1.0, 0.0, 1.0);
 uniform vec3 midKey : source_color = vec3(1.0, 1.0, 0.0);
 uniform vec3 coldKey : source_color = vec3(0.0, 0.7, 1.0);
-uniform float botHighlightOpacity : hint_range(0.0, 1.0, 0.01) = 0.85;
 
 uniform vec3 warmColor : source_color = vec3(0.6, 0.48, 0.09);
 uniform vec3 midColor : source_color = vec3(0.55, 0.45, 0.28);
@@ -140,26 +144,26 @@ void fragment()
 		// can never see the pre-shader frame. Let the shader report itself:
 		// green where the detector fires, black where it misses.
 		if (debugDetect) {
-			color = vec4(minD < 0.4 ? vec3(0.0, 1.0, 0.0) : vec3(0.0), pixelColor.a);
+			color = vec4(minD < 0.22 ? vec3(0.0, 1.0, 0.0) : vec3(0.0), pixelColor.a);
 		} else {
 			float rawLuminance = dot(pixelColor.rgb, vec3(0.299, 0.587, 0.114));
 			float luminance = clamp(rawLuminance * thermalDarken, 0.0, 1.0);
 			vec3 backgroundColor = ThermalPalette(luminance) * 0.7;
-			if (minD < 0.4) {
+			if (minD < 0.22) {
 				vec3 subColor;
 				if (minD == dMine) {
 					subColor = mineColor;
 				} else if (minD == dMark) {
 					subColor = markerColor;
 				} else {
-					// Bot heat: the key says WHERE on the cooling ladder the
-					// pixel sits, the preset says what that reads as. Only the
-					// preset colour is scaled by glow strength, so the slider
-					// can never leak the world palette onto a bot.
-					vec3 botColor = warmColor;
-					if (minD == dMid) botColor = midColor;
-					else if (minD == dCold) botColor = coldColor;
-					subColor = botColor * (0.2 + 0.8 * botHighlightOpacity);
+				// Bot heat: the key says WHERE on the cooling ladder the
+				// pixel sits, the preset says what that reads as. Only the
+				// preset colour is scaled by the fixed glow strength, so the
+				// world palette can never leak onto a bot.
+				vec3 botColor = warmColor;
+				if (minD == dMid) botColor = midColor;
+				else if (minD == dCold) botColor = coldColor;
+				subColor = botColor * 0.88;
 				}
 				color = vec4(subColor, pixelColor.a);
 			} else {
