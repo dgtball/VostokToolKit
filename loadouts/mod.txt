@@ -8,3 +8,4 @@ VTKUI="res://mods/VTK/VTKUI.gd"
 
 [hooks]
 res://Scripts/Context.gd = Update
+res://Scripts/Pickup.gd = Interact

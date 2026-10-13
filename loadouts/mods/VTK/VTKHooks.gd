@@ -42,6 +42,7 @@ const EQUIP_POLL_MS := 100
 # подбор, и не нужен признак itemDragged (в игре он не гаснет).
 const EQUIP_DIP_MS := 500
 var _equip_on: bool = true
+var _pickup_pending: int = 0
 var _equip_debug: bool = false
 var _equip_armed_at: int = 0
 var _equip_poll_at: int = 0
@@ -116,15 +117,8 @@ func _process(_delta: float) -> void:
 	if not _registered:
 		_try_register()
 	_poll_death()
-	_poll_equip()
 
 func set_equip_enabled(on: bool) -> void:
-	if on and not _equip_on:
-		# Включение посреди игры: не заметаем уже лежащее в инвентаре, а
-		# начинаем с чистого листа и даём окну оседания наполнить его.
-		_equip_qty = {}
-		_equip_low = {}
-		_arm_equip(EQUIP_ARM_MS)
 	_equip_on = on
 
 func set_equip_debug(on: bool) -> void:
@@ -218,6 +212,8 @@ func _do_register() -> void:
 	_lib.hook("loader-newgame-post", _on_newgame_post)
 	_hooks_equip.append(_lib.hook("loader-loadcharacter-post", _on_loadcharacter_post))
 	_hooks_context.append(_lib.hook("context-update-post", _on_context_update_post))
+	_hooks_equip.append(_lib.hook("pickup-interact-pre", _on_pickup_interact_pre))
+	_hooks_equip.append(_lib.hook("pickup-interact-post", _on_pickup_interact_post))
 	_registered = true
 	Log.log("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + _hooks_notes.size() + _hooks_deposits.size() + _hooks_equip.size() + _hooks_context.size() + 1) + " hooks)")
 
@@ -236,7 +232,6 @@ func _on_newgame_post(difficulty, _season) -> void:
 		if diff == 3:
 			gd.set("permadeath", true)
 	patch_world_difficulty(diff)
-	_arm_equip(EQUIP_ARM_MS)
 	Log.log("[VTK] newgame-post: difficulty=" + str(diff))
 
 func patch_world_difficulty(diff: int) -> void:
@@ -250,8 +245,7 @@ func patch_world_difficulty(diff: int) -> void:
 	ResourceSaver.save(world, path)
 
 func _on_loadcharacter_post() -> void:
-	_arm_equip(EQUIP_ARM_MS)
-	Log.log("[VTK] loadcharacter-post: equip armed")
+	Log.log("[VTK] loadcharacter-post")
 
 func _arm_equip(delay_ms: int) -> void:
 	_equip_armed_at = Time.get_ticks_msec() + delay_ms
@@ -326,85 +320,6 @@ func _resolve_interface() -> Node:
 	_iface_cache = root.get_node_or_null(Paths.INTERFACE)
 	return _iface_cache
 
-func _poll_equip() -> void:
-	if not _equip_on:
-		return
-	var now := Time.get_ticks_msec()
-	if now - _equip_poll_at < EQUIP_POLL_MS:
-		return
-	_equip_poll_at = now
-	var iface = _resolve_interface()
-	if iface == null or not is_instance_valid(iface):
-		return
-	var iid := iface.get_instance_id()
-	if iid != _equip_iface_id:
-		_equip_iface_id = iid
-		_equip_qty = {}
-		_equip_low = {}
-		_arm_equip(EQUIP_ARM_MS)
-	var ig = iface.get("inventoryGrid")
-	if ig == null or not is_instance_valid(ig):
-		return
-	var equip_root = iface.get("equipment")
-	# Суммарное количество по типу в инвентаре и экипировке. Игра докладывает
-	# подобранный стак к уже лежащему в инвентаре (нового узла нет), поэтому
-	# признак подбора - рост количества типа. Инвентарь и экипировку считаем
-	# отдельно: в отладке видно, откуда пришёл рост.
-	_equip_names = {}
-	var ig_qty := {}
-	for c in ig.get_children():
-		if is_instance_valid(c):
-			_add_node_qty(ig_qty, c)
-	var eq_qty := {}
-	if equip_root != null and is_instance_valid(equip_root):
-		_collect_equip_qty(equip_root, eq_qty, 0)
-	var now_qty := {}
-	for k in ig_qty.keys():
-		now_qty[k] = int(ig_qty[k])
-	for k in eq_qty.keys():
-		now_qty[k] = int(now_qty.get(k, 0)) + int(eq_qty[k])
-
-	var grown: Array = []
-	for k in now_qty.keys():
-		if int(now_qty.get(k, 0)) > int(_equip_qty.get(k, 0)):
-			grown.append(k)
-	for k in grown:
-		Log.log("[VTK] equip: grow '" + _type_name(k) + "' base=" + str(_equip_qty.get(k, 0)) + " now=" + str(now_qty.get(k, 0)) + " ig=" + str(ig_qty.get(k, 0)) + " eq=" + str(eq_qty.get(k, 0)))
-	# Базу обновляем ДО ранних выходов: стартовый инвентарь и собственные
-	# операции тоже должны попасть в базу, иначе после ARM это «подбор».
-	_update_equip_qty(now_qty, now)
-
-	if grown.is_empty():
-		return
-	if now < _equip_armed_at:
-		Log.log("[VTK] equip: grow ignored (armed)")
-		return
-	if VTKData._own_op_recent(EQUIP_OWN_WINDOW_MS):
-		Log.log("[VTK] equip: grow ignored (own op)")
-		return
-	# Подбор = типы, чей стак вырос. Из инвентаря берём узлы этих типов и отдаём
-	# экипировке: свободный слот либо докладывание в занятый того же типа.
-	var nodes: Array = []
-	for c in ig.get_children():
-		if not is_instance_valid(c):
-			continue
-		var sd = c.get("slotData")
-		if sd == null:
-			continue
-		var r = sd.get("itemData")
-		if r == null:
-			continue
-		if grown.has(_item_type_key(r)):
-			nodes.append(c)
-	if nodes.is_empty():
-		Log.log("[VTK] equip: grow but no inventory node to move")
-		return
-	if nodes.size() > EQUIP_BULK_LIMIT:
-		Log.log("[VTK] equip: bulk jump skipped (" + str(nodes.size()) + " nodes)")
-		return
-	for n in nodes:
-		_equip_handle(iface, ig, n)
-
 # База дельты: рост фиксируем сразу (подбор), падение — только если продержалось
 # EQUIP_DIP_MS. Это гасит промежуточные кадры переноса/пересоздания узла, когда
 # предмет на миг не виден ни инвентарю, ни экипировке.
@@ -470,22 +385,62 @@ func _collect_equip_qty(node, out: Dictionary, depth: int) -> void:
 			_add_node_qty(out, c)
 			_collect_equip_qty(c, out, depth + 1)
 
-func _equip_handle(iface, ig, node) -> void:
-	if node == null or not is_instance_valid(node):
+# Авто-экип по событию подбора: Pickup.Interact удалил узел, значит предмет
+# лёг в инвентарь. Переносим в слот ровно подобранное количество (не больше
+# свободного места), отложенное в инвентаре не трогаем.
+func _on_pickup_interact_pre() -> void:
+	_pickup_pending = 0
+	if not _equip_on or _lib == null:
 		return
-	var sd = node.get("slotData")
+	var p = _lib._caller
+	if p == null or not is_instance_valid(p):
+		return
+	var sd = p.get("slotData")
 	if sd == null:
 		return
 	var res = sd.get("itemData")
 	if res == null or not EquipFlow.is_equipment(res):
-		Log.log("[VTK] equip: skip '" + str(res.get("name") if res != null else "?") + "' (not equipment)")
+		return
+	var amt := int(sd.get("amount"))
+	_pickup_pending = amt if amt > 0 else 1
+
+func _on_pickup_interact_post() -> void:
+	var picked := _pickup_pending
+	_pickup_pending = 0
+	if not _equip_on or picked <= 0 or _lib == null:
+		return
+	var p = _lib._caller
+	# Подбор удался только если ванильный Interact вызвал queue_free.
+	if p == null or not is_instance_valid(p) or not p.is_queued_for_deletion():
+		return
+	var sd = p.get("slotData")
+	if sd == null:
+		return
+	var res = sd.get("itemData")
+	if res == null or not EquipFlow.is_equipment(res):
+		return
+	var iface = p.get("interface")
+	if iface == null or not is_instance_valid(iface):
+		iface = _resolve_interface()
+	if iface == null or not is_instance_valid(iface):
+		return
+	var ig = iface.get("inventoryGrid")
+	if ig == null or not is_instance_valid(ig):
+		return
+	_equip_picked(iface, ig, res, picked)
+
+func _equip_picked(iface, ig, res, picked: int) -> void:
+	if picked <= 0:
 		return
 	var equip_root = iface.get("equipment")
 	if equip_root == null or not is_instance_valid(equip_root):
 		return
+	var node = _find_inventory_node(ig, res)
+	if node == null:
+		return
 	var free_sl = VTKData._find_free_slot(equip_root, EquipFlow.wanted_slots(res), 0)
 	if free_sl != null:
-		_equip_move(iface, ig, node, free_sl)
+		_equip_move(iface, ig, node, free_sl, picked)
 		return
 	var occ_sl = VTKData._find_occupied_slot(equip_root, res, 0)
 	if occ_sl == null:
@@ -500,10 +455,57 @@ func _equip_handle(iface, ig, node) -> void:
 	if EquipFlow.decide(res, occ_sd.get("itemData")) != "merge":
 		Log.log("[VTK] equip: skip '" + str(res.get("name")) + "' (no merge)")
 		return
-	_merge_into(iface, ig, node, sd, occ, occ_sd, res)
+	_merge_picked(iface, ig, node, occ, occ_sd, res, picked)
 
-func _equip_move(iface, ig, node, sl) -> void:
-	if ig.has_method("Pick"):
+# Узел инвентаря того же предмета с наибольшим количеством (после подбора игра
+# могла доложить подобранное в уже лежащий стек).
+func _find_inventory_node(ig, res) -> Node:
+	if ig == null or not is_instance_valid(ig):
+		return null
+	var best: Node = null
+	var best_amt := -1
+	for c in ig.get_children():
+		if not is_instance_valid(c):
+			continue
+		var sd = c.get("slotData")
+		if sd == null:
+			continue
+		if not EquipFlow.same_item(res, sd.get("itemData")):
+			continue
+		var amt := int(sd.get("amount"))
+		if amt > best_amt:
+			best_amt = amt
+			best = c
+	return best
+
+func _equip_move(iface, ig, node, sl, picked: int) -> void:
+	var sd = node.get("slotData")
+	if sd == null:
+		return
+	var res = sd.get("itemData")
+	var moved := EquipFlow.equip_move(picked, 0, int(res.get("maxAmount", 0)))
+	if moved <= 0:
+		return
+	var amt := int(sd.get("amount"))
+	var have := amt if amt > 0 else 1
+	if moved >= have:
+		_do_equip_move(iface, ig, node, sl)
+		return
+	# Часть узла: в слот уезжает moved, остаток возвращаем в инвентарь на
+	# освободившуюся (после переноса) клетку.
+	var leftover := have - moved
+	sd.set("amount", moved)
+	if node.has_method("UpdateDetails"):
+		node.UpdateDetails()
+	_do_equip_move(iface, ig, node, sl)
+	var new_sd = SlotData.new()
+	new_sd.itemData = res
+	new_sd.amount = leftover
+	if not iface.AutoStack(new_sd, ig):
+		iface.Create(new_sd, ig, true)
+
+func _do_equip_move(iface, ig, node, sl) -> void:
+	if ig != null and ig.has_method("Pick"):
 		ig.Pick(node)
 	if iface.has_method("Equip"):
 		iface.Equip(node, sl)
@@ -513,28 +515,29 @@ func _equip_move(iface, ig, node, sl) -> void:
 		iface.UpdateStats(true)
 	Log.log("[VTK] equip: moved item -> " + str(sl.name))
 
-func _merge_into(iface, ig, node, sd, occ, occ_sd, res) -> void:
-	var plan := EquipFlow.merge_amounts(sd.get("amount"), occ_sd.get("amount"), res.get("maxAmount"))
-	var moved := float(plan["moved"])
-	if moved <= 0.0:
+func _merge_picked(iface, ig, node, occ, occ_sd, res, picked: int) -> void:
+	var occ_amt := int(occ_sd.get("amount"))
+	var moved := EquipFlow.equip_move(picked, occ_amt, int(res.get("maxAmount", 0)))
+	if moved <= 0:
 		return
-	occ_sd.set("amount", VTKData._whole(float(occ_sd.get("amount")) + moved))
-	var leftover := float(plan["leftover"])
-	if leftover <= 0.0:
-		if ig.has_method("Pick"):
+	occ_sd.set("amount", VTKData._whole(float(occ_amt) + float(moved)))
+	var sd = node.get("slotData")
+	var amt := int(sd.get("amount"))
+	var have := amt if amt > 0 else 1
+	var leftover := have - moved
+	if leftover <= 0:
+		if ig != null and ig.has_method("Pick"):
 			ig.Pick(node)
 		node.queue_free()
-		if occ.has_method("UpdateDetails"):
-			occ.UpdateDetails()
 	else:
-		sd.set("amount", VTKData._whole(leftover))
-		if occ.has_method("UpdateDetails"):
-			occ.UpdateDetails()
+		sd.set("amount", leftover)
 		if node.has_method("UpdateDetails"):
 			node.UpdateDetails()
+	if occ.has_method("UpdateDetails"):
+		occ.UpdateDetails()
 	if iface.has_method("UpdateStats"):
 		iface.UpdateStats(true)
-	Log.log("[VTK] equip: merged " + str(moved) + " into stack (leftover " + str(leftover) + ")")
+	Log.log("[VTK] equip: merged " + str(moved) + " into stack (left " + str(leftover) + ")")
 
 func _on_ai_weapon_damage(_hitbox, _damage, _vector, id) -> void:
 	var victim_ai = _lib._caller if _lib else null
