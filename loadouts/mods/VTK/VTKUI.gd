@@ -14,6 +14,9 @@ var _db_items: Array = []
 # сам Resource: без индекса каждая клетка искала бы его перебором всего
 # списка, а раньше просто грузила с диска.
 var _item_index: Dictionary = {}
+var _equip_cells: Array = []
+var _equip_cols := 6
+var _equip_rows := 8
 # resource_path -> иконка либо null. Кеш нужен и для промахов: без него
 # отсутствующий PNG искался бы заново в каждой клетке.
 var _icon_cache: Dictionary = {}
@@ -354,6 +357,20 @@ func _load_items() -> void:
 		if item and item.name != "":
 			_db_items.append(item)
 			_item_index[item.resource_path] = item
+	_build_equip_layout()
+
+# Раскладка экипировки одна на сессию: набор слотов берётся из всего каталога,
+# а каталог меняется только в _load_items. Считаем один раз, а не в каждой
+# пересборке сетки/превью.
+func _build_equip_layout() -> void:
+	var lists: Array = []
+	for it in _db_items:
+		if it != null:
+			lists.append(it.get("slots"))
+	var layout := Picker.equip_layout(Picker.all_slots(lists))
+	_equip_cells = layout.get("cells", [])
+	_equip_cols = int(layout.get("cols", 6))
+	_equip_rows = int(layout.get("rows", 8))
 
 # ============== BUILD UI ==============
 
@@ -1592,19 +1609,11 @@ func _refresh_slots() -> void:
 		child.queue_free()
 	if _draft == null:
 		return
-	# Раскладку берём из Picker.equip_layout, чтобы сетка была одинакова от сета
-	# к сету, а не в порядке ключей словаря. Слоты копим из всех предметов
-	# каталога, а не из занятых в этом сете: иначе пустая клетка была бы видна
-	# только у того сета, где её уже что-то занимает.
-	var lists: Array = []
-	for it in _db_items:
-		if it != null:
-			lists.append(it.get("slots"))
-	var layout := Picker.equip_layout(Picker.all_slots(lists))
-	var cells: Array = layout.get("cells", [])
-	if cells.is_empty():
+	if _equip_cells.is_empty():
+		_build_equip_layout()
+	if _equip_cells.is_empty():
 		return
-	_equip_grid_box.add_child(_make_equip_grid(cells, int(layout.get("cols", 6)), int(layout.get("rows", 8))))
+	_equip_grid_box.add_child(_make_equip_grid(_equip_cells, _equip_cols, _equip_rows))
 
 # Стиль клетки сетки экипировки: непрозрачная заливка, слот читается как слот, а
 # не как ряд фоновых ячеек 1×1. Занятая клетка чуть теплее и с цветом рамки
@@ -1748,12 +1757,9 @@ func _make_equip_preview(eq: Dictionary) -> Control:
 	# Слоты берём из каталога, как в редакторе (_refresh_slots): превью повторяет
 	# укладку целиком, включая пустые клетки, даже если сет занял лишь часть
 	# слотов.
-	var lists: Array = []
-	for it in _db_items:
-		if it != null:
-			lists.append(it.get("slots"))
-	var layout := Picker.equip_layout(Picker.all_slots(lists))
-	var cells: Array = layout.get("cells", [])
+	if _equip_cells.is_empty():
+		_build_equip_layout()
+	var cells: Array = _equip_cells
 	if cells.is_empty():
 		var ph := Label.new()
 		ph.text = Loc.txt("Set is empty")
@@ -1768,8 +1774,7 @@ func _make_equip_preview(eq: Dictionary) -> Control:
 		pad.add_theme_constant_override("margin_right", 6)
 		pad.add_theme_constant_override("margin_bottom", 6)
 		pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pad.add_child(_make_equip_grid(cells, int(layout.get("cols", 6)),
-			int(layout.get("rows", 8)), eq, false))
+		pad.add_child(_make_equip_grid(cells, _equip_cols, _equip_rows, eq, false))
 		panel.add_child(pad)
 	return panel
 
