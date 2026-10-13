@@ -1791,12 +1791,8 @@ func _wall_item(desc: Dictionary) -> Control:
 	box.tooltip_text = str(desc.get("name", "?"))
 	var tex := _item_icon(_cell_resource(desc))
 	if tex != null:
-		var img := TextureRect.new()
-		img.texture = Picker.item_art(tex)
-		img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		var img := _art_texture_rect(tex, Vector2.ZERO)
 		img.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		img.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		box.add_child(img)
 		var qty := Draft.shown_count(desc)
 		if qty > 1:
@@ -2508,6 +2504,45 @@ func _item_icon(res) -> Texture2D:
 	_icon_cache[base] = tex
 	return tex
 
+# Иконка предмета: кроп прозрачных полей через Picker.item_art и режим
+# сохранения пропорций. Общая для клеток шага 1/2 и чипа инвентаря.
+func _art_texture_rect(art: Texture2D, min_size: Vector2) -> TextureRect:
+	var tex := TextureRect.new()
+	tex.texture = Picker.item_art(art)
+	tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tex.custom_minimum_size = min_size
+	tex.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return tex
+
+# Иконка над подписью, по центру клетки: CenterContainer на всю клетку, VBox,
+# TextureRect и подпись. Возвращает VBox, чтобы клетка дописала свои ряды.
+func _icon_stack(host: Control, art: Texture2D, icon_min: Vector2, name_text: String,
+		name_size: int, name_color: Color, name_lines: int) -> VBoxContainer:
+	var center := CenterContainer.new()
+	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	host.add_child(center)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 2)
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.add_child(vbox)
+	var tex := _art_texture_rect(art, icon_min)
+	vbox.add_child(tex)
+	var name_lbl := Label.new()
+	name_lbl.text = name_text
+	name_lbl.add_theme_font_size_override("font_size", name_size)
+	name_lbl.add_theme_color_override("font_color", name_color)
+	name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	name_lbl.max_lines_visible = name_lines
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(name_lbl)
+	return vbox
+
 func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 	var path_now: String = item.resource_path
 	var gi := _draft.gear_index_of(path_now) if (gear and _draft != null) else -1
@@ -2528,39 +2563,8 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 
 	cell.add_theme_stylebox_override("panel", normal_style)
 
-	var center = CenterContainer.new()
-	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cell.add_child(center)
-	# Panel - не контейнер: без пресета center остаётся нулевым прямоугольником
-	# в левом верхнем углу, и иконка центрируется относительно угла клетки.
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 2)
-	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	center.add_child(vbox)
-
-	var tex = TextureRect.new()
-	tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tex.custom_minimum_size = Vector2(GEAR_CELL_W - 32, 56)
-	var icon := _item_icon(item)
-	if icon:
-		tex.texture = Picker.item_art(icon)
-	tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tex.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	vbox.add_child(tex)
-
-	var name_lbl = Label.new()
-	name_lbl.text = item.name
-	name_lbl.add_theme_font_size_override("font_size", 9)
-	name_lbl.add_theme_color_override("font_color", Color("#aaa"))
-	name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
-	name_lbl.max_lines_visible = 2
-	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(name_lbl)
+	var vbox := _icon_stack(cell, _item_icon(item), Vector2(GEAR_CELL_W - 32, 56),
+		str(item.name), 9, Color("#aaa"), 2)
 
 	var already := _draft != null and _draft.has_path(path_now)
 	if already and not gear:
@@ -2877,40 +2881,8 @@ func _make_att_cell(owner_path: String, grp: String, att_res) -> Control:
 	cell.add_theme_stylebox_override("panel", picked if on else normal)
 	_attach_motion(cell)
 
-	var center := CenterContainer.new()
-	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cell.add_child(center)
-	# Panel - не контейнер: без пресета center остаётся нулевым прямоугольником
-	# в левом верхнем углу, и иконка центрируется относительно угла клетки.
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 2)
-	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	center.add_child(vbox)
-
-	var tex = TextureRect.new()
-	tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tex.custom_minimum_size = Vector2(84, 48)
-	var icon := _item_icon(att_res)
-	if icon:
-		tex.texture = Picker.item_art(icon)
-	tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tex.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	vbox.add_child(tex)
-
-	var nm = Label.new()
-	nm.text = str(att_res.name)
-	nm.add_theme_font_size_override("font_size", 9)
-	nm.add_theme_color_override("font_color", _gold if on else Color("#aaa"))
-	nm.autowrap_mode = TextServer.AUTOWRAP_WORD
-	nm.max_lines_visible = 2
-	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(nm)
+	_icon_stack(cell, _item_icon(att_res), Vector2(84, 48),
+		str(att_res.name), 9, _gold if on else Color("#aaa"), 2)
 
 	cell.tooltip_text = str(att_res.name) + "\n" + str(att_res.resource_path)
 	cell.gui_input.connect(func(ev: InputEvent):
