@@ -236,7 +236,7 @@ func _set_panel_open(open: bool) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		_self_paused = true
 		get_tree().paused = true
-		_refresh_all()
+		refresh(RefreshScope.PAGES | RefreshScope.LIST | RefreshScope.PREVIEW)
 	else:
 		get_tree().paused = false
 		_self_paused = false
@@ -286,7 +286,7 @@ func _handle_bind_key(event: InputEventKey) -> void:
 		LD.set_quick_key_unique(_bind_target, kc)
 		_bind_target = ""
 		_bind_btn = null
-		_refresh_loadout_list()
+		refresh(RefreshScope.LIST | RefreshScope.PREVIEW)
 	else:
 		# Черновик ещё не в файле - бинд копится до сохранения.
 		_pending_qk = kc
@@ -551,7 +551,7 @@ func _switch_tab(name: String) -> void:
 	if _tab_containers.has(name):
 		_tab_containers[name].show()
 	if name == Loc.txt("Sets"):
-		_refresh_att_overlay()
+		refresh(RefreshScope.OVERLAY)
 	for i in range(_tab_btns.size()):
 		var btn = _tab_btns[i] as Button
 		var is_active = btn.text == name
@@ -561,10 +561,6 @@ func _switch_tab(name: String) -> void:
 		else:
 			btn.add_theme_color_override("font_color", VTKSurface.GREY)
 			btn.add_theme_stylebox_override("normal", _make_tab_style())
-
-func _refresh_all() -> void:
-	_refresh_loadout_list()
-	_refresh_draft_ui()
 
 # Колонка управления превью/Done: шапка + вертикальный стек кнопок.
 # Принимает готовые кнопки (стиль и текст задаёт вызывающий), раскладывает
@@ -742,7 +738,7 @@ func _build_loadouts_tab(parent: VBoxContainer) -> void:
 	_right_box.add_child(_editor_panel)
 
 	_build_editor()
-	_refresh_preview()
+	refresh(RefreshScope.PREVIEW)
 
 	# Оверлей обвесов живёт на _panel и добавляется после _scroll, чтобы
 	# рисоваться поверх вкладки. Геометрия зеркалит _scroll (якоря + отступы
@@ -875,9 +871,8 @@ func _build_editor() -> void:
 
 	_reset_picker_state()
 	_show_page(0)
-	_refresh_pages()
 	_editor_panel.visible = _draft != null
-	_refresh_preview()
+	refresh(RefreshScope.PAGES | RefreshScope.PREVIEW)
 
 # Кнопки шагов строятся один раз, переключение идёт через _show_page.
 # Сообщение живёт в том же ряду: отдельная строка ради ошибки вроде
@@ -1019,7 +1014,7 @@ func _show_page(n: int) -> void:
 				chk.visible = i < _page
 	# При смене шага оверлей перерисовывается по пути новой страницы:
 	# чужая панель закрывается, своя - открывается.
-	_refresh_att_overlay()
+	refresh(RefreshScope.OVERLAY)
 
 func _set_problem(msg: String) -> void:
 	if _page_label != null:
@@ -1217,9 +1212,6 @@ func _build_page_gear() -> Control:
 	_gear_box = _page_columns(Loc.txt("Categories"), _gear_facets_box, main)
 	return _gear_box
 
-func _refresh_page_gear() -> void:
-	_refresh_gear_catalog()
-
 # У обоймы единственный "обвес" - совместимый патрон, и он уезжает в
 # slotData.nested, который игра не читает. Число патронов задаёт сам amount,
 # поэтому блок обвесов обойме не нужен.
@@ -1251,7 +1243,7 @@ func _remove_gear(path: String) -> void:
 		_open_equip_att = ""
 		_open_gear_att = ""
 	_draft.remove_gear(path)
-	_refresh_pages()
+	refresh(RefreshScope.PAGES)
 
 # compact = true: поля 2/2 вместо 8/8 и шрифт 8 - для рядов клетки шага 2,
 # где на всю ширину 96px приходится ещё и счётчик.
@@ -1271,7 +1263,7 @@ func _make_full_mag_btn(path: String, desc: Dictionary, compact := false) -> But
 		# Состояние берём с актуального descriptor'а, а не с захваченного
 		# desc: после пересборки клеток он уже может быть не тем объектом.
 		_draft.set_full_mag(path, not Draft.is_full(_draft.descriptor_of(path)))
-		_refresh_pages()
+		refresh(RefreshScope.PAGES)
 	)
 	return b
 
@@ -1279,7 +1271,7 @@ func _set_gear_search(t: String) -> void:
 	_gear_search = t
 	# Только каталог: пересборка страницы пересоздала бы поле поиска и выкинула
 	# бы из него курсор на каждом символе.
-	_refresh_gear_catalog()
+	refresh(RefreshScope.GEAR)
 
 # Фасеты и сетка считаются одним проходом по списку предметов: facets_of
 # фильтрует и группирует его целиком, а считать дважды - значит фильтровать
@@ -1352,7 +1344,7 @@ func _rebuild_gear_facets(facets: Array) -> void:
 	_gear_facets_box.add_child(ChosenRow.new(_gear_only_selected,
 		Loc.txt("Only selected"), func():
 			_gear_only_selected = not _gear_only_selected
-			_refresh_gear_catalog()))
+			refresh(RefreshScope.GEAR)))
 
 # Клик по активной строке сворачивает/разворачивает её подкатегории;
 # категория продолжает фильтровать. К возврату ко «Всем предметам» ведёт
@@ -1426,7 +1418,7 @@ func _gear_subfacets(items) -> Array:
 
 func _set_gear_sub(key: String) -> void:
 	_gear_sub_key = "" if _gear_sub_key == key else key
-	_refresh_gear_catalog()
+	refresh(RefreshScope.GEAR)
 
 # Фасет меняет только набор клеток: предметы из набора не уходят, поэтому
 # открытая панель обвесов остаётся уместной.
@@ -1440,7 +1432,7 @@ func _set_gear_facet(key: String) -> void:
 		# "Пистолеты" остался бы фильтр "Снайперки" из прошлой ветки.
 		_gear_sub_key = ""
 		_gear_subs_collapsed = false
-	_refresh_gear_catalog()
+	refresh(RefreshScope.GEAR)
 
 func _facet_items(facets: Array, key: String) -> Array:
 	for f in facets:
@@ -1554,13 +1546,30 @@ func _refresh_page_done() -> void:
 		_make_control_column(Loc.txt("Controls").to_upper(),
 			[_name_input, _done_bind_btn, save_btn, cancel_btn])))
 
-# Пересборка содержимого, а не узлов: узлы страницы переживают обновление,
-# иначе терялся бы фокус в поиске и позиция скролла.
-func _refresh_pages() -> void:
-	_refresh_page_equipment()
-	_refresh_page_gear()
-	_refresh_page_done()
-	_refresh_att_overlay()
+# Единый вход перерисовки: область задаётся битмаской RefreshScope. Шаг «±»
+# не пересобирает экипировку, закрытие обвесов - каталог.
+class RefreshScope:
+	const EQUIP := 1
+	const GEAR := 2
+	const DONE := 4
+	const OVERLAY := 8
+	const LIST := 16
+	const PREVIEW := 32
+	const PAGES := EQUIP | GEAR | DONE | OVERLAY
+
+func refresh(scope: int) -> void:
+	if scope & RefreshScope.EQUIP:
+		_refresh_page_equipment()
+	if scope & RefreshScope.GEAR:
+		_refresh_gear_catalog()
+	if scope & RefreshScope.DONE:
+		_refresh_page_done()
+	if scope & RefreshScope.OVERLAY:
+		_refresh_att_overlay()
+	if scope & RefreshScope.LIST:
+		_refresh_loadout_list()
+	if scope & RefreshScope.PREVIEW:
+		_refresh_preview()
 
 func _refresh_page_equipment() -> void:
 	_rebuild_target_bar()
@@ -2052,16 +2061,16 @@ func _set_target_cat(c: String) -> void:
 	# Смена старшего уровня сбрасывает младший: иначе после "Винтовки" ->
 	# "Пистолеты" остался бы фильтр "Снайперки" из прошлой ветки.
 	_target_sub = ""
-	_refresh_pages()
+	refresh(RefreshScope.EQUIP)
 
 func _set_target_sub(s: String) -> void:
 	_target_sub = "" if _target_sub == s else s
-	_refresh_pages()
+	refresh(RefreshScope.EQUIP)
 
 func _reset_target_filters() -> void:
 	_target_cat = ""
 	_target_sub = ""
-	_refresh_pages()
+	refresh(RefreshScope.EQUIP)
 
 # Записи каталога, подходящие слоту-цели и запросу, с посчитанной
 # подкатегорией. Поиск применяет _items_for_target, поэтому шапка фильтров и
@@ -2143,7 +2152,7 @@ func _remove_slot(slot: String) -> void:
 	if _target_slot == slot:
 		_target_slot = ""
 	_draft.remove_slot(slot)
-	_refresh_pages()
+	refresh(RefreshScope.PAGES)
 
 func _set_target_slot(slot: String) -> void:
 	_target_slot = slot
@@ -2155,7 +2164,7 @@ func _set_target_slot(slot: String) -> void:
 	_target_cat = ""
 	_target_sub = ""
 	_show_page(0)
-	_refresh_pages()
+	refresh(RefreshScope.PAGES)
 
 func _set_search(t: String) -> void:
 	_search_text = t
@@ -2336,7 +2345,6 @@ func _refresh_loadout_list() -> void:
 		debug.add_theme_color_override("font_color", Color("#444"))
 		_list_container.add_child(debug)
 		_list_container.add_child(CreateCard.new(_start_new_draft, Loc.txt("+ Create loadout")))
-		_refresh_preview()
 		return
 
 	for ld in loadouts:
@@ -2398,7 +2406,6 @@ func _refresh_loadout_list() -> void:
 		_cards_grid.add_child(card)
 
 	_list_container.add_child(CreateCard.new(_start_new_draft, Loc.txt("+ Create loadout")))
-	_refresh_preview()
 
 func _select_set(nm: String) -> void:
 	_selected_set = nm
@@ -2407,13 +2414,7 @@ func _select_set(nm: String) -> void:
 	if _draft != null:
 		_cancel_draft()
 	else:
-		_refresh_loadout_list()
-
-# Плоский список заменён тремя страницами. Имя оставлено, потому что на него
-# завязаны _bump_gear и _toggle_attachment_panel; по смыслу это
-# теперь "перерисовать то, что сейчас видно".
-func _refresh_draft_ui() -> void:
-	_refresh_pages()
+		refresh(RefreshScope.LIST | RefreshScope.PREVIEW)
 
 func _make_att_btn(desc) -> Button:
 	var path_now := str(desc.get("path", ""))
@@ -2432,7 +2433,7 @@ func _bump_gear(path: String, delta: float) -> void:
 	if _draft == null:
 		return
 	_draft.set_gear_amount(path, _draft.amount_of(path) + delta)
-	_refresh_draft_ui()
+	refresh(RefreshScope.GEAR | RefreshScope.DONE)
 
 # Кнопка «В инвентарь»: весь набор предмета (count копий) в инвентарь, без
 # экипировки и без сохранения - так можно проверить предмет на месте.
@@ -2449,7 +2450,7 @@ func _toggle_attachment_panel(path: String) -> void:
 		_open_gear_att = "" if _open_gear_att == path else path
 	else:
 		_open_equip_att = "" if _open_equip_att == path else path
-	_refresh_draft_ui()
+	refresh(RefreshScope.OVERLAY)
 
 # Оверлей рендерит панель текущей страницы: путь своя у Экипировки и
 # Снаряжения; при пустом пути или закрытом черновике прячется.
@@ -2473,7 +2474,7 @@ func _refresh_att_overlay() -> void:
 func _close_att_overlay() -> void:
 	_open_equip_att = ""
 	_open_gear_att = ""
-	_refresh_draft_ui()
+	refresh(RefreshScope.OVERLAY)
 
 # Иконка предмета. У части предметов в данных игры icon пуст, хотя PNG лежит
 # рядом в Files/ под именем Icon_<имя файла>.png - так в игре
@@ -2727,7 +2728,7 @@ func _after_place() -> void:
 		else:
 			_open_equip_att = _last_placed
 	_last_placed = ""
-	_refresh_pages()
+	refresh(RefreshScope.PAGES)
 
 # У обоймы единственный "обвес" — совместимый патрон, и он уезжает в
 # slotData.nested, который игра не читает: количество патронов в обойме целиком
@@ -2920,7 +2921,7 @@ func _make_att_cell(owner_path: String, grp: String, att_res) -> Control:
 			_draft.toggle_attachment(owner_path, str(att_res.resource_path), grp, _att_group_of)
 			# Панель остаётся открытой: подбор обвесов идёт списком, и закрывать
 			# её после каждого клика значило бы кликать дважды на каждый обвес.
-			_refresh_pages()
+			refresh(RefreshScope.PAGES)
 	)
 	cell.mouse_entered.connect(func():
 		if not on:
@@ -2956,7 +2957,7 @@ func _build_mag_panel(path: String, desc: Dictionary) -> Control:
 		if _draft == null:
 			return
 		_draft.set_full_mag(path, is_on)
-		_refresh_pages()
+		refresh(RefreshScope.PAGES)
 	)
 	row.add_child(b)
 
@@ -3093,7 +3094,7 @@ func _cancel_draft() -> void:
 	_open_gear_att = ""
 	_editing_name = ""
 	_build_editor()
-	_refresh_loadout_list()
+	refresh(RefreshScope.LIST | RefreshScope.PREVIEW)
 
 func _save_loadout() -> void:
 	if _draft == null:
@@ -3135,7 +3136,7 @@ func _save_loadout() -> void:
 	_draft.set_name = name_new
 	_editing_name = name_new
 	_clear_problem()
-	_refresh_loadout_list()
+	refresh(RefreshScope.LIST | RefreshScope.PREVIEW)
 
 func _edit_loadout(name: String) -> void:
 	var raw = LD.get_set(name)
@@ -3154,7 +3155,7 @@ func _delete_loadout(name: String) -> void:
 	if _editing_name == name:
 		_cancel_draft()
 	else:
-		_refresh_loadout_list()
+		refresh(RefreshScope.LIST | RefreshScope.PREVIEW)
 
 # Бинд, который показывает кнопка на странице Готово: нажатый в захвате,
 # если он есть, иначе сохранённый у редактируемого сета.
