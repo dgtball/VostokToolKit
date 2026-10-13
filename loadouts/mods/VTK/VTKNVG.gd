@@ -165,9 +165,14 @@ var _bot_shader: Shader = null
 var _bots: Dictionary = {}
 var _mines: Dictionary = {}
 var _mine_watch: Dictionary = {}
+var _pending: Array[int] = []
 var _tick_cd: float = 0.0
 var _scene_ref: Node = null
 var _debug_detect: bool = false
+# true, если прошлый _process что-то покрасил (гейт _frame_pre_draw).
+var _paint_on: bool = false
+# прошлое значение on, нужно ровно для перехода on->off (снять покраску один раз).
+var _was_on: bool = false
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -291,7 +296,18 @@ func _key_set(m: StandardMaterial3D, c: Color) -> void:
 
 
 func _on_node_added(node: Node) -> void:
-	call_deferred("_deferred_check", node.get_instance_id())
+	# Батчим: загрузчик за кадр добавляет целые поддеревья, и call_deferred на
+	# каждый узел — это отдельный instance_from_id + script lookup. Копим id,
+	# разбираем одним проходом в начале своего _process.
+	_pending.append(node.get_instance_id())
+
+
+func _drain_pending() -> void:
+	if _pending.is_empty():
+		return
+	for id in _pending:
+		_deferred_check(id)
+	_pending.clear()
 
 
 func _deferred_check(node_id: int) -> void:
@@ -415,6 +431,7 @@ func _nvg_active() -> bool:
 
 
 func _process(delta: float) -> void:
+	_drain_pending()
 	_try_install_shader()
 	if get_tree().current_scene != _scene_ref:
 		_scene_ref = get_tree().current_scene
@@ -424,14 +441,29 @@ func _process(delta: float) -> void:
 		_reseed(_scene_ref)
 		_tick_cd = 0.0
 	var on := set_thermal and _nvg_active()
+	# Позиция игрока — один вызов на кадр, а не по два на каждого бота
+	# (_update_bot звал её дважды: для маркера и для дистанции покраски).
+	var ppos := _player_pos()
 
-	# Key paint tracks NVG state every frame, not every TICK: the tick gate below
-	# runs the world scan, but if painting waited for it, a quick NVG toggle left
-	# bots a frame behind on the flash of raw key pixels.
-	for id in _bots.keys():
-		_update_bot(id, on)
-	for id in _mines.keys():
-		_update_mine(id, on)
+	if on:
+		# Key paint tracks NVG state every frame, not every TICK: the tick gate
+		# below runs the world scan, but if painting waited for it, a quick NVG
+		# toggle left bots a frame behind on the flash of raw key pixels.
+		_paint_on = false
+		for id in _bots.keys():
+			_update_bot(id, true, ppos)
+		for id in _mines.keys():
+			_update_mine(id, true, ppos)
+	elif _was_on or _paint_on:
+		# Переход on->off: снять покраску ровно один раз, дальше при off ботов
+		# и их меши кадр не обходит вовсе.
+		_clear_paint()
+		_paint_on = false
+	_was_on = on
+
+	if not on:
+		# Покой при off: только дешёвый присмотр (см. _off_frame_upkeep).
+		_off_frame_upkeep()
 
 	if _tick_cd > 0.0:
 		_tick_cd -= delta
@@ -593,8 +625,10 @@ func _register_bot(node: Node) -> void:
 		"paint": null,
 		"probed": false,
 		"friendly": _is_friendly(node),
+		"friendly_resolved": false,
 		"death": 0.0,
 		"recorded": false,
+		"child_count": -1,
 	}
 	if set_debug_probe:
 		_dbg("[bot] %s tracked pos=%s" % [node.get_path(), str(node.global_position)])
@@ -617,16 +651,17 @@ func _sweep_bot_meshes(node: Node) -> Array:
 
 
 func _is_friendly(node: Node) -> bool:
-	# Faction comes from the AIData variant picked in AI.Initialize(), so this is
-	# recomputed every tick (the variant can be null at registration time). Falls
-	# back to the pooled node name, since AISpawner names them AI_Nomad, AI_Nomad_2.
+	# Faction comes from the AIData variant picked in AI.Initialize(), which can
+	# be null at registration time. _update_bot re-calls this only until the
+	# variant resolves, then caches the result. Falls back to the pooled node
+	# name, since AISpawner names them AI_Nomad, AI_Nomad_2.
 	var v = node.get("variant")
 	if v != null and v.get("faction") != null:
 		return int(v.get("faction")) == 0
 	return String(node.name).contains("Nomad")
 
 
-func _update_bot(id: int, thermal_on: bool) -> void:
+func _update_bot(id: int, thermal_on: bool, ppos: Vector3) -> void:
 	var e = _bots.get(id)
 	if e == null:
 		return
@@ -635,39 +670,46 @@ func _update_bot(id: int, thermal_on: bool) -> void:
 		_bots.erase(id)
 		return
 
-	var friendly := _is_friendly(node)
-	e["friendly"] = friendly
+	# Фракция приходит из AIData variant, который в момент регистрации может
+	# быть null. Пересчитываем, пока variant не готов; как только резолвился —
+	# кэш постоянен и _is_friendly больше не зовётся.
+	if not e["friendly_resolved"]:
+		e["friendly"] = _is_friendly(node)
+		var v = node.get("variant")
+		if v != null and v.get("faction") != null:
+			e["friendly_resolved"] = true
+	var friendly: bool = e["friendly"]
 
-	# Death clock: death_time is latched on the frame the bot dies, and a body
-	# stays highlighted DEATH_COOLDOWN seconds while it cools. The cooling front
-	# (VTKBot.gdshader) is driven by cool = secs / DEATH_COOLDOWN; at the end the
-	# glow hides. Mirror of the reference mod's death_time/death_time_recorded.
-	var dead: bool = bool(node.get("dead"))
-	var secs := -1.0
+	# Death clock: лэтчим момент смерти один раз, чтобы фронт остывания не
+	# сбрасывался на кадрах, когда тепловизор выключен (см. _off_frame_upkeep).
 	var now := float(Time.get_ticks_msec()) / 1000.0
-	if dead:
+	if bool(node.get("dead")):
 		if not e["recorded"]:
 			e["recorded"] = true
 			e["death"] = now
-		secs = now - float(e["death"])
 	else:
 		e["recorded"] = false
+	var secs := 0.0
+	if e["recorded"]:
+		secs = now - float(e["death"])
+	var recorded: bool = e["recorded"]
 
 	# A friendly Nomad gets a floating ▼ on top of its body glow, but only inside
 	# the same glow range as the body -- otherwise it reads through the whole map.
-	var mark_dist := _player_pos().distance_to(node.global_position)
-	var mark := thermal_on and set_mark_nomads and friendly and not dead \
-		and mark_dist <= maxf(set_far_distance, 1.0)
-	_update_nomad_marker(node, mark)
+	var mark := false
+	if friendly and not recorded:
+		mark = thermal_on and set_mark_nomads \
+			and ppos.distance_to(node.global_position) <= maxf(set_far_distance, 1.0)
+	_update_nomad_marker(node, mark, ppos)
 
-	# Re-collect the bot's geometry every frame. It does not exist at
-	# registration, AI.Initialize() can swap the variant, and the game adds,
-	# removes or range-fades LOD/body meshes as the player closes in. A stale-ref
-	# check alone missed meshes ADDED later (the old refs stay valid), which left
-	# the close-range body unpainted while only a key sliver poked past it. A
-	# fresh sweep is cheap -- a few dozen nodes per bot, once a frame.
-	var fresh: Array = _sweep_bot_meshes(node)
-	e["meshes"] = fresh
+	# Геометрия бота меняется, когда игра добавляет/убирает LOD и gear-меши.
+	# Полный свип каждый кадр был расточителен; пере-собираем только когда число
+	# детей реально изменилось -- это ловит любое добавление/удаление, а
+	# стабильное тело (обычный случай) бесплатно.
+	var cc: int = node.get_child_count()
+	if int(e["child_count"]) != cc:
+		e["meshes"] = _sweep_bot_meshes(node)
+		e["child_count"] = cc
 
 	# Per-bot body material off the shared shader: "cool" and "footY" are
 	# per-bot uniforms. cool = secs / DEATH_COOLDOWN drives the cooling front
@@ -681,15 +723,18 @@ func _update_bot(id: int, thermal_on: bool) -> void:
 		bmat.set_shader_parameter("coldKey", BOT_COLD_KEY)
 		e["mat"] = bmat
 	if bmat != null:
-		var cool := 0.0 if not dead else clampf(secs / DEATH_COOLDOWN, 0.0, 1.0)
+		var cool := 0.0 if not recorded else clampf(secs / DEATH_COOLDOWN, 0.0, 1.0)
 		bmat.set_shader_parameter("cool", cool)
 		bmat.set_shader_parameter("footY", node.global_position.y)
 
 	# A body only glows inside the glow range and while it still has heat left;
 	# past either bound the override is cleared and the real skin shows through.
-	var dist := _player_pos().distance_to(node.global_position)
-	var show := thermal_on and bmat != null and dist <= maxf(set_far_distance, 1.0) and (not dead or secs < DEATH_COOLDOWN)
+	var dist := ppos.distance_to(node.global_position)
+	var show := thermal_on and bmat != null and dist <= maxf(set_far_distance, 1.0) \
+		and (not recorded or secs < DEATH_COOLDOWN)
 	e["painted"] = show
+	if show:
+		_paint_on = true
 	var paint = bmat if show else null
 	e["paint"] = paint
 	for m in e["meshes"]:
@@ -697,14 +742,66 @@ func _update_bot(id: int, thermal_on: bool) -> void:
 			(m as GeometryInstance3D).material_override = paint
 
 
+# Покой при выключенном тепловизоре. Регистрация (node_added) продолжает идти
+# и при off, поэтому мёртвые записи всё равно надо чистить, иначе _mines рос бы
+# без границы. Заодно лэтчим death clock: иначе труп, убитый при выключенном
+# тепловизоре, при включении получил бы death="now" и светился бы лишние
+# DEATH_COOLDOWN секунд.
+func _off_frame_upkeep() -> void:
+	var now := float(Time.get_ticks_msec()) / 1000.0
+	for id in _bots.keys():
+		var e = _bots.get(id)
+		if e == null:
+			continue
+		var node = e.get("node")
+		if node == null or not is_instance_valid(node):
+			_bots.erase(id)
+			continue
+		if bool(node.get("dead")):
+			if not e["recorded"]:
+				e["recorded"] = true
+				e["death"] = now
+		else:
+			e["recorded"] = false
+	for id in _mines.keys():
+		var e = _mines.get(id)
+		if e == null or not is_instance_valid(e.get("node")):
+			_mines.erase(id)
+
+
+# Снимает покраску на переходе on->off ровно один раз: material_override в null
+# на все меши ботов и мин, маркеры Nomad скрыты. Дальше кадр при off ботов и
+# мешей не обходит вовсе.
+func _clear_paint() -> void:
+	for id in _bots.keys():
+		var e = _bots.get(id)
+		if e == null:
+			continue
+		for m in e.get("meshes", []):
+			if is_instance_valid(m):
+				(m as GeometryInstance3D).material_override = null
+		e["painted"] = false
+		e["paint"] = null
+		var node = e.get("node")
+		if node != null and is_instance_valid(node):
+			_update_nomad_marker(node, false, Vector3.ZERO)
+	for id in _mines.keys():
+		var e = _mines.get(id)
+		if e == null:
+			continue
+		for m in e.get("meshes", []):
+			if is_instance_valid(m):
+				(m as GeometryInstance3D).material_override = null
+
+
 # Last write before the frame is drawn, after every node has processed. Re-assert
 # the body paint so a game-side material write (see _ready) cannot outlast ours,
 # and report the first time we catch one, so a silent overwrite becomes visible
 # in the probe log.
 func _frame_pre_draw() -> void:
-	# Когда тепловизор выключен, красить нечего - и обход ботов в конце кадра
-	# ни к чему. Снятие прошлой покраски делает _process (_update_bot с on=false).
-	if not set_thermal:
+	# Есть смысл переустанавливать покраску, только если прошлый кадр что-то
+	# покрасил; при off или когда ботов в радиусе нет — обходить нечего.
+	if not _paint_on:
 		return
 	for id in _bots.keys():
 		var e = _bots.get(id)
@@ -732,7 +829,7 @@ func _frame_pre_draw() -> void:
 # bookkeeping dict) so a dropped-and-recreated entry can never orphan the mesh.
 # The ▼ is a real key mesh, billboarded and depth-test-free, so the screen
 # shader substitutes it to markerColor instead of palettising it.
-func _update_nomad_marker(node: Node, show_marker: bool) -> void:
+func _update_nomad_marker(node: Node, show_marker: bool, ppos: Vector3) -> void:
 	var marker := node.get_node_or_null(MARKER_NAME) as MeshInstance3D
 	if not show_marker:
 		if marker != null:
@@ -747,7 +844,7 @@ func _update_nomad_marker(node: Node, show_marker: bool) -> void:
 		node.add_child(marker)
 	# Scale with distance so the ▼ keeps a steady on-screen size, with a floor so
 	# a Nomad standing right beside the player does not shrink away.
-	var dist := _player_pos().distance_to(node.global_position)
+	var dist := ppos.distance_to(node.global_position)
 	marker.scale = Vector3.ONE * maxf(dist * MARKER_SCREEN_SCALE, MARKER_MIN_SCALE)
 	marker.visible = true
 
@@ -844,7 +941,7 @@ func _collect_meshes(node: Node, out: Array) -> void:
 		_collect_meshes(child, out)
 
 
-func _update_mine(id: int, thermal_on: bool) -> void:
+func _update_mine(id: int, thermal_on: bool, ppos: Vector3) -> void:
 	var e = _mines.get(id)
 	if e == null:
 		return
@@ -853,7 +950,7 @@ func _update_mine(id: int, thermal_on: bool) -> void:
 		return
 	# Mines obey the same glow range as bots: past it they read as scenery.
 	var node = e["node"]
-	var dist := _player_pos().distance_to(node.global_position)
+	var dist := ppos.distance_to(node.global_position)
 	var show := thermal_on and set_mines and dist <= maxf(set_far_distance, 1.0)
 	for mesh in e["meshes"]:
 		if is_instance_valid(mesh):
