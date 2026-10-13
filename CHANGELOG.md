@@ -1,8 +1,19 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
+
+## [4.16.4] - 2026-10-13
+
+### Changed
+
+- Minor performance improvements and internal cleanup.
+- Clearer visual marking for selected attachments and quick-assigned weapon attachments in the equipment view.
+
+### Removed
+
+- The "Spawn into inventory"/"Spawn into catalog" button on loadout gear cells.
 
 ## [4.16.2] - 2026-10-13
 

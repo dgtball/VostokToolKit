@@ -1534,7 +1534,7 @@ func _build_page_done() -> Control:
 	# _pending_qk и применяется в _save_loadout.
 	_bind_btn = Button.new()
 	_done_bind_btn = _bind_btn
-	_bind_btn.custom_minimum_size = Vector2(120, 20)
+	_bind_btn.custom_minimum_size = Vector2(120, 0)
 	_bind_btn.add_theme_font_size_override("font_size", 10)
 	_apply_qk_btn(_bind_btn, _display_qk())
 	_bind_btn.pressed.connect(func(): _begin_bind_pending(_bind_btn))
@@ -1718,6 +1718,34 @@ func _make_equip_cell(slot: String, w: int, h: int, desc: Dictionary = {}, inter
 		drop.offset_top = 2
 		drop.offset_right = 18
 		drop.offset_bottom = 18
+		# Бейдж количества обвесов на оружии (вариант 2)
+		if slot == "Primary" or slot == "Secondary":
+			var atts = src.get("attachments")
+			var ac := 0
+			if typeof(atts) == TYPE_ARRAY:
+				ac = atts.size()
+			if ac > 0:
+				var badge := Label.new()
+				badge.text = str(ac)
+				badge.add_theme_font_size_override("font_size", 9)
+				badge.add_theme_color_override("font_color", Color("#0e0b08"))
+				var bsb := StyleBoxFlat.new()
+				bsb.bg_color = _gold
+				bsb.corner_radius_top_right = 8
+				bsb.corner_radius_top_left = 8
+				bsb.corner_radius_bottom_right = 8
+				bsb.corner_radius_bottom_left = 8
+				bsb.content_margin_left = 4
+				bsb.content_margin_right = 4
+				bsb.content_margin_top = 0
+				bsb.content_margin_bottom = 0
+				badge.add_theme_stylebox_override("normal", bsb)
+				badge.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+				badge.offset_left = -4
+				badge.offset_top = 2
+				badge.offset_right = -4
+				badge.offset_bottom = 16
+				box.add_child(badge)
 	return box
 
 # Укладка экипировки (вариант E): клетки слотов ложатся по координатам из
@@ -2876,7 +2904,7 @@ func _make_att_cell(owner_path: String, grp: String, att_res) -> Control:
 
 	var normal := VTKSurface.surface("normal")
 	var hover := VTKSurface.surface("hover")
-	var picked := VTKSurface.surface("normal", true, false, true)
+	var picked := VTKSurface.surface("normal", true, false, false)
 
 	cell.add_theme_stylebox_override("panel", picked if on else normal)
 	_attach_motion(cell)

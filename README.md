@@ -1,10 +1,10 @@
-# Vostok Toolkit
+﻿# Vostok Toolkit
 
-A quality-of-life toolkit for **Road to Vostok** — loadout presets, smarter tasks, thermal vision, kill stats, a dynamic killfeed and fast travel, all in one mod.
+A quality-of-life toolkit for **Road to Vostok** вЂ” loadout presets, smarter tasks, thermal vision, kill stats, a dynamic killfeed and fast travel, all in one mod.
 
 ![Ironman Restart](assets/ironman-restart.jpg)
 
-**Version:** 4.16.2 · **Loader:** Metro Mod Loader 3.4.2 · **Game:** 0.2.1.0 · **Language:** RU / EN
+**Version:** 4.16.4 В· **Loader:** Metro Mod Loader 3.4.2 В· **Game:** 0.2.1.0 В· **Language:** RU / EN
 
 ## Features
 
@@ -29,7 +29,7 @@ A quality-of-life toolkit for **Road to Vostok** — loadout presets, smarter ta
 ## Usage
 
 - Toggle panel: `F3` (configurable in MCM).
-- Presets live in `user://MCM/vostok-toolkit/VTKsets.json`; interface language in MCM (General → Language).
+- Presets live in `user://MCM/vostok-toolkit/VTKsets.json`; interface language in MCM (General в†’ Language).
 
 ## Building from source
 
@@ -37,9 +37,9 @@ A quality-of-life toolkit for **Road to Vostok** — loadout presets, smarter ta
 
 ## Repository layout
 
-- `loadouts/mod.txt` — name, id, version, autoload
-- `loadouts/mods/VTK/*.gd` — mod source (prefix `VTK`)
-- `assets/` — images for the README and the Vostok Mods listing
+- `loadouts/mod.txt` вЂ” name, id, version, autoload
+- `loadouts/mods/VTK/*.gd` вЂ” mod source (prefix `VTK`)
+- `assets/` вЂ” images for the README and the Vostok Mods listing
 
 ## Compatibility
 
@@ -47,9 +47,9 @@ Compatible with LateStart. Tested alongside ElegantHUD, JCM and other common mod
 
 ## Credits
 
-- Juuzoz' Cheat Menu [JCM](https://vostokmods.net/mod/juuzoz-cheat-menu-jcm) by juuzoz_ — the starting point for the loadout idea
-- [Thermal Vision](https://www.nexusmods.com/roadtovostok/mods/141) by Vito921 — inspiration for the thermal rework
-- [Partial Task Hand-In](https://modworkshop.net/mod/56789) by Ryujiro — inspired partial task hand-in
+- Juuzoz' Cheat Menu [JCM](https://vostokmods.net/mod/juuzoz-cheat-menu-jcm) by juuzoz_ вЂ” the starting point for the loadout idea
+- [Thermal Vision](https://www.nexusmods.com/roadtovostok/mods/141) by Vito921 вЂ” inspiration for the thermal rework
+- [Partial Task Hand-In](https://modworkshop.net/mod/56789) by Ryujiro вЂ” inspired partial task hand-in
 
 ## Development note
 
