@@ -4,6 +4,11 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.16.1] - 2026-10-13
+
+### Changed
+- The item context menu now uses the game's own hold-to-confirm Delete button instead of the previous one-click Delete.
+
 ## [4.16.0] - 2026-10-13
 
 ### Fixed

@@ -220,46 +220,39 @@ func patch_world_difficulty(diff: int) -> void:
 func _on_loadcharacter_post() -> void:
 	Log.log("[VTK] loadcharacter-post")
 
-# --- Контекстное меню предмета: кнопка Delete ------------------------------
-# Пост-хук Context.Update добавляет кнопку Delete, которая мгновенно удаляет
-# весь стак через ванильный Interface.ContextDestroy() -- та же операция, что
-# и hold-to-Destroy, но без удержания. Кнопка живёт в Panel/Margin/Buttons и
-# пере-показывается после каждого Update, потому что сам ванильный Update в
-# начале прячет всех детей контейнера. Показываем только для предметов в гриде
-# (contextGrid != null), как и ванильный ContextDestroy; в декоре не прячем.
+# --- Контекстное меню предмета: Destroy вне декора --------------------------
+# Удаление в игре — ванильная кнопка Destroy в Context (Panel/Margin/Buttons/
+# Destroy) с удержанием: Context._physics_process -> DestroyProgress копит
+# Progress, при >=100 зовёт Interface.ContextDestroy(). Но ванила показывает её
+# только в режиме декора (gameData.decor). Для предмета в гриде мод показывает
+# ту же кнопку вне декора и переименовывает в "Delete" — отдельной кнопки мод
+# не держит, вся логика удержания/прогресса/удаления остаётся ванильной.
+# Пост-хук нужен потому, что ванильный Update в начале прячет всех детей
+# контейнера, а Progress сбрасываем, чтобы открытие меню не начиналось с
+# накопленного прошлого значения.
 func _on_context_update_post(_slot_data) -> void:
 	var ctx = _lib._caller if _lib else null
 	if ctx == null or not is_instance_valid(ctx):
 		return
-	var buttons = ctx.get_node_or_null("Panel/Margin/Buttons")
-	if buttons == null or not (buttons is Node):
+	var destroy_btn = ctx.get_node_or_null("Panel/Margin/Buttons/Destroy")
+	if destroy_btn == null or not (destroy_btn is Button):
 		return
-	var btn := _find_context_delete_button(buttons)
-	if btn == null:
-		btn = _make_context_delete_button(ctx, buttons)
-	if btn == null:
-		return
+	destroy_btn.text = "Delete"
 	var iface = _context_interface(ctx)
-	btn.visible = iface != null and iface.get("contextGrid") != null
+	if iface == null or not is_instance_valid(iface):
+		return
+	if iface.get("contextGrid") == null or iface.get("contextItem") == null:
+		return
+	destroy_btn.show()
+	var progress = destroy_btn.get_node_or_null("Progress")
+	if progress != null and progress is ProgressBar:
+		progress.value = 0.0
 
 func _context_interface(ctx):
 	var iface = ctx.get("interface") if ctx != null else null
 	if iface == null:
 		iface = _resolve_interface()
 	return iface
-
-func _find_context_delete_button(buttons) -> Button:
-	var b = buttons.get_node_or_null("VTKDelete")
-	return b if (b != null and b is Button) else null
-
-func _make_context_delete_button(ctx, buttons) -> Button:
-	var btn := Button.new()
-	btn.name = "VTKDelete"
-	btn.text = "Delete"
-	btn.add_theme_font_size_override("font_size", _sibling_button_font_size(buttons))
-	btn.pressed.connect(_on_context_delete_pressed.bind(ctx))
-	buttons.add_child(btn)
-	return btn
 
 # Ванильные кнопки несут персональный theme_override_font_sizes/font_size (12),
 # а не общий для темы Button; новый Button унаследовал бы дефолт темы (16).
@@ -270,16 +263,6 @@ func _sibling_button_font_size(buttons) -> int:
 		if child is Button and not str(child.name).begins_with("VTK"):
 			return child.get_theme_font_size("font_size")
 	return 12
-
-func _on_context_delete_pressed(ctx) -> void:
-	var iface = _context_interface(ctx)
-	if iface == null or not is_instance_valid(iface):
-		return
-	if iface.get("visible") != true:
-		return
-	if iface.get("contextGrid") == null or iface.get("contextItem") == null:
-		return
-	iface.call("ContextDestroy")
 
 # --- Take/Split из слота экипировки ----------------------------------------
 # Ванильные ContextTake/ContextSplit требуют contextGrid != null и в слоте
