@@ -2435,16 +2435,6 @@ func _bump_gear(path: String, delta: float) -> void:
 	_draft.set_gear_amount(path, _draft.amount_of(path) + delta)
 	refresh(RefreshScope.GEAR | RefreshScope.DONE)
 
-# Кнопка «В инвентарь»: весь набор предмета (count копий) в инвентарь, без
-# экипировки и без сохранения - так можно проверить предмет на месте.
-func _spawn_gear(path_now: String) -> void:
-	if _draft == null:
-		return
-	var desc := _draft.descriptor_of(path_now)
-	if desc.is_empty():
-		return
-	LD.spawn_gear(desc)
-
 func _toggle_attachment_panel(path: String) -> void:
 	if _page == 1:
 		_open_gear_att = "" if _open_gear_att == path else path
@@ -2500,12 +2490,12 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 	var path_now: String = item.resource_path
 	var gi := _draft.gear_index_of(path_now) if (gear and _draft != null) else -1
 	var cell = Panel.new()
-	# Клетка снаряжения выше и шире: под именем три ряда - счётчик с
-	# обвесами, крупные «− n +» и кнопка «В инвентарь»; ✕ живёт в углу.
-	# Каталог шага 1 остаётся ниже - там под именем только счётчик.
+	# Клетка снаряжения выше и шире: под именем два ряда - счётчик с
+	# обвесами и крупные «− n +»; ✕ живёт в углу. Каталог шага 1 остаётся
+	# ниже - там под именем только счётчик.
 	# Ширина берётся из GEAR_CELL_W: расчёт колонок обязан совпадать с
 	# вёрсткой, иначе сетка переполняется и появляется прокрутка.
-	cell.custom_minimum_size = Vector2(GEAR_CELL_W, 192 if gi >= 0 else (168 if gear else 152))
+	cell.custom_minimum_size = Vector2(GEAR_CELL_W, 176 if gi >= 0 else (168 if gear else 152))
 	# Без SIZE_EXPAND_FILL: HFlowContainer растягивает такие клетки на всю
 	# ширину полосы, пока предметов мало (stretch в flow_container.cpp).
 	cell.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -2610,19 +2600,6 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 		plus.pressed.connect(func(): _bump_gear(path_now, 1.0))
 		brow.add_child(plus)
 		vbox.add_child(brow)
-
-		# Ряд В: «В инвентарь» - спавн набора в инвентарь для проверки; у
-		# мебели игра не умеет держать её в рюкзаке, поэтому кнопка зовётся
-		# «В каталог» и кладёт предмет в строительный каталог.
-		# Прежняя иконка действия читалась как состояние, а не как кнопка.
-		var spawn_btn := Button.new()
-		var is_furn := str(item.get("type")).strip_edges().to_lower() == "furniture"
-		spawn_btn.text = Loc.txt("Spawn into catalog") if is_furn else Loc.txt("Spawn into inventory")
-		spawn_btn.add_theme_font_size_override("font_size", 11)
-		spawn_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		VTKSurface.style_button(spawn_btn, false, false, 6, 6, 6, 7)
-		spawn_btn.pressed.connect(func(): _spawn_gear(path_now))
-		vbox.add_child(spawn_btn)
 
 		# Удаление - крестик в правом верхнем углу клетки, красный: это
 		# уничтожение набора, его не должно быть рядом с «В инвентарь».

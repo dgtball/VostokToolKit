@@ -390,35 +390,6 @@ static func _grid_count(grid) -> int:
 			n += 1
 	return n
 
-# Один предмет снаряжения в инвентарь целиком (count обойм или amount
-# копий): кнопка «В инвентарь» в клетке шага 2. Без игрового дерева молча
-# 0, а не ошибка - так же ведёт себя apply_loadout, и headless-тест не
-# должен падать.
-static func spawn_gear(desc: Dictionary) -> int:
-	var root = _root_node()
-	if not root:
-		return 0
-	var interface = root.get_node_or_null(Paths.INTERFACE)
-	if not interface:
-		Log.log("[VTK] spawn_gear: no Interface node")
-		return 0
-	var loader = root.get_node_or_null("Loader")
-	var ig = interface.get("inventoryGrid")
-	if ig == null or not is_instance_valid(ig):
-		Log.log("[VTK] spawn_gear: no inventoryGrid")
-		return 0
-	var placed := _insert_desc(interface, ig, desc)
-	if loader and loader.has_method("SaveCharacter"):
-		loader.SaveCharacter()
-	if interface.has_method("UpdateStats"):
-		interface.UpdateStats(true)
-	if placed > 0:
-		var res = load(str(desc.get("path", "")))
-		var prefix := Loc.txt("Spawned to catalog: ") if _is_furniture(res) else Loc.txt("Spawned: ")
-		_notify(loader, prefix + str(desc.get("name", "?"))
-			+ " x" + str(placed), Color.GREEN)
-	return placed
-
 static func _is_magazine(res) -> bool:
 	return res != null and str(res.get("type")) == "Attachment" and str(res.get("subtype")) == "Magazine"
 
