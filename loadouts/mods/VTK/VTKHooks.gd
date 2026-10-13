@@ -183,6 +183,8 @@ func _do_register() -> void:
 	_lib.hook("loader-newgame-post", _on_newgame_post)
 	_hooks_equip.append(_lib.hook("loader-loadcharacter-post", _on_loadcharacter_post))
 	_hooks_context.append(_lib.hook("context-update-post", _on_context_update_post))
+	_hooks_context.append(_lib.hook("interface-contexttake", _on_context_take_replace))
+	_hooks_context.append(_lib.hook("interface-contextsplit", _on_context_split_replace))
 	_hooks_equip.append(_lib.hook("pickup-interact-pre", _on_pickup_interact_pre))
 	_hooks_equip.append(_lib.hook("pickup-interact-post", _on_pickup_interact_post))
 	_registered = true
@@ -278,6 +280,56 @@ func _on_context_delete_pressed(ctx) -> void:
 	if iface.get("contextGrid") == null or iface.get("contextItem") == null:
 		return
 	iface.call("ContextDestroy")
+
+# --- Take/Split из слота экипировки ----------------------------------------
+# Ванильные ContextTake/ContextSplit требуют contextGrid != null и в слоте
+# молча выходят: кнопки в меню есть, эффекта нет. Если предмет лежит в слоте,
+# сами возвращаем долю стака в инвентарь (AutoStack/Create) и пропускаем
+# ванильное тело; для предметов в гриде не вмешиваемся (contextGrid != null).
+func _on_context_take_replace() -> void:
+	_context_slot_share(true)
+
+func _on_context_split_replace() -> void:
+	_context_slot_share(false)
+
+func _context_slot_share(is_take: bool) -> void:
+	var iface = _lib._caller if _lib else null
+	if iface == null or not is_instance_valid(iface):
+		return
+	if iface.get("contextGrid") != null:
+		return
+	var item = iface.get("contextItem")
+	var slot = iface.get("contextSlot")
+	if item == null or slot == null or not is_instance_valid(item):
+		return
+	var sd = item.get("slotData")
+	if sd == null:
+		return
+	var res = sd.get("itemData")
+	if res == null:
+		return
+	var amount := int(sd.get("amount"))
+	var share := EquipFlow.take_share(int(res.get("defaultAmount"))) if is_take else EquipFlow.split_share(amount)
+	if share <= 0 or share > amount:
+		return
+	sd.set("amount", amount - share)
+	if item.has_method("UpdateDetails"):
+		item.UpdateDetails()
+	var new_sd = SlotData.new()
+	new_sd.itemData = res
+	new_sd.amount = share
+	var ig = iface.get("inventoryGrid")
+	if ig != null and is_instance_valid(ig):
+		if not iface.AutoStack(new_sd, ig):
+			iface.Create(new_sd, ig, true)
+	if iface.has_method("HideContext"):
+		iface.HideContext()
+	if iface.has_method("Reset"):
+		iface.Reset()
+	if iface.has_method("PlayStack"):
+		iface.PlayStack()
+	if _lib != null:
+		_lib.skip_super()
 
 func _resolve_interface() -> Node:
 	if _iface_cache != null and is_instance_valid(_iface_cache):
