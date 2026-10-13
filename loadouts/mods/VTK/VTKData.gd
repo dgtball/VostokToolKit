@@ -7,8 +7,7 @@ const SAVE_FILE := "user://MCM/vostok-toolkit/VTKsets.json"
 const LEGACY_SAVE_FILE := "user://MCM/vostok-toolkit/loadouts.json"
 
 # Метка последней операции мода, кладущей предметы в инвентарь (сборка сета,
-# спавн снаряжения). Пофреймовый обход инвентаря в VTKHooks пропускает кадры
-# сразу после неё, иначе авто-экипировка подхватила бы собственные вставки.
+# спавн снаряжения).
 static var _own_op_msec: int = 0
 
 static func _touch_own_op() -> void:
