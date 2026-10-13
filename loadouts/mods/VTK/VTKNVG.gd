@@ -702,6 +702,10 @@ func _update_bot(id: int, thermal_on: bool) -> void:
 # and report the first time we catch one, so a silent overwrite becomes visible
 # in the probe log.
 func _frame_pre_draw() -> void:
+	# Когда тепловизор выключен, красить нечего - и обход ботов в конце кадра
+	# ни к чему. Снятие прошлой покраски делает _process (_update_bot с on=false).
+	if not set_thermal:
+		return
 	for id in _bots.keys():
 		var e = _bots.get(id)
 		if e == null:

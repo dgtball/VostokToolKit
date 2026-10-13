@@ -405,7 +405,7 @@ func _build_ui() -> void:
 	# На весь вьюпорт: мастер-деталь (рейл сетов + редактор) тогда тянется
 	# по всей ширине окна, и фокус-кнопка ⛶ больше не нужна.
 	_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var panel_style := VTKSurface.panel(false, 0)
+	var panel_style := VTKSurface.panel(false, 0).duplicate(true)
 	panel_style.shadow_color = Color(0, 0, 0, 0.5)
 	panel_style.shadow_size = 12
 	panel_style.shadow_offset = Vector2(0, 6)
@@ -692,7 +692,7 @@ func _build_loadouts_tab(parent: VBoxContainer) -> void:
 	# висел бы на общей подложке таба и не читался как отдельная зона.
 	var rail_panel := PanelContainer.new()
 	rail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var rp := VTKSurface.panel(true, 6)
+	var rp := VTKSurface.panel(true, 6).duplicate(true)
 	rp.border_width_left = 0
 	rp.border_width_top = 0
 	rp.border_width_bottom = 0
@@ -1101,7 +1101,7 @@ func _page_columns(title: String, side: Control, main: Control, width := SIDE_WI
 
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(width, 0)
-	var ps := VTKSurface.panel(true, 6)
+	var ps := VTKSurface.panel(true, 6).duplicate(true)
 	ps.border_width_left = 0
 	ps.border_width_top = 0
 	ps.border_width_bottom = 0
@@ -1642,7 +1642,6 @@ func _make_equip_cell(slot: String, w: int, h: int, desc: Dictionary = {}, inter
 	box.add_theme_stylebox_override("panel", _equip_cell_style(active, false, occupied))
 	if interactive:
 		_attach_row_hover(box, func(hv: bool): return _equip_cell_style(active, hv, occupied))
-		_attach_motion(box)
 		box.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, src))
 
 	var tex := _item_icon(_cell_resource(src)) if occupied else null
@@ -2515,7 +2514,6 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 	var in_set_style := VTKSurface.surface("normal", true, false, true)
 
 	cell.add_theme_stylebox_override("panel", normal_style)
-	_attach_motion(cell)
 
 	var center = CenterContainer.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL

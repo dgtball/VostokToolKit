@@ -19,6 +19,9 @@ func _ready() -> void:
 	_label = Label.new()
 	_label.add_theme_color_override("font_color", Color(0.9, 0.85, 0.7))
 	_label.add_theme_font_size_override("font_size", 13)
+	var hud := Paths.hud_font()
+	if hud != null:
+		_label.add_theme_font_override("font", hud)
 	_label.position = Vector2(10, 10)
 	_label.visible = false
 	add_child(_label)
@@ -162,32 +165,34 @@ func _reset_counters() -> void:
 	if hooks != null and is_instance_valid(hooks) and hooks.has_method("reset_kills"):
 		hooks.reset_kills()
 
+func _is_shelter() -> bool:
+	var iface = _get_iface()
+	if iface == null:
+		return false
+	var gd = iface.get("gameData")
+	if gd == null:
+		return false
+	return bool(gd.get("shelter"))
+
 func _process(delta: float) -> void:
 	if not _enabled:
 		return
-	var iface = _get_iface()
-	var in_shelter = false
-	if iface != null:
-		var gd = iface.get("gameData")
-		if gd != null:
-			in_shelter = bool(gd.get("shelter"))
-	# A map change is signalled by the current_scene pointer moving to a new
-	# node. Entering a shelter also needs a reset, but the two can coincide
-	# (teleport straight into a shelter), so check the map change first and let
-	# the shelter branch below still run to label the HUD.
+	# Смена сцены дешёвая и должна сбрасывать счётчик сразу; чтение
+	# gameData.shelter - только на тике (0.5 с), HUD и так обновляется там же.
 	var map_changed := get_tree().current_scene != _scene_ref
 	if map_changed:
 		_reset_counters()
+	_accum += delta
+	if _accum < 0.5:
+		return
+	_accum = 0.0
+	var in_shelter := _is_shelter()
 	if in_shelter and not _was_shelter:
 		_reset_counters()
 		_label.text = "Shelter"
 	_was_shelter = in_shelter
 	if in_shelter:
 		return
-	_accum += delta
-	if _accum < 0.5:
-		return
-	_accum = 0.0
 	# A map change wipes every bot; re-walk the fresh scene or the count
 	# would keep reading nodes that no longer exist.
 	if map_changed:

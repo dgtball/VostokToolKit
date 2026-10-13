@@ -29,11 +29,31 @@ const SEEN_DEATHS_TTL_MSEC := 600000
 const EQUIP_ARM_MS := 6000
 const EQUIP_BULK_LIMIT := 10
 const EQUIP_OWN_WINDOW_MS := 1500
+# Обход inventoryGrid - это пофреймовая работа; 100 мс незаметны для игрока и
+# в разы дешевле. Оседание (ARM) и окно собственных операций заметно длиннее.
+const EQUIP_POLL_MS := 100
+# Игра пересоздаёт узел предмета при переносе (новый instance_id) и заводит
+# новые узлы при сплите, поэтому diff по id не отличает подбор от
+# перекладывания внутри инвентаря. Отличаем по количеству: подбор из мира
+# УВЕЛИЧИВАЕТ суммарное количество типа (инвентарь + экипировка), а перенос/
+# сплит/снятие его сохраняют. Свежий узел экипируем только если его тип подрос.
+# Падение базы (перенос через промежуточный слой, пересоздание узла) фиксируем
+# не сразу, а если продержалось dip-окно: так возврат предмета не читается как
+# подбор, и не нужен признак itemDragged (в игре он не гаснет).
+const EQUIP_DIP_MS := 500
 var _equip_on: bool = true
 var _equip_debug: bool = false
 var _equip_armed_at: int = 0
+var _equip_poll_at: int = 0
 var _equip_iface_id: int = 0
-var _equip_seen: Dictionary = {}
+# Суммарное количество по типу (itemData) — база дельты. Понижение откладываем:
+# _equip_low[k] = [количество, время первого наблюдения].
+var _equip_qty: Dictionary = {}
+var _equip_low: Dictionary = {}
+# Имя типа для отладочного вывода (перезаполняется каждый поллинг).
+var _equip_names: Dictionary = {}
+# Интерфейс живёт до выгрузки карты; путь резолвим один раз, не каждый кадр.
+var _iface_cache = null
 
 signal kill_event(ev: Dictionary)
 
@@ -60,6 +80,11 @@ var _death_find_since: int = 0
 var _death_gave_up: bool = false
 var _death_dump_at: int = 0
 var _death_probe_at: int = 0
+# Поиск сцены Death - это обращение к дереву; в живом рейде она всегда
+# отсутствует. Держим результат 200 мс, чтобы не искать её каждый кадр.
+const DEATH_SCENE_POLL_MS := 200
+var _death_scene_at: int = 0
+var _death_scene_hit: bool = false
 
 # The death screen was never handled at all: the whole handler rode the
 # controller-_physics_process hook, and Controller is a node inside /root/Map,
@@ -94,6 +119,12 @@ func _process(_delta: float) -> void:
 	_poll_equip()
 
 func set_equip_enabled(on: bool) -> void:
+	if on and not _equip_on:
+		# Включение посреди игры: не заметаем уже лежащее в инвентаре, а
+		# начинаем с чистого листа и даём окну оседания наполнить его.
+		_equip_qty = {}
+		_equip_low = {}
+		_arm_equip(EQUIP_ARM_MS)
 	_equip_on = on
 
 func set_equip_debug(on: bool) -> void:
@@ -130,7 +161,7 @@ func _poll_death() -> void:
 		# neither can carry the screen on its own. Read the mode on the first
 		# frame that reports it, then keep serving the screen off the mounted
 		# scene until it goes away again.
-		var dead_scene := _death_scene_root() != null
+		var dead_scene := _death_scene_present()
 		is_dead = bool(gd.get("isDead", false)) or dead_scene
 		is_ironman = bool(gd.get("permadeath", false)) or (_death_latched and dead_scene)
 		if is_dead and is_ironman and not _death_latched:
@@ -220,8 +251,7 @@ func patch_world_difficulty(diff: int) -> void:
 
 func _on_loadcharacter_post() -> void:
 	_arm_equip(EQUIP_ARM_MS)
-	if _equip_debug:
-		Log.log("[VTK] loadcharacter-post: equip armed")
+	Log.log("[VTK] loadcharacter-post: equip armed")
 
 func _arm_equip(delay_ms: int) -> void:
 	_equip_armed_at = Time.get_ticks_msec() + delay_ms
@@ -288,67 +318,157 @@ func _on_context_delete_pressed(ctx) -> void:
 	iface.call("ContextDestroy")
 
 func _resolve_interface() -> Node:
+	if _iface_cache != null and is_instance_valid(_iface_cache):
+		return _iface_cache
 	var root = get_tree().root
 	if root == null:
 		return null
-	return root.get_node_or_null(Paths.INTERFACE)
+	_iface_cache = root.get_node_or_null(Paths.INTERFACE)
+	return _iface_cache
 
 func _poll_equip() -> void:
+	if not _equip_on:
+		return
+	var now := Time.get_ticks_msec()
+	if now - _equip_poll_at < EQUIP_POLL_MS:
+		return
+	_equip_poll_at = now
 	var iface = _resolve_interface()
 	if iface == null or not is_instance_valid(iface):
 		return
 	var iid := iface.get_instance_id()
 	if iid != _equip_iface_id:
 		_equip_iface_id = iid
-		_equip_seen = {}
+		_equip_qty = {}
+		_equip_low = {}
 		_arm_equip(EQUIP_ARM_MS)
 	var ig = iface.get("inventoryGrid")
 	if ig == null or not is_instance_valid(ig):
 		return
-	# "Свежими" считаем только детей инвентаря (подбор из мира). Но множество
-	# уже виденных узлов пополняем и содержимым слотов экипировки: игрок
-	# переносит предмет из слота в инвентарь тем же узлом (reparent), и без
-	# этого он выглядел бы новым и авто-экипировка возвращала бы его в слот.
-	var current := {}
-	var fresh: Array = []
+	var equip_root = iface.get("equipment")
+	# Суммарное количество по типу в инвентаре и экипировке. Игра докладывает
+	# подобранный стак к уже лежащему в инвентаре (нового узла нет), поэтому
+	# признак подбора - рост количества типа. Инвентарь и экипировку считаем
+	# отдельно: в отладке видно, откуда пришёл рост.
+	_equip_names = {}
+	var ig_qty := {}
 	for c in ig.get_children():
 		if is_instance_valid(c):
-			var id: int = c.get_instance_id()
-			current[id] = c
-			if not _equip_seen.has(id):
-				fresh.append(c)
-	var equip_root = iface.get("equipment")
+			_add_node_qty(ig_qty, c)
+	var eq_qty := {}
 	if equip_root != null and is_instance_valid(equip_root):
-		var eq_ids := {}
-		_collect_equip_ids(equip_root, eq_ids, 0)
-		for eid in eq_ids.keys():
-			current[eid] = true
-	_equip_seen = current
+		_collect_equip_qty(equip_root, eq_qty, 0)
+	var now_qty := {}
+	for k in ig_qty.keys():
+		now_qty[k] = int(ig_qty[k])
+	for k in eq_qty.keys():
+		now_qty[k] = int(now_qty.get(k, 0)) + int(eq_qty[k])
 
-	if fresh.is_empty():
+	var grown: Array = []
+	for k in now_qty.keys():
+		if int(now_qty.get(k, 0)) > int(_equip_qty.get(k, 0)):
+			grown.append(k)
+	for k in grown:
+		Log.log("[VTK] equip: grow '" + _type_name(k) + "' base=" + str(_equip_qty.get(k, 0)) + " now=" + str(now_qty.get(k, 0)) + " ig=" + str(ig_qty.get(k, 0)) + " eq=" + str(eq_qty.get(k, 0)))
+	# Базу обновляем ДО ранних выходов: стартовый инвентарь и собственные
+	# операции тоже должны попасть в базу, иначе после ARM это «подбор».
+	_update_equip_qty(now_qty, now)
+
+	if grown.is_empty():
 		return
-	if not _equip_on:
-		return
-	if Time.get_ticks_msec() < _equip_armed_at:
+	if now < _equip_armed_at:
+		Log.log("[VTK] equip: grow ignored (armed)")
 		return
 	if VTKData._own_op_recent(EQUIP_OWN_WINDOW_MS):
+		Log.log("[VTK] equip: grow ignored (own op)")
 		return
-	if fresh.size() > EQUIP_BULK_LIMIT:
-		if _equip_debug:
-			Log.log("[VTK] equip: bulk jump skipped (" + str(fresh.size()) + " nodes)")
+	# Подбор = типы, чей стак вырос. Из инвентаря берём узлы этих типов и отдаём
+	# экипировке: свободный слот либо докладывание в занятый того же типа.
+	var nodes: Array = []
+	for c in ig.get_children():
+		if not is_instance_valid(c):
+			continue
+		var sd = c.get("slotData")
+		if sd == null:
+			continue
+		var r = sd.get("itemData")
+		if r == null:
+			continue
+		if grown.has(_item_type_key(r)):
+			nodes.append(c)
+	if nodes.is_empty():
+		Log.log("[VTK] equip: grow but no inventory node to move")
 		return
-	for n in fresh:
+	if nodes.size() > EQUIP_BULK_LIMIT:
+		Log.log("[VTK] equip: bulk jump skipped (" + str(nodes.size()) + " nodes)")
+		return
+	for n in nodes:
 		_equip_handle(iface, ig, n)
 
-func _collect_equip_ids(node, out: Dictionary, depth: int) -> void:
+# База дельты: рост фиксируем сразу (подбор), падение — только если продержалось
+# EQUIP_DIP_MS. Это гасит промежуточные кадры переноса/пересоздания узла, когда
+# предмет на миг не виден ни инвентарю, ни экипировке.
+func _update_equip_qty(now_qty: Dictionary, t: int) -> void:
+	for k in _equip_qty.keys():
+		if not now_qty.has(k):
+			now_qty[k] = 0
+	for k in now_qty.keys():
+		var cur := int(now_qty.get(k, 0))
+		var base := int(_equip_qty.get(k, 0))
+		if cur >= base:
+			_equip_qty[k] = cur
+			_equip_low.erase(k)
+			continue
+		var low = _equip_low.get(k)
+		if low == null or int(low[0]) != cur:
+			_equip_low[k] = [cur, t]
+		elif t - int(low[1]) >= EQUIP_DIP_MS:
+			_equip_qty[k] = cur
+			_equip_low.erase(k)
+			Log.log("[VTK] equip: dip confirmed '" + _type_name(k) + "' -> " + str(cur))
+
+# Тип предмета как ключ состояния: ресурс-предмет игры общий (Database), поэтому
+# instance_id стабилен для одного и того же предмета; словари и прочие значения
+# хешируются по содержимому (см. headless-тест).
+func _item_type_key(res) -> int:
+	if res == null:
+		return 0
+	if res is Object:
+		if not is_instance_valid(res):
+			return 0
+		return res.get_instance_id()
+	return hash(res)
+
+# Количество одного предмета: стакающиеся хранят реальное число, нестакающиеся
+# игра пишет с amount = 0 — считаем такой узел за единицу.
+func _node_qty(node) -> int:
+	var sd = node.get("slotData")
+	if sd == null:
+		return 0
+	var amt := int(sd.get("amount"))
+	return amt if amt > 0 else 1
+
+func _add_node_qty(out: Dictionary, node) -> void:
+	var sd = node.get("slotData")
+	if sd == null:
+		return
+	var r = sd.get("itemData")
+	if r == null:
+		return
+	var k := _item_type_key(r)
+	out[k] = int(out.get(k, 0)) + _node_qty(node)
+	_equip_names[k] = str(r.get("name"))
+
+func _type_name(k) -> String:
+	return str(_equip_names.get(k, k))
+
+func _collect_equip_qty(node, out: Dictionary, depth: int) -> void:
 	if node == null or not is_instance_valid(node) or depth > 3:
 		return
 	for c in node.get_children():
-		if not is_instance_valid(c):
-			continue
-		if c.get("slotData") != null:
-			out[c.get_instance_id()] = true
-		_collect_equip_ids(c, out, depth + 1)
+		if is_instance_valid(c):
+			_add_node_qty(out, c)
+			_collect_equip_qty(c, out, depth + 1)
 
 func _equip_handle(iface, ig, node) -> void:
 	if node == null or not is_instance_valid(node):
@@ -358,6 +478,7 @@ func _equip_handle(iface, ig, node) -> void:
 		return
 	var res = sd.get("itemData")
 	if res == null or not EquipFlow.is_equipment(res):
+		Log.log("[VTK] equip: skip '" + str(res.get("name") if res != null else "?") + "' (not equipment)")
 		return
 	var equip_root = iface.get("equipment")
 	if equip_root == null or not is_instance_valid(equip_root):
@@ -368,6 +489,7 @@ func _equip_handle(iface, ig, node) -> void:
 		return
 	var occ_sl = VTKData._find_occupied_slot(equip_root, res, 0)
 	if occ_sl == null:
+		Log.log("[VTK] equip: skip '" + str(res.get("name")) + "' (no free/occupied slot)")
 		return
 	var occ = VTKData._slot_item(occ_sl)
 	if occ == null:
@@ -376,6 +498,7 @@ func _equip_handle(iface, ig, node) -> void:
 	if occ_sd == null:
 		return
 	if EquipFlow.decide(res, occ_sd.get("itemData")) != "merge":
+		Log.log("[VTK] equip: skip '" + str(res.get("name")) + "' (no merge)")
 		return
 	_merge_into(iface, ig, node, sd, occ, occ_sd, res)
 
@@ -388,8 +511,7 @@ func _equip_move(iface, ig, node, sl) -> void:
 		iface.PlayEquip()
 	if iface.has_method("UpdateStats"):
 		iface.UpdateStats(true)
-	if _equip_debug:
-		Log.log("[VTK] equip: moved item -> " + str(sl.name))
+	Log.log("[VTK] equip: moved item -> " + str(sl.name))
 
 func _merge_into(iface, ig, node, sd, occ, occ_sd, res) -> void:
 	var plan := EquipFlow.merge_amounts(sd.get("amount"), occ_sd.get("amount"), res.get("maxAmount"))
@@ -412,8 +534,7 @@ func _merge_into(iface, ig, node, sd, occ, occ_sd, res) -> void:
 			node.UpdateDetails()
 	if iface.has_method("UpdateStats"):
 		iface.UpdateStats(true)
-	if _equip_debug:
-		Log.log("[VTK] equip: merged " + str(moved) + " into stack (leftover " + str(leftover) + ")")
+	Log.log("[VTK] equip: merged " + str(moved) + " into stack (leftover " + str(leftover) + ")")
 
 func _on_ai_weapon_damage(_hitbox, _damage, _vector, id) -> void:
 	var victim_ai = _lib._caller if _lib else null
@@ -1124,6 +1245,13 @@ func _death_scene_root() -> Node:
 	if cs != null and cs.name == "Death":
 		return cs
 	return get_tree().root.get_node_or_null("Death")
+
+func _death_scene_present() -> bool:
+	var now := Time.get_ticks_msec()
+	if now - _death_scene_at >= DEATH_SCENE_POLL_MS:
+		_death_scene_at = now
+		_death_scene_hit = _death_scene_root() != null
+	return _death_scene_hit
 
 func _find_load_button(root: Node) -> BaseButton:
 	var best: BaseButton = null

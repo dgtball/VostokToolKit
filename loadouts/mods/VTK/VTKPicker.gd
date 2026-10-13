@@ -66,6 +66,7 @@ const CATEGORIES := [
 ]
 
 static var _art_cache: Dictionary = {}
+static var _subcat_cache: Dictionary = {}
 
 # Кроп непрозрачной области иконки: AtlasTexture на оригинальном ресурсе, файлы
 # игры не трогает. used_rect расширен на 3 пикселя и обрезан по границе текстуры,
@@ -437,6 +438,16 @@ static func category_of(slots, type) -> String:
 # (Armor_Plate_II.tres, Key_Attic.tres) её нет вовсе, и роль папки играет
 # имя файла.
 static func subcategory_of(path: String, type) -> String:
+	# Разбор пути зовётся на каждый предмет при каждой пересборке каталога;
+	# таблицы подкатегорий неизменны, поэтому результат мемоизируем по пути.
+	var key := path + "\u0000" + str(type)
+	if _subcat_cache.has(key):
+		return _subcat_cache[key]
+	var sub := _subcategory_of_uncached(path, type)
+	_subcat_cache[key] = sub
+	return sub
+
+static func _subcategory_of_uncached(path: String, type) -> String:
 	if path == "" or type == null or str(type) == "":
 		return ""
 	# Мебель: папка - второй сегмент пути (res://Assets/<Папка>/...).

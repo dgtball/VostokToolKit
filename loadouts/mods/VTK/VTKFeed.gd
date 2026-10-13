@@ -62,6 +62,7 @@ var _rows: Array = []
 var _vbox: VBoxContainer = null
 var _scene_ref: Node = null
 var _was_shelter: bool = false
+var _iface_cache = null
 var _hooks: Node = null
 
 func _ready() -> void:
@@ -117,6 +118,9 @@ func _add_row(ev: Dictionary) -> void:
 			lbl.text = str(seg["text"])
 			lbl.add_theme_font_size_override("font_size", FONT_SIZE)
 			lbl.add_theme_color_override("font_color", seg["color"])
+			var hud := Paths.hud_font()
+			if hud != null:
+				lbl.add_theme_font_override("font", hud)
 			row.add_child(lbl)
 		else:
 			_add_icon(row, str(seg["icon"]), ev)
@@ -231,7 +235,9 @@ func _process(delta: float) -> void:
 		_scene_ref = cs
 		clear()
 	var in_shelter := false
-	var iface = get_tree().root.get_node_or_null(Paths.INTERFACE)
+	if _iface_cache == null or not is_instance_valid(_iface_cache):
+		_iface_cache = get_tree().root.get_node_or_null(Paths.INTERFACE)
+	var iface = _iface_cache
 	if iface != null and "gameData" in iface:
 		var gd = iface.get("gameData")
 		if gd != null:

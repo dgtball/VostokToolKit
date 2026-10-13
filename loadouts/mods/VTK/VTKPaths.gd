@@ -18,3 +18,18 @@ const SHELTER_SAVE_FMT := "user://%s.tres"
 
 # Ресурсы игры.
 const GAME_DATA := "res://Resources/GameData.tres"
+# Тема HUD: единственный источник игрового шрифта (Lora). Проектного дефолта в
+# игре нет (gui/theme/custom пуст), поэтому наши надписи на автолоаде вне дерева
+# игры его не наследуют — тянем ресурс темы и берём default_font.
+const THEME := "res://UI/Themes/Theme.tres"
+
+static var _hud_font: Font = null
+
+static func hud_font() -> Font:
+	if _hud_font != null:
+		return _hud_font
+	if ResourceLoader.exists(THEME):
+		var t = load(THEME)
+		if t is Theme:
+			_hud_font = t.default_font
+	return _hud_font

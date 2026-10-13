@@ -13,10 +13,14 @@ const GREY_DIM := Color("#666666")
 
 static var _surfaces: Dictionary = {}
 static var _textures: Dictionary = {}
+static var _panels: Dictionary = {}
+static var _focus: StyleBoxFlat = null
 
 static func clear_cache() -> void:
 	_surfaces.clear()
 	_textures.clear()
+	_panels.clear()
+	_focus = null
 
 static func svg_texture(svg: String) -> Texture2D:
 	if _textures.has(svg):
@@ -78,6 +82,9 @@ static func surface(state: String = "normal", accent: bool = false,
 	return style
 
 static func panel(inset: bool = false, margin: int = 16) -> StyleBoxFlat:
+	var key := "%s/%d" % [str(inset), margin]
+	if _panels.has(key):
+		return _panels[key]
 	var s := StyleBoxFlat.new()
 	s.bg_color = Color("#171208") if inset else Color("#1a1510")
 	s.border_color = Color("#2a1f14")
@@ -87,6 +94,7 @@ static func panel(inset: bool = false, margin: int = 16) -> StyleBoxFlat:
 	s.shadow_color = Color(0, 0, 0, 0.45)
 	s.shadow_size = 5
 	s.shadow_offset = Vector2(0, 3)
+	_panels[key] = s
 	return s
 
 # Пунктирная рамка для карточек без заливки. StyleBoxFlat штрихов не умеет,
@@ -112,11 +120,14 @@ static func draw_dashes(ci: CanvasItem, rect: Rect2, color: Color,
 		y += dash + gap
 
 static func focus_style() -> StyleBoxFlat:
+	if _focus != null:
+		return _focus
 	var s := StyleBoxFlat.new()
 	s.bg_color = Color.TRANSPARENT
 	s.border_color = GOLD
 	s.set_border_width_all(2)
 	s.set_corner_radius_all(4)
+	_focus = s
 	return s
 
 static func style_button(button: Button, accent: bool = false, danger: bool = false,
