@@ -67,3 +67,28 @@ static func merge_amounts(incoming, occupant, max_amount) -> Dictionary:
 	if moved < 0.0:
 		moved = 0.0
 	return {"moved": moved, "leftover": inc - moved}
+
+# Доля стака, уходящая при Split: ванильная формула (целочисленное деление
+# amount / 2, см. Interface.ContextSplit).
+static func split_share(amount: int) -> int:
+	return int(amount / 2.0)
+
+# Доля стака, уходящая при Take: ванильный defaultAmount предмета.
+static func take_share(default_amount: int) -> int:
+	return default_amount
+
+# Свободное место в слоте: maxAmount минус занятое. -1 = лимита нет
+# (нестакающийся предмет, maxAmount <= 0), место не ограничено.
+static func equip_space(max_amount: int, occupied: int) -> int:
+	if max_amount <= 0:
+		return -1
+	var s := max_amount - occupied
+	return s if s > 0 else 0
+
+# Сколько уедет из подобранного: не больше свободного места слота.
+static func equip_move(picked: int, occupied: int, max_amount: int) -> int:
+	var p := picked if picked > 0 else 0
+	var room := equip_space(max_amount, occupied)
+	if room < 0:
+		return p
+	return p if p < room else room
