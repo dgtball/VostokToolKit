@@ -4,6 +4,12 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.16.5] - 2026-10-14
+
+### Added
+
+- Auto-equip now also applies to equipment taken out of containers, however you move it (double-click, context Transfer, or drag into the inventory).
+
 ## [4.16.4] - 2026-10-13
 
 ### Changed

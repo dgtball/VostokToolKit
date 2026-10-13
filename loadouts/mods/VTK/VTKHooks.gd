@@ -24,6 +24,13 @@ const SEEN_DEATHS_TTL_MSEC := 600000
 var _equip_on: bool = true
 var _pickup_pending: int = 0
 var _equip_debug: bool = false
+# Авто-экип из контейнера: запоминаем узел/ресурс/количество между pre и post.
+var _xfer_node: Node = null
+var _xfer_res = null
+var _xfer_amount: int = 0
+var _drag_node: Node = null
+var _drag_res = null
+var _drag_amount: int = 0
 # Интерфейс живёт до выгрузки карты; путь резолвим один раз, не каждый кадр.
 var _iface_cache = null
 
@@ -187,6 +194,12 @@ func _do_register() -> void:
 	_hooks_context.append(_lib.hook("interface-contextsplit", _on_context_split_replace))
 	_hooks_equip.append(_lib.hook("pickup-interact-pre", _on_pickup_interact_pre))
 	_hooks_equip.append(_lib.hook("pickup-interact-post", _on_pickup_interact_post))
+	_hooks_equip.append(_lib.hook("interface-fasttransfer-pre", _on_fasttransfer_pre))
+	_hooks_equip.append(_lib.hook("interface-fasttransfer-post", _on_fasttransfer_post))
+	_hooks_equip.append(_lib.hook("interface-contexttransfer-pre", _on_contexttransfer_pre))
+	_hooks_equip.append(_lib.hook("interface-contexttransfer-post", _on_contexttransfer_post))
+	_hooks_equip.append(_lib.hook("interface-grab-pre", _on_grab_pre))
+	_hooks_equip.append(_lib.hook("interface-release-post", _on_release_post))
 	_registered = true
 	Log.log("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + _hooks_notes.size() + _hooks_deposits.size() + _hooks_equip.size() + _hooks_context.size() + 1) + " hooks)")
 
@@ -364,6 +377,132 @@ func _on_pickup_interact_post() -> void:
 		return
 	var ig = iface.get("inventoryGrid")
 	if ig == null or not is_instance_valid(ig):
+		return
+	_equip_picked(iface, ig, res, picked)
+
+# --- Авто-экип из контейнера ------------------------------------------------
+# Двойной клик (FastTransfer), контекстное Transfer (ContextTransfer) и
+# перетаскивание (Grab/Release) переносят предмет из открытого контейнера в
+# инвентарь. Ловим успешный перенос и уводим предмет в слот, как при подборе с
+# земли. Источник — только контейнер (его грид назван "Container"), торговец не
+# задет. Успех: узел либо слился в стек (queue_free), либо переехал в
+# inventoryGrid; иначе предмет остался в контейнере и трогать нечего.
+
+func _xfer_arm(grid, item) -> void:
+	_xfer_node = null
+	_xfer_res = null
+	_xfer_amount = 0
+	if not _equip_on or grid == null or item == null:
+		return
+	if not is_instance_valid(grid) or not is_instance_valid(item):
+		return
+	var parent = grid.get_parent()
+	if parent == null or str(parent.name) != "Container":
+		return
+	var sd = item.get("slotData")
+	if sd == null:
+		return
+	var res = sd.get("itemData")
+	if res == null or not EquipFlow.is_equipment(res):
+		return
+	var amt := int(sd.get("amount"))
+	_xfer_node = item
+	_xfer_res = res
+	_xfer_amount = amt if amt > 0 else 1
+
+func _xfer_post() -> void:
+	var node = _xfer_node
+	var res = _xfer_res
+	var picked := _xfer_amount
+	_xfer_node = null
+	_xfer_res = null
+	_xfer_amount = 0
+	if not _equip_on or node == null or res == null or picked <= 0 or _lib == null:
+		return
+	if not is_instance_valid(node):
+		return
+	var iface = _lib._caller
+	if iface == null or not is_instance_valid(iface):
+		return
+	var ig = iface.get("inventoryGrid")
+	if ig == null or not is_instance_valid(ig):
+		return
+	if not node.is_queued_for_deletion() and node.get_parent() != ig:
+		return
+	_equip_picked(iface, ig, res, picked)
+
+func _iface_caller() -> Variant:
+	var iface = _lib._caller if _lib else null
+	if iface == null or not is_instance_valid(iface):
+		return null
+	return iface
+
+func _on_fasttransfer_pre() -> void:
+	var iface = _iface_caller()
+	if iface == null:
+		return
+	_xfer_arm(iface.get("hoverGrid"), iface.get("hoverItem"))
+
+func _on_fasttransfer_post() -> void:
+	_xfer_post()
+
+func _on_contexttransfer_pre() -> void:
+	var iface = _iface_caller()
+	if iface == null:
+		return
+	_xfer_arm(iface.get("contextGrid"), iface.get("contextItem"))
+
+func _on_contexttransfer_post() -> void:
+	_xfer_post()
+
+# Перетаскивание: запоминаем предмет, взятый именно из контейнера, и после
+# отпускания проверяем, где он оказался. Drop в мир освобождает узел, поэтому
+# здесь нельзя опираться на is_queued_for_deletion — только на родителя.
+func _on_grab_pre() -> void:
+	_drag_node = null
+	_drag_res = null
+	_drag_amount = 0
+	var iface = _iface_caller()
+	if iface == null or not _equip_on:
+		return
+	var grid = iface.get("hoverGrid")
+	var item = iface.get("hoverItem")
+	if grid == null or item == null:
+		return
+	if not is_instance_valid(grid) or not is_instance_valid(item):
+		return
+	var parent = grid.get_parent()
+	if parent == null or str(parent.name) != "Container":
+		return
+	var sd = item.get("slotData")
+	if sd == null:
+		return
+	var res = sd.get("itemData")
+	if res == null or not EquipFlow.is_equipment(res):
+		return
+	var amt := int(sd.get("amount"))
+	_drag_node = item
+	_drag_res = res
+	_drag_amount = amt if amt > 0 else 1
+
+func _on_release_post() -> void:
+	var node = _drag_node
+	var res = _drag_res
+	var picked := _drag_amount
+	_drag_node = null
+	_drag_res = null
+	_drag_amount = 0
+	if not _equip_on or node == null or res == null or picked <= 0:
+		return
+	if not is_instance_valid(node):
+		return
+	var iface = _iface_caller()
+	if iface == null:
+		return
+	var ig = iface.get("inventoryGrid")
+	if ig == null or not is_instance_valid(ig):
+		return
+	if node.get_parent() != ig:
 		return
 	_equip_picked(iface, ig, res, picked)
 
