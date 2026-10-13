@@ -50,24 +50,6 @@ static func decide(item_res, occupant_res) -> String:
 		return "merge"
 	return "skip"
 
-# Сколько (amount) из входящего стека уедет в экипированный:
-# {"moved": float, "leftover": float}. moved не больше свободного места
-# (max_amount - occupant); остаток остаётся в инвентаре. Нет ёмкости
-# (max_amount <= 0) — не переносим ничего, предмет остаётся целым.
-static func merge_amounts(incoming, occupant, max_amount) -> Dictionary:
-	var inc := float(incoming)
-	var occ := float(occupant)
-	var cap := float(max_amount)
-	if cap <= 0.0:
-		cap = occ
-	var room := cap - occ
-	if room < 0.0:
-		room = 0.0
-	var moved := inc if inc < room else room
-	if moved < 0.0:
-		moved = 0.0
-	return {"moved": moved, "leftover": inc - moved}
-
 # Доля стака, уходящая при Split: ванильная формула (целочисленное деление
 # amount / 2, см. Interface.ContextSplit).
 static func split_share(amount: int) -> int:

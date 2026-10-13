@@ -14,9 +14,6 @@ static var _own_op_msec: int = 0
 static func _touch_own_op() -> void:
 	_own_op_msec = Time.get_ticks_msec()
 
-static func _own_op_recent(window_ms: int) -> bool:
-	return _own_op_msec != 0 and (Time.get_ticks_msec() - _own_op_msec) < window_ms
-
 # Одноразовый перенос loadouts.json -> VTKsets.json. Файл сетов переехал под
 # префикс VTK*, как остальные сущности мода, но имя не привязано к коду, поэтому
 # старые данные живут на диске и должны быть перенесены один раз.

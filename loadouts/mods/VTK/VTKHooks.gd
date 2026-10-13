@@ -21,38 +21,9 @@ const Loc = preload("res://mods/VTK/VTKLoc.gd")
 const HIT_WINDOW_MSEC := 15000
 const SEEN_DEATHS_TTL_MSEC := 600000
 
-# Авто-экипировка: пофреймовый diff детей inventoryGrid вместо хрупких
-# add-item хуков (арности их post-колбэков не восстановимы из .gdc). Интерфейс
-# при загрузке мира и при возврате из сохранения создаётся заново — это видно
-# по смене instance_id и включает окно оседания (ARM), чтобы стартовое
-# снаряжение не разъехалось по слотам.
-const EQUIP_ARM_MS := 6000
-const EQUIP_BULK_LIMIT := 10
-const EQUIP_OWN_WINDOW_MS := 1500
-# Обход inventoryGrid - это пофреймовая работа; 100 мс незаметны для игрока и
-# в разы дешевле. Оседание (ARM) и окно собственных операций заметно длиннее.
-const EQUIP_POLL_MS := 100
-# Игра пересоздаёт узел предмета при переносе (новый instance_id) и заводит
-# новые узлы при сплите, поэтому diff по id не отличает подбор от
-# перекладывания внутри инвентаря. Отличаем по количеству: подбор из мира
-# УВЕЛИЧИВАЕТ суммарное количество типа (инвентарь + экипировка), а перенос/
-# сплит/снятие его сохраняют. Свежий узел экипируем только если его тип подрос.
-# Падение базы (перенос через промежуточный слой, пересоздание узла) фиксируем
-# не сразу, а если продержалось dip-окно: так возврат предмета не читается как
-# подбор, и не нужен признак itemDragged (в игре он не гаснет).
-const EQUIP_DIP_MS := 500
 var _equip_on: bool = true
 var _pickup_pending: int = 0
 var _equip_debug: bool = false
-var _equip_armed_at: int = 0
-var _equip_poll_at: int = 0
-var _equip_iface_id: int = 0
-# Суммарное количество по типу (itemData) — база дельты. Понижение откладываем:
-# _equip_low[k] = [количество, время первого наблюдения].
-var _equip_qty: Dictionary = {}
-var _equip_low: Dictionary = {}
-# Имя типа для отладочного вывода (перезаполняется каждый поллинг).
-var _equip_names: Dictionary = {}
 # Интерфейс живёт до выгрузки карты; путь резолвим один раз, не каждый кадр.
 var _iface_cache = null
 
@@ -247,9 +218,6 @@ func patch_world_difficulty(diff: int) -> void:
 func _on_loadcharacter_post() -> void:
 	Log.log("[VTK] loadcharacter-post")
 
-func _arm_equip(delay_ms: int) -> void:
-	_equip_armed_at = Time.get_ticks_msec() + delay_ms
-
 # --- Контекстное меню предмета: кнопка Delete ------------------------------
 # Пост-хук Context.Update добавляет кнопку Delete, которая мгновенно удаляет
 # весь стак через ванильный Interface.ContextDestroy() -- та же операция, что
@@ -319,71 +287,6 @@ func _resolve_interface() -> Node:
 		return null
 	_iface_cache = root.get_node_or_null(Paths.INTERFACE)
 	return _iface_cache
-
-# База дельты: рост фиксируем сразу (подбор), падение — только если продержалось
-# EQUIP_DIP_MS. Это гасит промежуточные кадры переноса/пересоздания узла, когда
-# предмет на миг не виден ни инвентарю, ни экипировке.
-func _update_equip_qty(now_qty: Dictionary, t: int) -> void:
-	for k in _equip_qty.keys():
-		if not now_qty.has(k):
-			now_qty[k] = 0
-	for k in now_qty.keys():
-		var cur := int(now_qty.get(k, 0))
-		var base := int(_equip_qty.get(k, 0))
-		if cur >= base:
-			_equip_qty[k] = cur
-			_equip_low.erase(k)
-			continue
-		var low = _equip_low.get(k)
-		if low == null or int(low[0]) != cur:
-			_equip_low[k] = [cur, t]
-		elif t - int(low[1]) >= EQUIP_DIP_MS:
-			_equip_qty[k] = cur
-			_equip_low.erase(k)
-			Log.log("[VTK] equip: dip confirmed '" + _type_name(k) + "' -> " + str(cur))
-
-# Тип предмета как ключ состояния: ресурс-предмет игры общий (Database), поэтому
-# instance_id стабилен для одного и того же предмета; словари и прочие значения
-# хешируются по содержимому (см. headless-тест).
-func _item_type_key(res) -> int:
-	if res == null:
-		return 0
-	if res is Object:
-		if not is_instance_valid(res):
-			return 0
-		return res.get_instance_id()
-	return hash(res)
-
-# Количество одного предмета: стакающиеся хранят реальное число, нестакающиеся
-# игра пишет с amount = 0 — считаем такой узел за единицу.
-func _node_qty(node) -> int:
-	var sd = node.get("slotData")
-	if sd == null:
-		return 0
-	var amt := int(sd.get("amount"))
-	return amt if amt > 0 else 1
-
-func _add_node_qty(out: Dictionary, node) -> void:
-	var sd = node.get("slotData")
-	if sd == null:
-		return
-	var r = sd.get("itemData")
-	if r == null:
-		return
-	var k := _item_type_key(r)
-	out[k] = int(out.get(k, 0)) + _node_qty(node)
-	_equip_names[k] = str(r.get("name"))
-
-func _type_name(k) -> String:
-	return str(_equip_names.get(k, k))
-
-func _collect_equip_qty(node, out: Dictionary, depth: int) -> void:
-	if node == null or not is_instance_valid(node) or depth > 3:
-		return
-	for c in node.get_children():
-		if is_instance_valid(c):
-			_add_node_qty(out, c)
-			_collect_equip_qty(c, out, depth + 1)
 
 # Авто-экип по событию подбора: Pickup.Interact удалил узел, значит предмет
 # лёг в инвентарь. Переносим в слот ровно подобранное количество (не больше
