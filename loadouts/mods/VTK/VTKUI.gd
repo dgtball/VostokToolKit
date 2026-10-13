@@ -71,6 +71,7 @@ var _target_cat: String = ""
 var _target_sub: String = ""
 var _search_text: String = ""
 var _gear_search: String = ""
+var _search_debounce: Timer
 var _step_btns: Array = []
 var _page_equip: Control = null
 var _page_gear: Control = null
@@ -1143,6 +1144,13 @@ func _build_page_equipment() -> Control:
 	search.add_theme_stylebox_override("focus", VTKSurface.focus_style())
 	search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	search.text_changed.connect(func(t): _set_search(t))
+	if _search_debounce != null and is_instance_valid(_search_debounce):
+		_search_debounce.queue_free()
+	_search_debounce = Timer.new()
+	_search_debounce.one_shot = true
+	_search_debounce.wait_time = 0.12
+	_search_debounce.timeout.connect(_apply_search)
+	add_child(_search_debounce)
 	v.add_child(search)
 
 	var shelves_scroll := ScrollContainer.new()
@@ -2166,14 +2174,16 @@ func _set_target_slot(slot: String) -> void:
 	_show_page(0)
 	refresh(RefreshScope.PAGES)
 
+# Живой поиск с дебаунсом: пересборка идёт не на каждый символ, а через
+# короткую паузу. Поле поиска не пересоздаётся и держит курсор.
 func _set_search(t: String) -> void:
 	_search_text = t
+	if _search_debounce != null:
+		_search_debounce.start()
+
+func _apply_search() -> void:
 	_validate_target_filters()
-	# Перестраиваются сетка и шапка фильтров, а не вся страница: набор её
-	# чипов считается из того же списка, что и сетка, поэтому запрос сужает
-	# и их. Поле поиска при этом не пересоздаётся и держит курсор.
-	_rebuild_shelves()
-	_rebuild_target_bar()
+	refresh(RefreshScope.EQUIP)
 
 # Запись каталога для обоих шагов: предмет и его группа. Группу вычисляет
 # Picker, а не строка type здесь: иначе шаг 1 и шаг 2 разошлись бы группами,
