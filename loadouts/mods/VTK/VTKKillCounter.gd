@@ -11,6 +11,7 @@ var _was_shelter: bool = false
 var _iface: Node = null
 var _hooks_node: Node = null
 var _agents: Dictionary = {}
+var _pending: Array[int] = []
 var _scene_ref: Node = null
 
 func _ready() -> void:
@@ -40,7 +41,17 @@ func set_enabled(v: bool) -> void:
 		_label.text = ""
 
 func _on_node_added(node: Node) -> void:
-	call_deferred("_deferred_check", node.get_instance_id())
+	# Батчим: загрузчик за кадр добавляет целые поддеревья, и call_deferred на
+	# каждый узел — это отдельный instance_from_id + agent_kind lookup. Копим
+	# id, разбираем одним проходом раз за кадр в начале своего _process.
+	_pending.append(node.get_instance_id())
+
+func _drain_pending() -> void:
+	if _pending.is_empty():
+		return
+	for id in _pending:
+		_deferred_check(id)
+	_pending.clear()
 
 func _deferred_check(node_id: int) -> void:
 	if not _enabled:
@@ -175,6 +186,7 @@ func _is_shelter() -> bool:
 	return bool(gd.get("shelter"))
 
 func _process(delta: float) -> void:
+	_drain_pending()
 	if not _enabled:
 		return
 	# Смена сцены дешёвая и должна сбрасывать счётчик сразу; чтение
