@@ -60,6 +60,9 @@ const BOT_COLD_KEY := Color(0.0, 0.7, 1.0)
 # A body stays highlighted for DEATH_COOLDOWN seconds after death, cooling from
 # the head down, then the glow hides entirely.
 const DEATH_COOLDOWN := 120.0
+# Сколько кадров подряд пробовать поставить шейдер, если NVG-узел уже найден,
+# но его Overlay ещё не готов (ванильный _ready ждёт ~0.1 c). ~60 кадров.
+const INSTALL_RETRY_FRAMES := 60
 
 var _dbg_f: FileAccess = null
 var _dbg_summary_cd: float = 0.0
@@ -154,6 +157,7 @@ var _shader: Shader = null
 var _nvg_root: Node = null
 var _nvg_mat_node: Node = null
 var _installed: bool = false
+var _install_retry: int = 0
 
 var _mat_mine: StandardMaterial3D = null
 var _mat_marker: StandardMaterial3D = null
@@ -263,9 +267,11 @@ func _scan_node(n: Node) -> void:
 		return
 	var s = n.get_script()
 	var path: String = "" if s == null else String(s.resource_path)
-	if path.ends_with(NVG_SCRIPT_SUFFIX) and _nvg_root == null:
+	if path.ends_with(NVG_SCRIPT_SUFFIX) and (_nvg_root == null or not is_instance_valid(_nvg_root)):
 		_nvg_root = n
 		_try_install_shader()
+		if not _installed:
+			_install_retry = INSTALL_RETRY_FRAMES
 	elif path.ends_with("Mine.gd"):
 		_register_mine(n)
 	elif path.ends_with("Trader.gd"):
@@ -320,6 +326,8 @@ func _deferred_check(node_id: int) -> void:
 	if path.ends_with(NVG_SCRIPT_SUFFIX):
 		_nvg_root = n
 		_try_install_shader()
+		if not _installed:
+			_install_retry = INSTALL_RETRY_FRAMES
 		return
 	if path.ends_with("Mine.gd"):
 		_register_mine(n)
@@ -343,9 +351,10 @@ func _is_bot(n: Node) -> bool:
 # set_shader_parameter("tint", ...) on it -- so swapping .shader here keeps
 # plain NVG working while giving us a drivable "noise" uniform.
 func _try_install_shader() -> void:
-	# /root/Map is rebuilt on every map change, which frees the NVG node we
-	# patched and spawns a fresh one carrying the vanilla shader. So this must
-	# re-run every tick and re-patch by inspection, never latch on a flag.
+	# /root/Map пересобирается на каждой смене карты: пропатченный NVG-узел
+	# освобождается, а на его месте появляется новый с ванильным шейдером.
+	# Ловим это событием (node_added / _reseed), а не проверкой каждого кадра;
+	# если Overlay ещё не готов (await-based _ready) — ограниченный ретрай.
 	if _shader == null:
 		_installed = false
 		return
@@ -432,14 +441,24 @@ func _nvg_active() -> bool:
 
 func _process(delta: float) -> void:
 	_drain_pending()
-	_try_install_shader()
 	if get_tree().current_scene != _scene_ref:
 		_scene_ref = get_tree().current_scene
 		_bots.clear()
 		_mines.clear()
 		_mine_watch.clear()
+		_nvg_root = null
+		_installed = false
+		_install_retry = 0
 		_reseed(_scene_ref)
 		_tick_cd = 0.0
+	# Ограниченный ретрай: NVG-узел найден, но ванильный await-based _ready ещё
+	# не создал Overlay/материал. Ставим шейдер только по событию обнаружения,
+	# с коротким добором кадров, а не проверкой каждый кадр.
+	if _install_retry > 0:
+		_install_retry -= 1
+		_try_install_shader()
+		if _installed:
+			_install_retry = 0
 	var on := set_thermal and _nvg_active()
 	# Позиция игрока — один вызов на кадр, а не по два на каждого бота
 	# (_update_bot звал её дважды: для маркера и для дистанции покраски).
