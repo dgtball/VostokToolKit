@@ -17,6 +17,8 @@ var _item_index: Dictionary = {}
 var _equip_cells: Array = []
 var _equip_cols := 6
 var _equip_rows := 8
+var _equip_styles: Dictionary = {}
+var _inven_bg_style: StyleBoxFlat
 # resource_path -> иконка либо null. Кеш нужен и для промахов: без него
 # отсутствующий PNG искался бы заново в каждой клетке.
 var _icon_cache: Dictionary = {}
@@ -1619,6 +1621,9 @@ func _refresh_slots() -> void:
 # не как ряд фоновых ячеек 1×1. Занятая клетка чуть теплее и с цветом рамки
 # предмета, пустая - тёмная с едва заметной рамкой. Активная цель - золото.
 func _equip_cell_style(active: bool, hover: bool = false, occupied: bool = false) -> StyleBoxFlat:
+	var key := (1 if active else 0) | (2 if hover else 0) | (4 if occupied else 0)
+	if _equip_styles.has(key):
+		return _equip_styles[key]
 	var s := StyleBoxFlat.new()
 	s.bg_color = Color("#241d13") if occupied else Color("#1e1a15")
 	if active:
@@ -1633,6 +1638,7 @@ func _equip_cell_style(active: bool, hover: bool = false, occupied: bool = false
 		s.border_color = Color("#8a6a30")
 	else:
 		s.border_color = Color("#4a443a")
+	_equip_styles[key] = s
 	return s
 
 # Нужно ли разворачивать иконку предмета в этом слоте. Стволы в Primary/Secondary
@@ -1831,15 +1837,16 @@ func _make_inventory_wall(gear: Array) -> Control:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.add_theme_constant_override("h_separation", INVEN_GAP)
 	bg.add_theme_constant_override("v_separation", INVEN_GAP)
+	if _inven_bg_style == null:
+		_inven_bg_style = StyleBoxFlat.new()
+		_inven_bg_style.bg_color = Color("#14110c")
+		_inven_bg_style.corner_radius_all = 3
 	for i in range(rows * INVEN_COLS):
 		var gc := Panel.new()
 		gc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		gc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		gc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var gs := StyleBoxFlat.new()
-		gs.bg_color = Color("#14110c")
-		gs.corner_radius_all = 3
-		gc.add_theme_stylebox_override("panel", gs)
+		gc.add_theme_stylebox_override("panel", _inven_bg_style)
 		bg.add_child(gc)
 	wall.add_child(bg)
 	var idx := 0
