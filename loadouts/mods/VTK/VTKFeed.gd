@@ -247,6 +247,8 @@ func _process(delta: float) -> void:
 	_was_shelter = in_shelter
 	if in_shelter:
 		return
+	if _rows.is_empty():
+		return
 	for e in _rows:
 		e["age"] = float(e["age"]) + delta
 	var i := 0
