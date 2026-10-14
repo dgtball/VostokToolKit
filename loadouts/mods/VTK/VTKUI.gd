@@ -1535,7 +1535,6 @@ func _build_page_done() -> Control:
 	_bind_btn = Button.new()
 	_done_bind_btn = _bind_btn
 	_bind_btn.custom_minimum_size = Vector2(120, 0)
-	_bind_btn.add_theme_font_size_override("font_size", 10)
 	_apply_qk_btn(_bind_btn, _display_qk())
 	_bind_btn.pressed.connect(func(): _begin_bind_pending(_bind_btn))
 
