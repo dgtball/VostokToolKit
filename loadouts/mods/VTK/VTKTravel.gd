@@ -59,7 +59,7 @@ func is_shelter_unlocked(shelter_name: String) -> bool:
 	var loader := _loader()
 	if loader != null and loader.has_method("CheckShelterState"):
 		return bool(loader.CheckShelterState(shelter_name))
-	return FileAccess.file_exists(Paths.SHELTER_SAVE_FMT % shelter_name)
+	return false
 
 
 func travel_to_trader(entry: Dictionary) -> void:
