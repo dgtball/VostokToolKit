@@ -44,25 +44,29 @@ static func _desc(path: String, item_name: String, amount: float, type_name: Str
 # количество патронов внутри. Поэтому в сете обоймы считаются штуками в
 # отдельном ключе "count", а amount с момента применения сета считается из
 # ресурса (maxAmount) и зависит от переключателя full mag.
-func add(path: String, item_name: String, slots, amount: float, type_name: String, counted: bool = false) -> String:
+func add(path: String, item_name: String, slots, amount: float, type_name: String, counted: bool = false, step := 0.0, cap := 0.0) -> String:
 	var amt := maxf(0.0, amount)
 	var slot := free_slot_of(slots)
 	if slot != "":
 		equip[slot] = _desc(path, item_name, amt, type_name)
 		return slot
-	_gear_add(path, item_name, amt, type_name, counted)
+	_gear_add(path, item_name, amt, type_name, counted, step, cap)
 	return ""
 
 # Общая gear-ветка add() и add_gear(): путь уже есть -> +1, иначе новая запись.
 # Вынесена, чтобы правило стекирования жило в одном месте, а шаг 2 мог класть
 # в снаряжение мимо free_slot_of.
-func _gear_add(path: String, item_name: String, amt: float, type_name: String, counted: bool) -> void:
+func _gear_add(path: String, item_name: String, amt: float, type_name: String, counted: bool, step := 0.0, cap := 0.0) -> void:
 	var idx := gear_index_of(path)
 	if idx >= 0:
 		if gear[idx].has("count"):
 			gear[idx]["count"] = int(gear[idx].get("count", 1)) + 1
 		else:
-			gear[idx]["amount"] = float(gear[idx].get("amount", 1.0)) + 1.0
+			var inc := 1.0 if step <= 0.0 else step
+			var t := float(gear[idx].get("amount", 1.0)) + inc
+			if cap > 0.0 and t > cap:
+				t = cap
+			gear[idx]["amount"] = t
 		return
 	var d := _desc(path, item_name, amt, type_name)
 	if counted:
@@ -74,8 +78,8 @@ func _gear_add(path: String, item_name: String, amt: float, type_name: String, c
 # Клик на вкладке «Снаряжение» (шаг 2): слот не выбирается, авто-экип там
 # превращал гранату или ствол в снаряжение вопреки замыслу. Поэтому кладём
 # в снаряжение напрямую, без free_slot_of.
-func add_gear(path: String, item_name: String, amount: float, type_name: String, counted: bool = false) -> void:
-	_gear_add(path, item_name, maxf(0.0, amount), type_name, counted)
+func add_gear(path: String, item_name: String, amount: float, type_name: String, counted: bool = false, step := 0.0, cap := 0.0) -> void:
+	_gear_add(path, item_name, maxf(0.0, amount), type_name, counted, step, cap)
 
 # Положить предмет в конкретный слот. Занятый слот вытесняется: содержимое
 # уходит из сета целиком, потому что оружие или броня в снаряжении бессмысленны,
