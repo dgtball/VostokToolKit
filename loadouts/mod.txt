@@ -1,7 +1,7 @@
 ﻿[mod]
 name="Vostok Toolkit"
 id="vostok-toolkit"
-version="4.17.1"
+version="4.17.2"
 
 [autoload]
 VTKUI="res://mods/VTK/VTKUI.gd"
