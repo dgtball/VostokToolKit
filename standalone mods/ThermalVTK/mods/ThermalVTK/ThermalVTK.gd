@@ -22,6 +22,49 @@ func _ensure_nvg() -> void:
 	_nvg = NVG.new()
 	add_child(_nvg)
 
+# ---------- hotkey ----------
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _key_thermal_toggle == 0:
+		return
+	if not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	var k := event as InputEventKey
+	if k.keycode == _key_thermal_toggle or k.physical_keycode == _key_thermal_toggle:
+		_toggle_thermal()
+		get_viewport().set_input_as_handled()
+
+func _toggle_thermal() -> void:
+	_thermal_enabled = not _thermal_enabled
+	if _nvg != null and is_instance_valid(_nvg):
+		_nvg.set_thermal_enabled(_thermal_enabled)
+	_notify("Thermal vision: " + ("ON" if _thermal_enabled else "OFF"),
+		Color.GREEN if _thermal_enabled else Color(0.7, 0.7, 0.7))
+	_save_thermal_enabled(_thermal_enabled)
+
+# Same toast channel the toolkit uses for "Loadout ... applied".
+func _notify(text: String, color: Color) -> void:
+	var loader = get_node_or_null(Paths.LOADER)
+	if loader != null and loader.has_method("Message"):
+		loader.Message(text, color)
+
+# Persist the hotkey choice as the MCM value so it survives a restart. The
+# config file is MCM's own; here we only flip the "value" of an existing entry.
+func _save_thermal_enabled(v: bool) -> void:
+	if not FileAccess.file_exists(CONFIG_FILE):
+		return
+	var cf := ConfigFile.new()
+	if cf.load(CONFIG_FILE) != OK:
+		return
+	if not cf.has_section_key("Bool", "thermal_enabled"):
+		return
+	var d = cf.get_value("Bool", "thermal_enabled", {})
+	if typeof(d) != TYPE_DICTIONARY:
+		return
+	d["value"] = v
+	cf.set_value("Bool", "thermal_enabled", d)
+	cf.save(CONFIG_FILE)
+
 # ---------- MCM ----------
 
 func _register_mcm() -> void:
