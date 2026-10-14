@@ -57,7 +57,6 @@ var _death_load_orig_conns: Array = []
 const DEATH_FIND_TIMEOUT_MS := 20000
 var _death_find_since: int = 0
 var _death_gave_up: bool = false
-var _death_dump_at: int = 0
 var _death_probe_at: int = 0
 # Поиск сцены Death - это обращение к дереву; в живом рейде она всегда
 # отсутствует. Держим результат 200 мс, чтобы не искать её каждый кадр.
@@ -1315,7 +1314,6 @@ func _handle_death_screen(gd, is_dead: bool, is_ironman: bool) -> void:
 		_death_gave_up = true
 		Log.log("[VTK] No 'Load Game' button after " + str(waited) + "ms; leaving vanilla death screen")
 		return
-	_dump_death_tree(root, waited, now)
 
 # The real Death scene, so the search never walks the whole Interface tree.
 # A dump taken over the root for four seconds showed only UI/MCM nodes and no
@@ -1348,31 +1346,6 @@ func _find_load_button(root: Node) -> BaseButton:
 		for c in n.get_children():
 			stack.push_back(c)
 	return best
-
-func _dump_death_tree(root: Node, waited: int, now: int) -> void:
-	if now - _death_dump_at < 1000:
-		return
-	_death_dump_at = now
-	var lines: Array = []
-	var stack: Array = [root]
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		if n is BaseButton:
-			var b := n as BaseButton
-			var bt := String(b.text).strip_edges()
-			lines.append("[VTK]   " + b.get_class() + " path='" + str(b.get_path()) + "' name='" + str(b.name) + "' text='" + bt + "' tip='" + str(b.tooltip_text) + "' vis=" + str(b.visible) + " dis=" + str(b.disabled) + " focus=" + str(b.focus_mode) + " conns=" + str(b.pressed.get_connections().size()))
-		elif n is Control:
-			var c := n as Control
-			var txt := ""
-			if "text" in c:
-				txt = String(c.get("text"))
-			elif c is RichTextLabel:
-				txt = String((c as RichTextLabel).get_parsed_text())
-			if txt.strip_edges() != "":
-				lines.append("[VTK]   " + c.get_class() + " path='" + str(c.get_path()) + "' text='" + txt + "' vis=" + str(c.visible))
-		for ch in n.get_children():
-			stack.push_back(ch)
-	Log.log("[VTK] death tree @" + str(waited) + "ms:\n" + "\n".join(lines))
 
 func _repurpose_load_button(btn: BaseButton, gd, root) -> void:
 	_death_load_btn = btn
