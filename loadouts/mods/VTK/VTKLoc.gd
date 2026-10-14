@@ -43,6 +43,7 @@ const RU := {
 	'Enter a name...': 'Введите название...',
 	'Empty': 'Пусто',
 	'Flashlights': 'Фонари',
+	'Full': 'Полный',
 	'Full magazine': 'Полная обойма',
 	'Furniture': 'Мебель',
 	'Gear': 'Снаряжение',

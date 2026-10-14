@@ -1272,18 +1272,35 @@ func _remove_gear(path: String) -> void:
 	_draft.remove_gear(path)
 	refresh(RefreshScope.PAGES)
 
-# compact = true: поля 2/2 вместо 8/8 и шрифт 8 - для рядов клетки шага 2,
-# где на всю ширину 96px приходится ещё и счётчик.
-func _make_full_mag_btn(path: String, desc: Dictionary, compact := false) -> Button:
+# Единый вид кнопок Full: включено - заливка и золотая точка, выключено -
+# серый контур без точки. Точка - символ в тексте, а не отдельный узел:
+# Button не контейнер, позиционировать детей вручную здесь хрупко.
+func _style_full_btn(b: Button, on: bool, label: String) -> void:
+	b.text = ("● " if on else "") + label
+	b.custom_minimum_size = Vector2(0, 22)
+	VTKSurface.style_button(b, on, false, 8, 8, 4, 4)
+	b.add_theme_color_override("font_color", _gold if on else VTKSurface.GREY_DIM)
+
+# Разовое действие патронов: выставить полный стак. Горит, когда уже полный.
+func _make_full_ammo_btn(path: String, _desc: Dictionary) -> Button:
+	var cap := _gear_cap(path)
+	var on := cap > 0.0 and _draft != null and _draft.amount_of(path) >= cap
+	var b := Button.new()
+	_style_full_btn(b, on, Loc.txt("Full") + " · " + str(int(cap)))
+	b.pressed.connect(func():
+		if _draft == null or cap <= 0.0:
+			return
+		_draft.set_gear_amount(path, cap)
+		refresh(RefreshScope.PAGES)
+	)
+	return b
+
+# У обоймы тумблер переехал в строку B и стал крупным: прежний зажатый
+# компакт-вид (шрифт 8, поля 2/2) почти не отличал включено от выключено.
+func _make_full_mag_btn(path: String, desc: Dictionary) -> Button:
 	var on := Draft.is_full(desc)
 	var b := Button.new()
-	b.text = Loc.txt("Full magazine") if on else Loc.txt("Empty")
-	b.add_theme_font_size_override("font_size", 8 if compact else 9)
-	b.add_theme_color_override("font_color", _gold if on else Color("#777777"))
-	if compact:
-		VTKSurface.style_button(b, on, false, 2, 2, 2, 2)
-	else:
-		VTKSurface.style_button(b, on, false, 8, 8, 4, 4)
+	_style_full_btn(b, on, Loc.txt("Full magazine") if on else Loc.txt("Empty"))
 	b.pressed.connect(func():
 		if _draft == null:
 			return
@@ -1293,6 +1310,77 @@ func _make_full_mag_btn(path: String, desc: Dictionary, compact := false) -> But
 		refresh(RefreshScope.PAGES)
 	)
 	return b
+
+# Строка B клетки снаряжения: одно действие по типу предмета, либо null.
+func _make_gear_action_row(path: String, desc: Dictionary) -> Control:
+	if _is_magazine(path):
+		return _make_full_mag_btn(path, desc)
+	if str(_item_info(path).get("type")) == "Ammo":
+		return _make_full_ammo_btn(path, desc)
+	if _att_panel_needed(_item_info(path)):
+		return _make_att_btn(desc)
+	return null
+
+# Потолок для ручного ввода. cap = 0 значит "без потолка": в вводе берём
+# большое число, иначе клампилось бы к нулю.
+func _gear_edit_cap(path: String) -> int:
+	var cap := _gear_cap(path)
+	return int(cap) if cap >= 1.0 else 999999
+
+# Число в строке A: клик открывает ввод точного значения. Внутри - Label,
+# который подменяется LineEdit'ом на месте.
+func _make_gear_count(path: String, cnt: int) -> Control:
+	var holder := Control.new()
+	holder.custom_minimum_size = Vector2(30, 28)
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var lbl := Label.new()
+	lbl.text = str(cnt)
+	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.add_theme_color_override("font_color", _gold)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	lbl.mouse_filter = Control.MOUSE_FILTER_STOP
+	lbl.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+			_open_gear_amount_edit(holder, lbl, path, cnt)
+	)
+	holder.add_child(lbl)
+	return holder
+
+# Клик по числу: Label -> LineEdit. Enter/потеря фокуса применяют значение,
+# Esc отменяет. settled гасит двойной вызов (Enter + focus_exited).
+func _open_gear_amount_edit(holder: Control, lbl: Label, path: String, cnt: int) -> void:
+	var edit := LineEdit.new()
+	edit.text = str(cnt)
+	edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	edit.add_theme_font_size_override("font_size", 12)
+	edit.custom_minimum_size = Vector2(30, 28)
+	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	edit.add_theme_stylebox_override("normal", VTKSurface.panel(true, 6))
+	edit.add_theme_stylebox_override("focus", VTKSurface.focus_style())
+	lbl.visible = false
+	holder.add_child(edit)
+	edit.grab_focus()
+	var settled := false
+	var apply := func(ok: bool) -> void:
+		if settled:
+			return
+		settled = true
+		if ok and _draft != null:
+			var v := clampi(edit.text.to_int(), 1, _gear_edit_cap(path))
+			_draft.set_gear_amount(path, float(v))
+		# Пересборка сетки убирает поле - откладываем на кадр, чтобы не
+		# освобождать узел внутри его же сигнала.
+		refresh.call_deferred(RefreshScope.PAGES)
+	edit.text_submitted.connect(func(_t: String) -> void: apply.call(true))
+	edit.focus_exited.connect(func() -> void: apply.call(true))
+	edit.gui_input.connect(func(ev: InputEvent) -> void:
+		if ev is InputEventKey and ev.pressed and ev.keycode == KEY_ESCAPE:
+			apply.call(false)
+	)
 
 func _set_gear_search(t: String) -> void:
 	_gear_search = t
@@ -2659,7 +2747,7 @@ func _make_item_cell(item, forced_slot = null, gear := false, force_gear := fals
 	# ниже - там под именем только счётчик.
 	# Ширина берётся из GEAR_CELL_W: расчёт колонок обязан совпадать с
 	# вёрсткой, иначе сетка переполняется и появляется прокрутка.
-	cell.custom_minimum_size = Vector2(GEAR_CELL_W, 176 if gi >= 0 else (168 if gear else 152))
+	cell.custom_minimum_size = Vector2(GEAR_CELL_W, 200 if gi >= 0 else (168 if gear else 152))
 	# Без SIZE_EXPAND_FILL: HFlowContainer растягивает такие клетки на всю
 	# ширину полосы, пока предметов мало (stretch в flow_container.cpp).
 	cell.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -2693,46 +2781,27 @@ func _make_item_cell(item, forced_slot = null, gear := false, force_gear := fals
 		var desc_g: Dictionary = _draft.gear[gi]
 		var cnt_g := Draft.shown_count(desc_g)
 
-		# Ряд А: счётчик и обвесы. У обоймы - тумблер полной обоймы,
-		# у остальных с панелью - кнопка rnd (открывает панель обвесов).
-		var crow := HBoxContainer.new()
-		crow.add_theme_constant_override("separation", 3)
-		crow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var xl := Label.new()
-		xl.text = "×" + str(cnt_g)
-		xl.add_theme_font_size_override("font_size", 8)
-		xl.add_theme_color_override("font_color", _gold)
-		xl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		xl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		xl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		crow.add_child(xl)
-		if _is_magazine(path_now):
-			var mag_btn := _make_full_mag_btn(path_now, desc_g, true)
-			crow.add_child(mag_btn)
-		elif _att_panel_needed(_item_info(path_now)):
-			crow.add_child(_make_att_btn(desc_g))
-		vbox.add_child(crow)
-
-		# Ряд Б: минус, счётчик, плюс. Основное управление клетки, поэтому
-		# крупнее прежних микро-кнопок 15×16.
-		var brow := HBoxContainer.new()
-		brow.add_theme_constant_override("separation", 4)
-		brow.alignment = BoxContainer.ALIGNMENT_CENTER
-		brow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# Строка A: шаг. Число между «−» и «+» кликабельно (ввод точного
+		# значения). Дубль ×N убран - число живёт здесь само.
+		var row_a := HBoxContainer.new()
+		row_a.add_theme_constant_override("separation", 4)
+		row_a.alignment = BoxContainer.ALIGNMENT_CENTER
+		row_a.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var minus := _make_mini_btn("−", Vector2(28, 28), 15)
 		minus.pressed.connect(func(): _bump_gear(path_now, -1.0))
-		brow.add_child(minus)
-		var cl := Label.new()
-		cl.text = str(cnt_g)
-		cl.add_theme_font_size_override("font_size", 13)
-		cl.custom_minimum_size = Vector2(30, 0)
-		cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		cl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		brow.add_child(cl)
+		row_a.add_child(minus)
+		row_a.add_child(_make_gear_count(path_now, cnt_g))
 		var plus := _make_mini_btn("+", Vector2(28, 28), 15)
 		plus.pressed.connect(func(): _bump_gear(path_now, 1.0))
-		brow.add_child(plus)
-		vbox.add_child(brow)
+		row_a.add_child(plus)
+		vbox.add_child(row_a)
+
+		# Строка B: одно контекстное действие предмета, если оно есть.
+		# Патроны - разовый Full, обоймы - тумблер Full magazine/Empty,
+		# остальное с обвесами - rnd. (переехала из строки A).
+		var row_b := _make_gear_action_row(path_now, desc_g)
+		if row_b != null:
+			vbox.add_child(row_b)
 
 		# Удаление - крестик в правом верхнем углу клетки, красный: это
 		# уничтожение набора, его не должно быть рядом с «В инвентарь».
