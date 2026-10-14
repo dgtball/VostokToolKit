@@ -1,10 +1,10 @@
-﻿# Vostok Toolkit
+# Vostok Toolkit
 
 A quality-of-life toolkit for **Road to Vostok** вЂ” loadout presets, smarter tasks, thermal vision, kill stats, a dynamic killfeed and fast travel, all in one mod.
 
 ![Ironman Restart](assets/ironman-restart.jpg)
 
-**Version:** 4.17.1 В· **Loader:** Metro Mod Loader 3.4.2 В· **Game:** 0.2.1.0 В· **Language:** RU / EN
+**Version:** 4.17.2 В· **Loader:** Metro Mod Loader 3.4.2 В· **Game:** 0.2.1.0 В· **Language:** RU / EN
 
 ## Features
 
