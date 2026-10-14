@@ -609,3 +609,57 @@ static func group_attachments(attachments) -> Array:
 		groups[index[grp]]["items"].append(
 			{"path": path, "name": str(a.get("name", "?")), "subtype": grp})
 	return groups
+
+# Класс обвеса по данным игры. Vanilla Item.UpdateAttachments делит обвесы на
+# Optic/Muzzle/Magazine, и только эти классы участвуют в выборе позы оружия.
+static func attachment_class(subtype) -> String:
+	match str(subtype):
+		"Optic":
+			return "optic"
+		"Muzzle":
+			return "muzzle"
+		"Magazine":
+			return "magazine"
+		_:
+			return ""
+
+# Пакеты масштаб+смещение оружия под навешанные классы (Item.UpdateSprite).
+# offset отдаётся в неповёрнутом 64-пространстве: одиночные смещения в данных
+# скаляр и в ванили едут по одной оси, парные - Vector2; знак уже приведён к
+# "position += offset", поворот применяет вызывающий. Ключ - классы через "+".
+const COMPOSITE_PACKS := {
+	"magazine": {"s": "magazineScale", "o": "magazineOffset", "k": "y", "sd": 0.5},
+	"optic": {"s": "opticScale", "o": "opticOffset", "k": "y", "sd": 0.5},
+	"muzzle": {"s": "suppressorScale", "o": "suppressorOffset", "k": "x", "sd": 0.45},
+	"magazine+optic": {"s": "magazineOpticScale", "o": "magazineOpticOffset", "k": "y", "sd": 0.5},
+	"magazine+muzzle": {"s": "magazineSuppressorScale", "o": "magazineSuppressorOffset", "k": "vec", "sd": 0.45},
+	"optic+muzzle": {"s": "opticSuppressorScale", "o": "opticSuppressorOffset", "k": "vec", "sd": 0.45},
+	"magazine+optic+muzzle": {"s": "fullyModdedScale", "o": "fullyModdedOffset", "k": "vec", "sd": 0.45},
+}
+
+static func composite_pack(res, classes: Array) -> Dictionary:
+	var present: Array = []
+	for c in ["magazine", "optic", "muzzle"]:
+		if classes.has(c):
+			present.append(c)
+	if present.is_empty():
+		return {"scale": 0.5, "offset": Vector2.ZERO}
+	var key := str(present[0])
+	for i in range(1, present.size()):
+		key += "+" + str(present[i])
+	if not COMPOSITE_PACKS.has(key):
+		return {"scale": 0.5, "offset": Vector2.ZERO}
+	var p: Dictionary = COMPOSITE_PACKS[key]
+	var sc = res.get(p["s"])
+	if sc == null:
+		sc = float(p["sd"])
+	var o = res.get(p["o"])
+	var off := Vector2.ZERO
+	if p["k"] == "vec":
+		if o is Vector2:
+			off = Vector2(o.x, -o.y)
+	elif p["k"] == "y":
+		off = Vector2(0.0, -(float(o) if o != null else 0.0))
+	else:
+		off = Vector2(float(o) if o != null else 0.0, 0.0)
+	return {"scale": float(sc), "offset": off}
