@@ -272,34 +272,12 @@ func _ray_floor_hit(space: PhysicsDirectSpaceState3D, exclude: Array, point: Vec
 	return space.intersect_ray(q)
 
 
-func _ray_floor(space: PhysicsDirectSpaceState3D, exclude: Array, point: Vector3) -> float:
-	var h := _ray_floor_hit(space, exclude, point)
-	if h.is_empty():
-		return point.y
-	return float((h["position"] as Vector3).y)
-
-
 func _collect_rids(node: Node, out: Array) -> void:
 	for ch in node.get_children():
 		if ch is CollisionObject3D:
 			out.append((ch as CollisionObject3D).get_rid())
 		else:
 			_collect_rids(ch, out)
-
-
-func _dump_subtree(node: Node, depth: int) -> String:
-	if depth > 3:
-		return ""
-	var out := ""
-	for ch in node.get_children():
-		var pos := ""
-		if ch is Node3D:
-			pos = "@" + str((ch as Node3D).global_position)
-		out += ch.name + "(" + ch.get_class() + pos + ")"
-		if ch is Node3D:
-			out += "[" + _dump_subtree(ch, depth + 1) + "]"
-		out += " "
-	return out.strip_edges()
 
 
 func _node_forward(node: Node) -> Vector3:
@@ -341,7 +319,6 @@ func _place_player(target: Vector3) -> void:
 		game_data.set("playerVector", Vector3.ZERO)
 	if _has_look_at:
 		_face_trader(ctrl, _look_at)
-	_monitor_placement(target, ctrl)
 
 
 # Spawn() leaves controller.global_rotation.y at randf_range(0, 360) and the
@@ -360,12 +337,3 @@ func _face_trader(ctrl: Node3D, trader_pos: Vector3) -> void:
 	if head is Node3D:
 		(head as Node3D).rotation.y = 0.0
 
-
-func _monitor_placement(target: Vector3, ctrl: Node) -> void:
-	for step in [0.1, 0.35, 1.0, 3.0]:
-		await get_tree().create_timer(step, true, false, true).timeout
-		if not is_instance_valid(ctrl):
-			return
-		var drift: Vector3 = ctrl.global_position - target
-		if drift.length() > 0.5:
-			return
