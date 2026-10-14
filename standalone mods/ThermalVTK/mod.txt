@@ -1,0 +1,10 @@
+[mod]
+name="ThermalVTK"
+id="thermal-vtk"
+version="1.0.0"
+
+[autoload]
+ThermalVTK="res://mods/ThermalVTK/ThermalVTK.gd"
+
+[dependencies]
+optional=["mod_configuration_menu"]

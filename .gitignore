@@ -5,4 +5,6 @@
 !/CHANGELOG.md
 !/assets/
 !/loadouts/
+!/standalone mods/
 !/docs/vostokmods/
+/standalone mods/**/*.vmz
