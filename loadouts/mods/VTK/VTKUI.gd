@@ -1654,6 +1654,87 @@ func _rotates_icon(slot: String, desc: Dictionary) -> bool:
 	var path := str(res.get("resource_path"))
 	return Picker.subcategory_of(path, res.get("type")) != "Pistols"
 
+# Есть ли в слоте вложения (плита рига, обвесы оружия). Пустой ключ и не-массив
+# считаются отсутствием.
+func _has_attachments(src: Dictionary) -> bool:
+	var a = src.get("attachments")
+	return typeof(a) == TYPE_ARRAY and (a as Array).size() > 0
+
+# Имена `file` навешанных обвесов и их классы: по file прячем/показываем детей
+# сцены tetris, по классам Picker.composite_pack выбирает позу.
+func _composite_meta(src: Dictionary) -> Dictionary:
+	var files: Array = []
+	var classes: Array = []
+	var ats = src.get("attachments")
+	if typeof(ats) == TYPE_ARRAY:
+		for p in ats:
+			var r = _item_info(str(p)).get("resource")
+			if r == null:
+				continue
+			files.append(str(r.get("file")))
+			var cls := Picker.attachment_class(r.get("subtype"))
+			if cls != "" and not classes.has(cls):
+				classes.append(cls)
+	return {"files": files, "classes": classes}
+
+# Оружие рисуется своей сценой tetris: база + спрайты обвесов, как в экране
+# персонажа игры. Прячем всех детей, показываем навешанные, поза - из пакета.
+# Возвращает false, если композита нет (не оружие/нет tetris) - тогда рисуется
+# прежняя иконка. Смещение пакета в 64-пространстве, при повороте разворачиваем
+# его тем же -90°, что и узел, чтобы оси совпали с ванильными.
+func _render_composite(box: Panel, res, src: Dictionary, w: int, h: int, rotated: bool) -> bool:
+	var scene = res.get("tetris")
+	if scene == null:
+		return false
+	var node: Node2D = scene.instantiate()
+	var meta := _composite_meta(src)
+	for ch in node.get_children():
+		ch.visible = meta["files"].has(str(ch.name))
+	var pack := Picker.composite_pack(res, meta["classes"])
+	var base = res.get("size")
+	if not (base is Vector2) or base.x <= 0.0 or base.y <= 0.0:
+		base = Vector2(1, 1)
+	var cell := Vector2(w * EQ_CELL + (w - 1) * EQ_GAP, h * EQ_CELL + (h - 1) * EQ_GAP)
+	var pad := 8.0
+	var bx := float(base.x) * 64.0
+	var by := float(base.y) * 64.0
+	if rotated:
+		var t := bx
+		bx = by
+		by = t
+	var fit := minf((cell.x - pad) / bx, (cell.y - pad) / by)
+	var sc := fit * float(pack["scale"]) / 0.5
+	node.scale = Vector2(sc, sc)
+	node.rotation_degrees = -90.0 if rotated else 0.0
+	var off: Vector2 = pack["offset"]
+	if rotated:
+		off = Vector2(off.y, -off.x)
+	node.position = cell * 0.5 + off * fit
+	box.add_child(node)
+	return true
+
+# Размер глифа присутствия по клетке: max(w,h) >= 6 -> L, 4..5 -> M, 2 -> S, 1 -> XS.
+# Реально встречаются S (риг 2×2) и XS (NVG/Player 1×1); L/M - фолбэк, если
+# композит оружия почему-то не сработал.
+func _glyph_size(w: int, h: int) -> int:
+	var m := maxi(w, h)
+	if m >= 6:
+		return 16
+	if m >= 4:
+		return 14
+	if m == 2:
+		return 13
+	return 11
+
+# Размер крестика и шрифт по клетке: L 26/14, M/S 22/12, XS 18/10.
+func _x_size(w: int, h: int) -> Dictionary:
+	var m := maxi(w, h)
+	if m >= 6:
+		return {"box": 26, "font": 14}
+	if m == 1:
+		return {"box": 18, "font": 10}
+	return {"box": 22, "font": 12}
+
 # Клетка слота в укладке: w×h ячеек, занятая показывает иконку предмета, пустая
 # (или без иконки) - имя слота. Клик - прежний _on_slot_row_input: выбор цели,
 # второй клик по занятой цели открывает панель обвесов.
@@ -1676,76 +1757,64 @@ func _make_equip_cell(slot: String, w: int, h: int, desc: Dictionary = {}, inter
 		_attach_row_hover(box, func(hv: bool): return _equip_cell_style(active, hv, occupied))
 		box.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, src))
 
-	var tex := _item_icon(_cell_resource(src)) if occupied else null
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(center)
-	if tex != null:
-		var icon := TextureRect.new()
-		icon.texture = Picker.item_art(tex, _rotates_icon(slot, src))
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		var sq := maxi(16, mini(w * EQ_CELL, h * EQ_CELL) - 16)
-		icon.custom_minimum_size = Vector2(sq, sq)
-		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		center.add_child(icon)
-	else:
-		var lb := Label.new()
-		lb.text = Loc.txt(slot)
-		lb.add_theme_font_size_override("font_size", 9)
-		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lb.add_theme_color_override("font_color", VTKSurface.INK if occupied else VTKSurface.BROWN)
-		lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		center.add_child(lb)
+	# Variant: `_cell_resource` отдаёт Variant, а `:=` на нём - предупреждение,
+	# которое стенд считает ошибкой парсинга.
+	var res: Variant = _cell_resource(src) if occupied else null
+	var rotated := occupied and _rotates_icon(slot, src)
+	var composited := false
+	if occupied and res != null and res.get("tetris") != null and str(res.get("type")) == "Weapon":
+		composited = _render_composite(box, res, src, w, h, rotated)
 
-	var dot := _make_dot(_gold if occupied else Color("#2a1f14"))
-	box.add_child(dot)
-	dot.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	dot.offset_left = -10
-	dot.offset_top = 3
-	dot.offset_right = -3
-	dot.offset_bottom = 10
+	if not composited:
+		var tex := _item_icon(res) if occupied else null
+		var center := CenterContainer.new()
+		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(center)
+		if tex != null:
+			var icon := TextureRect.new()
+			icon.texture = Picker.item_art(tex, rotated)
+			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			var sq := maxi(16, mini(w * EQ_CELL, h * EQ_CELL) - 16)
+			icon.custom_minimum_size = Vector2(sq, sq)
+			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			center.add_child(icon)
+		else:
+			var lb := Label.new()
+			lb.text = Loc.txt(slot)
+			lb.add_theme_font_size_override("font_size", 9)
+			lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			lb.add_theme_color_override("font_color", VTKSurface.INK if occupied else VTKSurface.BROWN)
+			lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			center.add_child(lb)
+
+	# Признак вложения там, где композита нет (риг с плитой, NVG/Player). Оружию
+	# не нужен: обвесы видны на модели.
+	if not composited and _has_attachments(src):
+		var gsz := _glyph_size(w, h)
+		var gear := TextureRect.new()
+		gear.texture = VTKSurface.gear_icon(gsz, _gold)
+		gear.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		gear.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		gear.custom_minimum_size = Vector2(gsz, gsz)
+		gear.size = Vector2(gsz, gsz)
+		gear.position = Vector2(5, 4)
+		gear.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(gear)
 
 	if interactive and occupied:
-		var drop := _make_mini_btn("✕", Vector2(16, 16), 8)
+		var xs := _x_size(w, h)
+		var drop := _make_mini_btn("✕", Vector2(xs["box"], xs["box"]), xs["font"])
 		drop.tooltip_text = Loc.txt("Remove")
 		drop.add_theme_color_override("font_color", Color("#e05a4a"))
 		drop.pressed.connect(func(): _remove_slot(slot))
 		box.add_child(drop)
-		drop.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-		drop.offset_left = 2
-		drop.offset_top = 2
-		drop.offset_right = 18
-		drop.offset_bottom = 18
-		# Бейдж количества обвесов на оружии (вариант 2)
-		if slot == "Primary" or slot == "Secondary":
-			var atts = src.get("attachments")
-			var ac := 0
-			if typeof(atts) == TYPE_ARRAY:
-				ac = atts.size()
-			if ac > 0:
-				var badge := Label.new()
-				badge.text = str(ac)
-				badge.add_theme_font_size_override("font_size", 9)
-				badge.add_theme_color_override("font_color", Color("#0e0b08"))
-				var bsb := StyleBoxFlat.new()
-				bsb.bg_color = _gold
-				bsb.corner_radius_top_right = 8
-				bsb.corner_radius_top_left = 8
-				bsb.corner_radius_bottom_right = 8
-				bsb.corner_radius_bottom_left = 8
-				bsb.content_margin_left = 4
-				bsb.content_margin_right = 4
-				bsb.content_margin_top = 0
-				bsb.content_margin_bottom = 0
-				badge.add_theme_stylebox_override("normal", bsb)
-				badge.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-				badge.offset_left = -4
-				badge.offset_top = 2
-				badge.offset_right = -4
-				badge.offset_bottom = 16
-				box.add_child(badge)
+		drop.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+		drop.offset_left = -(int(xs["box"]) + 4)
+		drop.offset_top = 4
+		drop.offset_right = -4
+		drop.offset_bottom = int(xs["box"]) + 4
 	return box
 
 # Укладка экипировки (вариант E): клетки слотов ложатся по координатам из
