@@ -663,3 +663,22 @@ static func composite_pack(res, classes: Array) -> Dictionary:
 	else:
 		off = Vector2(float(o) if o != null else 0.0, 0.0)
 	return {"scale": float(sc), "offset": off}
+
+# Поза композита в клетке: базовый арт (панель vanilla = size*64, при повороте
+# оси меняются местами) вписываем в клетку, масштаб = panel->cell * pack.scale.
+# Текстура тетриса вдвое плотнее панели (natural = size*128), поэтому sprite
+# scale = fit * pack.scale, без /0.5. offset - в панельном 64-пространстве, при
+# повороте разворачивается на тот же -90°, знак уже приведён к "position += offset".
+static func composite_placement(base: Vector2, cell: Vector2, pad: float, pack: Dictionary, rotated: bool) -> Dictionary:
+	var bx := base.x * 64.0
+	var by := base.y * 64.0
+	if rotated:
+		var t := bx
+		bx = by
+		by = t
+	var fit := minf((cell.x - pad) / bx, (cell.y - pad) / by)
+	var scale := fit * float(pack["scale"])
+	var off: Vector2 = pack["offset"]
+	if rotated:
+		off = Vector2(off.y, -off.x)
+	return {"scale": scale, "position": cell * 0.5 + off * fit}

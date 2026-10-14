@@ -1694,21 +1694,10 @@ func _render_composite(box: Panel, res, src: Dictionary, w: int, h: int, rotated
 	if not (base is Vector2) or base.x <= 0.0 or base.y <= 0.0:
 		base = Vector2(1, 1)
 	var cell := Vector2(w * EQ_CELL + (w - 1) * EQ_GAP, h * EQ_CELL + (h - 1) * EQ_GAP)
-	var pad := 8.0
-	var bx := float(base.x) * 64.0
-	var by := float(base.y) * 64.0
-	if rotated:
-		var t := bx
-		bx = by
-		by = t
-	var fit := minf((cell.x - pad) / bx, (cell.y - pad) / by)
-	var sc := fit * float(pack["scale"]) / 0.5
-	node.scale = Vector2(sc, sc)
+	var place := Picker.composite_placement(base, cell, 8.0, pack, rotated)
+	node.scale = Vector2(place["scale"], place["scale"])
 	node.rotation_degrees = -90.0 if rotated else 0.0
-	var off: Vector2 = pack["offset"]
-	if rotated:
-		off = Vector2(off.y, -off.x)
-	node.position = cell * 0.5 + off * fit
+	node.position = place["position"]
 	box.add_child(node)
 	return true
 
