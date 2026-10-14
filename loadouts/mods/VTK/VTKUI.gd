@@ -2388,6 +2388,7 @@ func _info_of(res) -> Dictionary:
 		"slots": _item_slots(res),
 		"compatible": compat if typeof(compat) == TYPE_ARRAY else [],
 		"maxAmount": res.get("maxAmount"),
+		"defaultAmount": res.get("defaultAmount"),
 	}
 
 # Пунктирная карточка «+ Создать сет». StyleBoxFlat штрихов не умеет, а
@@ -2532,10 +2533,31 @@ func _make_att_btn(desc) -> Button:
 	b.pressed.connect(func(): _toggle_attachment_panel(path_now))
 	return b
 
-func _bump_gear(path: String, delta: float) -> void:
+# Шаг «−/+» и потолок клетки снаряжения. Патроны шагают стаком калибра и
+# упираются во вместимость; обоймы - по штуке до 99; прочее - по одному до
+# maxAmount, если он задан. Знание о ресурсе живёт здесь, в Draft не идёт.
+func _gear_step(path: String) -> float:
+	var info := _item_info(path)
+	if str(info.get("type")) == "Ammo":
+		var da = info.get("defaultAmount")
+		if da != null and float(da) >= 1.0:
+			return float(da)
+	return 1.0
+
+func _gear_cap(path: String) -> float:
+	if _is_magazine(path):
+		return 99.0
+	var ma = _item_info(path).get("maxAmount")
+	if ma != null and float(ma) > 1.0:
+		return float(ma)
+	return 0.0
+
+# dir - направление шага (+1 / -1), не сырая дельта: шаг и потолок зависят от
+# ресурса, поэтому считаются здесь, а не в вызывающем коде.
+func _bump_gear(path: String, dir: float) -> void:
 	if _draft == null:
 		return
-	_draft.set_gear_amount(path, _draft.amount_of(path) + delta)
+	_draft.bump_amount(path, dir, _gear_step(path), _gear_cap(path))
 	refresh(RefreshScope.GEAR | RefreshScope.DONE)
 
 func _toggle_attachment_panel(path: String) -> void:
@@ -2783,8 +2805,21 @@ func _place_into(item, slot: String, force_gear := false) -> void:
 	# открыла панель не того предмета.
 	_last_placed = path
 	var t := str(res.get("type"))
+	# Патроны в снаряжение попадают коробкой (defaultAmount) и той же коробкой
+	# шагают: клик и «+/−» в одном масштабе, потолок - maxAmount. Прочие
+	# стакаемые по-прежнему берут maxAmount; оружие - 1.
 	var amt := 1.0
-	if t != "Weapon" and t != "Ammo":
+	var step := 0.0
+	var cap := 0.0
+	if t == "Ammo":
+		var da = res.get("defaultAmount")
+		if da != null and float(da) >= 1.0:
+			amt = float(da)
+			step = float(da)
+		var ma = res.get("maxAmount")
+		if ma != null and float(ma) > 1.0:
+			cap = float(ma)
+	elif t != "Weapon":
 		var max_am = res.get("maxAmount")
 		if max_am != null and float(max_am) > 1.0:
 			amt = float(max_am)
@@ -2794,7 +2829,7 @@ func _place_into(item, slot: String, force_gear := false) -> void:
 	# Шаг 2 («Снаряжение»): слот не выбирается, предмет идёт в снаряжение и
 	# не занимает свободный слот экипировки.
 	if force_gear:
-		_draft.add_gear(path, item_name, amt, t, counted)
+		_draft.add_gear(path, item_name, amt, t, counted, step, cap)
 		_after_place()
 		return
 	if slot != "":
@@ -2808,7 +2843,7 @@ func _place_into(item, slot: String, force_gear := false) -> void:
 		if not Picker.matches_slot(slots, slot):
 			_set_problem(Loc.txt("Does not fit: ") + Loc.txt(slot))
 			return
-	_draft.add(path, item_name, slots, amt, t, counted)
+	_draft.add(path, item_name, slots, amt, t, counted, step, cap)
 	_after_place()
 
 func _after_place() -> void:
