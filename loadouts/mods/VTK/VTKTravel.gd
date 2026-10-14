@@ -315,8 +315,6 @@ func _place_player(target: Vector3) -> void:
 		return
 	ctrl.global_position = target
 	ctrl.set("velocity", Vector3.ZERO)
-	if game_data != null:
-		game_data.set("playerVector", Vector3.ZERO)
 	if _has_look_at:
 		_face_trader(ctrl, _look_at)
 
