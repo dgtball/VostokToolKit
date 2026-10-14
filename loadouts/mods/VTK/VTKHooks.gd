@@ -729,24 +729,9 @@ func _emit_kill_event(direction) -> void:
 	})
 	_last_damager.erase(iid)
 
-# Имя оружия игрока: свойства GameData, затем оружие в руках у игрока.
-# Список и порядок — из probe-вывода (Task 1, п.3); лишние свойства просто
-# не найдутся и вернут "".
+# Имя оружия игрока: GameData и узел игрока имени не несут (probe, Task 1),
+# настоящее оружие — WeaponRig под Camera/Manager, см. _rig_weapon_name().
 func _player_weapon_name() -> String:
-	var gd = _resolve_gamedata()
-	if gd != null:
-		for p in ["currentWeaponName", "weaponName", "currentWeapon", "weapon", "equippedWeapon"]:
-			if p in gd:
-				var s := _weapon_str(gd.get(p))
-				if s != "":
-					return s
-	var pl = get_tree().get_first_node_in_group("Player")
-	if pl != null:
-		for p in ["currentWeapon", "activeWeapon", "weapon", "weaponName", "equippedWeapon"]:
-			if p in pl:
-				var s := _weapon_str(pl.get(p))
-				if s != "":
-					return s
 	return _rig_weapon_name()
 
 # Ни GameData, ни узел игрока не несут имени оружия (probe, Task 1): настоящее
