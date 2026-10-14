@@ -10,6 +10,12 @@ Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
 - Items added on the Gear tab now go to the backpack instead of the equipment slots.
 
+### Added
+
+- Ammo is now added to and stepped by a whole box, with a Full button to top up a stack.
+- Click a gear item's number to type an exact amount.
+- The magazine Full/Empty control sits below the count and is clearly marked when on.
+
 ## [4.17.0] - 2026-10-14
 
 ### Added
