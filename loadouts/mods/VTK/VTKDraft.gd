@@ -53,7 +53,7 @@ func add(path: String, item_name: String, slots, amount: float, type_name: Strin
 	_gear_add(path, item_name, amt, type_name, counted, step, cap)
 	return ""
 
-# Общая gear-ветка add() и add_gear(): путь уже есть -> +1, иначе новая запись.
+# Общая gear-ветка add() и add_gear(): путь уже есть -> +1 (или step при step > 0), иначе новая запись.
 # Вынесена, чтобы правило стекирования жило в одном месте, а шаг 2 мог класть
 # в снаряжение мимо free_slot_of.
 func _gear_add(path: String, item_name: String, amt: float, type_name: String, counted: bool, step := 0.0, cap := 0.0) -> void:
