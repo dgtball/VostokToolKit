@@ -445,16 +445,16 @@ func _build_ui() -> void:
 	# КПК-хром: верхний рейл устройства: плашка «V», имя и версия в одну строку.
 	# Только имя и версия: бренд-квадрат,
 	# текущая вкладка и часы из макета убраны.
-	# Отступ сверху не 4, а 24: счётчик убийств - отдельный CanvasLayer слоем
-	# 9999 поверх панели, его Label стоит в (10,10), и при верхе 4 имя
-	# «VOSTOK TOOLKIT» уходило под счётчик. Рейл и вкладки сдвинуты на ту же
-	# величину, чтобы не наехать друг на друга.
+	# Отступ сверху не 4, а 34: счётчик убийств - отдельный CanvasLayer слоем
+	# 9999 поверх панели, его Label стоит в (10,10) шрифтом 13 и опускается до
+	# y≈28, и при меньшем верхе имя «VOSTOK TOOLKIT» уходило под счётчик.
+	# Рейл и вкладки сдвинуты на ту же величину, чтобы не наехать друг на друга.
 	var rail := HBoxContainer.new()
 	rail.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	rail.offset_left = 4
-	rail.offset_top = 24
+	rail.offset_top = 34
 	rail.offset_right = -4
-	rail.offset_bottom = 54
+	rail.offset_bottom = 64
 	rail.add_theme_constant_override("separation", 8)
 	_panel.add_child(rail)
 	_ui_nodes.append(rail)
@@ -500,9 +500,9 @@ func _build_ui() -> void:
 	var rail_sep := ColorRect.new()
 	rail_sep.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	rail_sep.offset_left = 4
-	rail_sep.offset_top = 56
+	rail_sep.offset_top = 66
 	rail_sep.offset_right = -4
-	rail_sep.offset_bottom = 57
+	rail_sep.offset_bottom = 67
 	rail_sep.color = Color("#2a2419")
 	rail_sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(rail_sep)
@@ -510,9 +510,9 @@ func _build_ui() -> void:
 	var tab_bar = HBoxContainer.new()
 	tab_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	tab_bar.offset_left = 4
-	tab_bar.offset_top = 58
+	tab_bar.offset_top = 68
 	tab_bar.offset_right = -4
-	tab_bar.offset_bottom = 88
+	tab_bar.offset_bottom = 98
 	_panel.add_child(tab_bar)
 
 	var tabs = [Loc.txt("Sets"), Loc.txt("Teleport")]
@@ -530,7 +530,7 @@ func _build_ui() -> void:
 	_scroll = ScrollContainer.new()
 	_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_scroll.offset_left = 4
-	_scroll.offset_top = 92
+	_scroll.offset_top = 102
 	_scroll.offset_right = -4
 	_scroll.offset_bottom = -4
 	_panel.add_child(_scroll)
