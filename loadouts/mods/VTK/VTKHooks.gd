@@ -20,6 +20,7 @@ const EquipFlow = preload("res://mods/VTK/VTKEquip.gd")
 const Loc = preload("res://mods/VTK/VTKLoc.gd")
 const HIT_WINDOW_MSEC := 15000
 const SEEN_DEATHS_TTL_MSEC := 600000
+const PLAYER_HITS_TTL_MSEC := 30000
 
 var _equip_on: bool = true
 var _pickup_pending: int = 0
@@ -57,6 +58,7 @@ var _death_load_orig_conns: Array = []
 const DEATH_FIND_TIMEOUT_MS := 20000
 var _death_find_since: int = 0
 var _death_gave_up: bool = false
+const DEATH_PROBE_MS := 1000
 var _death_probe_at: int = 0
 # Поиск сцены Death - это обращение к дереву; в живом рейде она всегда
 # отсутствует. Держим результат 200 мс, чтобы не искать её каждый кадр.
@@ -147,7 +149,7 @@ func _poll_death() -> void:
 			_gd_missing_logged = false
 		if _death_latched:
 			var pnow := Time.get_ticks_msec()
-			if pnow - _death_probe_at > 1000:
+			if pnow - _death_probe_at > DEATH_PROBE_MS:
 				_death_probe_at = pnow
 				Log.log("[VTK] poll: raw isDead=" + str(gd.get("isDead", false)) + " permadeath=" + str(gd.get("permadeath", false)) + " death_scene=" + str(dead_scene))
 	_handle_death_screen(gd, is_dead, is_ironman)
@@ -827,10 +829,12 @@ func _on_controller_process(_delta: float) -> void:
 	var controller = _lib._caller if _lib else null
 	if not is_instance_valid(controller):
 		return
+	if _player_hits.is_empty() and _seen_deaths.is_empty() and _last_damager.is_empty():
+		return
 	var now = Time.get_ticks_msec()
 	var stale: Array = []
 	for iid in _player_hits:
-		if now - int(_player_hits[iid]) > 30000:
+		if now - int(_player_hits[iid]) > PLAYER_HITS_TTL_MSEC:
 			stale.append(iid)
 	for s in stale:
 		_player_hits.erase(s)
