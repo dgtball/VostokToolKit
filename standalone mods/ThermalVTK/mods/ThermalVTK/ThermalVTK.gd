@@ -5,12 +5,14 @@ const MOD_ID := "thermal-vtk"
 const MOD_NAME := "ThermalVTK"
 const CONFIG_DIR := "user://MCM/thermal-vtk"
 const CONFIG_FILE := "user://MCM/thermal-vtk/config.ini"
+const STATE_FILE := "user://MCM/thermal-vtk/thermal_state.cfg"
 const MCM_HELPERS := "res://ModConfigurationMenu/Scripts/Doink Oink/MCM_Helpers.tres"
 
 var _nvg: Node = null
 var _key_thermal_toggle: int = 0
 var _thermal_enabled: bool = false
 var _mines_enabled: bool = true
+var _mcm_thermal_seen: bool = false
 
 func _ready() -> void:
 	_register_mcm()
@@ -48,22 +50,20 @@ func _notify(text: String, color: Color) -> void:
 	if loader != null and loader.has_method("Message"):
 		loader.Message(text, color)
 
-# Persist the hotkey choice as the MCM value so it survives a restart. The
-# config file is MCM's own; here we only flip the "value" of an existing entry.
+# Persist the hotkey choice in our own state file. MCM keeps an in-memory copy
+# and rewrites its config wholesale, so writing the toggle there gets clobbered.
 func _save_thermal_enabled(v: bool) -> void:
-	if not FileAccess.file_exists(CONFIG_FILE):
-		return
-	var cf := ConfigFile.new()
-	if cf.load(CONFIG_FILE) != OK:
-		return
-	if not cf.has_section_key("Bool", "thermal_enabled"):
-		return
-	var d = cf.get_value("Bool", "thermal_enabled", {})
-	if typeof(d) != TYPE_DICTIONARY:
-		return
-	d["value"] = v
-	cf.set_value("Bool", "thermal_enabled", d)
-	cf.save(CONFIG_FILE)
+	var sf := ConfigFile.new()
+	sf.set_value("state", "thermal_enabled", v)
+	sf.save(STATE_FILE)
+
+func _read_thermal_enabled() -> Variant:
+	if not FileAccess.file_exists(STATE_FILE):
+		return null
+	var sf := ConfigFile.new()
+	if sf.load(STATE_FILE) != OK:
+		return null
+	return bool(sf.get_value("state", "thermal_enabled", false))
 
 # ---------- MCM ----------
 
@@ -151,7 +151,14 @@ func _mcm_apply(cfg: ConfigFile) -> void:
 	if _nvg == null or not is_instance_valid(_nvg):
 		return
 	_key_thermal_toggle = int(_mcm_key_val(cfg, "Keycode", "key_thermal_toggle", 0))
-	_thermal_enabled = bool(_mcm_key_val(cfg, "Bool", "thermal_enabled", false))
+	var mcm_thermal := bool(_mcm_key_val(cfg, "Bool", "thermal_enabled", false))
+	var saved = _read_thermal_enabled()
+	if saved != null and mcm_thermal == _mcm_thermal_seen:
+		_thermal_enabled = saved
+	else:
+		_thermal_enabled = mcm_thermal
+		_save_thermal_enabled(_thermal_enabled)
+	_mcm_thermal_seen = mcm_thermal
 	_mines_enabled = bool(_mcm_key_val(cfg, "Bool", "thermal_mines", true))
 	_nvg.set_nvg_noise = float(_mcm_key_val(cfg, "Float", "nvg_noise", 4.0))
 	_nvg.set_nvg_white = float(_mcm_key_val(cfg, "Float", "nvg_white", 1.0))
@@ -166,6 +173,9 @@ func _mcm_apply(cfg: ConfigFile) -> void:
 	_nvg.set_mines_enabled(_mines_enabled)
 
 func _apply_defaults() -> void:
+	var saved = _read_thermal_enabled()
+	if saved != null:
+		_thermal_enabled = saved
 	if _nvg != null and is_instance_valid(_nvg):
 		_nvg.set_thermal_enabled(_thermal_enabled)
 		_nvg.set_mines_enabled(_mines_enabled)
