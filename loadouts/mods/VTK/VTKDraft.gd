@@ -50,20 +50,32 @@ func add(path: String, item_name: String, slots, amount: float, type_name: Strin
 	if slot != "":
 		equip[slot] = _desc(path, item_name, amt, type_name)
 		return slot
+	_gear_add(path, item_name, amt, type_name, counted)
+	return ""
+
+# Общая gear-ветка add() и add_gear(): путь уже есть -> +1, иначе новая запись.
+# Вынесена, чтобы правило стекирования жило в одном месте, а шаг 2 мог класть
+# в снаряжение мимо free_slot_of.
+func _gear_add(path: String, item_name: String, amt: float, type_name: String, counted: bool) -> void:
 	var idx := gear_index_of(path)
 	if idx >= 0:
 		if gear[idx].has("count"):
 			gear[idx]["count"] = int(gear[idx].get("count", 1)) + 1
 		else:
 			gear[idx]["amount"] = float(gear[idx].get("amount", 1.0)) + 1.0
-		return ""
+		return
 	var d := _desc(path, item_name, amt, type_name)
 	if counted:
 		d["count"] = 1
 		d["amount"] = 0.0
 		d["full_mag"] = true
 	gear.append(d)
-	return ""
+
+# Клик на вкладке «Снаряжение» (шаг 2): слот не выбирается, авто-экип там
+# превращал гранату или ствол в снаряжение вопреки замыслу. Поэтому кладём
+# в снаряжение напрямую, без free_slot_of.
+func add_gear(path: String, item_name: String, amount: float, type_name: String, counted: bool = false) -> void:
+	_gear_add(path, item_name, maxf(0.0, amount), type_name, counted)
 
 # Положить предмет в конкретный слот. Занятый слот вытесняется: содержимое
 # уходит из сета целиком, потому что оружие или броня в снаряжении бессмысленны,
