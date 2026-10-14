@@ -1501,7 +1501,7 @@ func _rebuild_gear_grid(facets: Array) -> void:
 		var res = entry.get("item")
 		if res == null:
 			continue
-		_gear_grid.add_child(_make_item_cell(res, "", true))
+		_gear_grid.add_child(_make_item_cell(res, "", true, true))
 
 # Шаг 2 не фильтрует по слоту: слот-цель принадлежит шагу 1, и переносить её
 # сюда значило бы всюду показывать предметы только одного слота. Запрос тоже не
@@ -2628,7 +2628,7 @@ func _icon_stack(host: Control, art: Texture2D, icon_min: Vector2, name_text: St
 	vbox.add_child(name_lbl)
 	return vbox
 
-func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
+func _make_item_cell(item, forced_slot = null, gear := false, force_gear := false) -> Control:
 	var path_now: String = item.resource_path
 	var gi := _draft.gear_index_of(path_now) if (gear and _draft != null) else -1
 	var cell = Panel.new()
@@ -2733,11 +2733,11 @@ func _make_item_cell(item, forced_slot = null, gear := false) -> Control:
 	var it = item
 	# Шаг 2 зовёт клетку с пустой целью явно, иначе цель шага 1 переехала бы
 	# на шаг 2 вместе с клеткой. Клик по пустой gear-клетке добавляет предмет
-	# тем же _place_into (Draft.add).
+	# тем же _place_into (Draft.add_gear).
 	var slot := _target_slot if forced_slot == null else str(forced_slot)
 	cell.gui_input.connect(func(ev: InputEvent):
 		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
-			_place_into(it, slot)
+			_place_into(it, slot, force_gear)
 	)
 	# Рамка набора обязана переживать курсор: при выходе возвращаем ту же
 	# рамку, что стояла до наведения. Прежний общий normal_style гасил её,
@@ -2765,8 +2765,9 @@ func _item_slots(item) -> Array:
 # слотов нет - уходит в снаряжение.
 # Клик по предмету. Слот-цель решает всё: при явной цели предмет вытесняет то,
 # что стояло в этом слоте, при пустой занимает первый свободный слот сам, а если
-# слотов нет - уходит в снаряжение.
-func _place_into(item, slot: String) -> void:
+# слотов нет - уходит в снаряжение. force_gear (шаг 2) кладёт предмет сразу в
+# снаряжение через Draft.add_gear, минуя свободный слот экипировки.
+func _place_into(item, slot: String, force_gear := false) -> void:
 	if _draft == null or item == null:
 		return
 	var path := str(item.resource_path)
@@ -2790,6 +2791,12 @@ func _place_into(item, slot: String) -> void:
 	var counted := t == "Attachment" and str(res.get("subtype")) == "Magazine"
 	var slots = _item_slots(res)
 	var item_name := str(res.get("name"))
+	# Шаг 2 («Снаряжение»): слот не выбирается, предмет идёт в снаряжение и
+	# не занимает свободный слот экипировки.
+	if force_gear:
+		_draft.add_gear(path, item_name, amt, t, counted)
+		_after_place()
+		return
 	if slot != "":
 		# add_to_slot отказывает, не тронув набор, если предмет не подходит
 		# слоту. Отказ - это не вытеснение, поэтому сообщаем и выходим, а не
