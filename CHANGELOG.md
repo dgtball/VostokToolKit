@@ -4,6 +4,15 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.17.0] - 2026-10-14
+
+### Added
+- Weapons in a loadout now show their installed attachments on the preview art.
+- Equipment slots that hold a nested item (armor plate, NVG) show a small gear mark.
+
+### Changed
+- The remove button on equipment slots moved to the top-right corner and is easier to hit.
+
 ## [4.16.5] - 2026-10-14
 
 ### Added
