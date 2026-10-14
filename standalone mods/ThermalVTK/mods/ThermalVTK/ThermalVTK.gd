@@ -12,7 +12,7 @@ var _nvg: Node = null
 var _key_thermal_toggle: int = 0
 var _thermal_enabled: bool = false
 var _mines_enabled: bool = true
-var _mcm_thermal_seen: bool = false
+var _mcm_thermal_seen: int = -1
 
 func _ready() -> void:
 	_register_mcm()
@@ -152,13 +152,16 @@ func _mcm_apply(cfg: ConfigFile) -> void:
 		return
 	_key_thermal_toggle = int(_mcm_key_val(cfg, "Keycode", "key_thermal_toggle", 0))
 	var mcm_thermal := bool(_mcm_key_val(cfg, "Bool", "thermal_enabled", false))
+	var mcm_i: int = 1 if mcm_thermal else 0
 	var saved = _read_thermal_enabled()
-	if saved != null and mcm_thermal == _mcm_thermal_seen:
+	if _mcm_thermal_seen < 0:
+		_thermal_enabled = saved if saved != null else mcm_thermal
+	elif saved != null and mcm_i == _mcm_thermal_seen:
 		_thermal_enabled = saved
 	else:
 		_thermal_enabled = mcm_thermal
 		_save_thermal_enabled(_thermal_enabled)
-	_mcm_thermal_seen = mcm_thermal
+	_mcm_thermal_seen = mcm_i
 	_mines_enabled = bool(_mcm_key_val(cfg, "Bool", "thermal_mines", true))
 	_nvg.set_nvg_noise = float(_mcm_key_val(cfg, "Float", "nvg_noise", 4.0))
 	_nvg.set_nvg_white = float(_mcm_key_val(cfg, "Float", "nvg_white", 1.0))
