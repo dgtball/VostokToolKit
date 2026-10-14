@@ -4,6 +4,12 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.17.1] - 2026-10-14
+
+### Fixed
+
+- Items added on the Gear tab now go to the backpack instead of the equipment slots.
+
 ## [4.17.0] - 2026-10-14
 
 ### Added

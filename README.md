@@ -4,7 +4,7 @@ A quality-of-life toolkit for **Road to Vostok** вЂ” loadout presets, smarte
 
 ![Ironman Restart](assets/ironman-restart.jpg)
 
-**Version:** 4.17.0 В· **Loader:** Metro Mod Loader 3.4.2 В· **Game:** 0.2.1.0 В· **Language:** RU / EN
+**Version:** 4.17.1 В· **Loader:** Metro Mod Loader 3.4.2 В· **Game:** 0.2.1.0 В· **Language:** RU / EN
 
 ## Features
 
