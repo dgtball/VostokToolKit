@@ -134,18 +134,39 @@ func _teleport_internal(target_map: String, final_offset: Variant, dest_label: S
 	var scene := get_tree().current_scene
 	if scene != null:
 		prev_id = scene.get_instance_id()
+	var hooks := _hooks()
+	var wait_hook := hooks != null and hooks.has_signal("travel_arrived")
+	var arrived_flag := [false]
+	var cb := func(): arrived_flag[0] = true
+	if wait_hook:
+		hooks.connect("travel_arrived", cb)
 	loader.LoadScene(target_map)
 	if not await _wait_scene_change(prev_id):
+		if wait_hook:
+			hooks.disconnect("travel_arrived", cb)
 		_busy = false
 		_message(Loc.txt("Scene failed to load: ") + target_map, Color.RED)
 		return
-	if loader.has_method("SaveWorld"):
-		loader.SaveWorld()
-	if not await _await_map_ready():
+	var arrived := true
+	if wait_hook:
+		var guard := 0
+		while not arrived_flag[0] and guard < SCENE_WAIT_FRAMES:
+			await get_tree().process_frame
+			guard += 1
+		hooks.disconnect("travel_arrived", cb)
+		if arrived_flag[0]:
+			arrived = is_inside_tree()
+		else:
+			arrived = await _await_map_ready()
+	else:
+		arrived = await _await_map_ready()
+	if not arrived:
 		_busy = false
 		var label0 := dest_label if dest_label == "" else " (" + dest_label + ")"
 		_message(Loc.txt("Map ") + target_map + Loc.txt(" failed to load") + label0, Color.RED)
 		return
+	if loader.has_method("SaveWorld"):
+		loader.SaveWorld()
 	var point: Variant = _resolve_final_offset(final_offset)
 	if point is Vector3:
 		_place_player(point)
@@ -156,6 +177,13 @@ func _teleport_internal(target_map: String, final_offset: Variant, dest_label: S
 	_busy = false
 	var dest := target_map if dest_label == "" else target_map + " (" + dest_label + ")"
 	_message(Loc.txt("Teleport: ") + dest, Color.GREEN)
+
+
+func _hooks() -> Node:
+	var ui := get_node_or_null("/root/VTKUI")
+	if ui != null:
+		return ui.get_node_or_null("VTKHooks")
+	return null
 
 
 func _save_before_transition(target_map: String, loader: Node) -> void:
@@ -216,7 +244,6 @@ func _close_interfaces() -> void:
 		ui.call("ToggleInterface")
 	if game_data != null:
 		game_data.set("interface", false)
-		game_data.set("isOccupied", false)
 
 
 func _message(text: String, color: Color) -> void:

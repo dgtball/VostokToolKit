@@ -36,6 +36,7 @@ var _drag_amount: int = 0
 var _iface_cache = null
 
 signal kill_event(ev: Dictionary)
+signal travel_arrived
 
 var _last_damager: Dictionary = {}
 var _seen_deaths: Dictionary = {}
@@ -189,6 +190,7 @@ func _do_register() -> void:
 	_hooks_deposits.append(_lib.hook("interface-startinput-post", _on_tasks_startinput))
 	_hooks_deposits.append(_lib.hook("task-_on_complete_pressed", _on_task_complete_pressed))
 	_lib.hook("loader-newgame-post", _on_newgame_post)
+	_lib.hook("compiler-spawn-post", _on_compiler_spawn)
 	_hooks_equip.append(_lib.hook("loader-loadcharacter-post", _on_loadcharacter_post))
 	_hooks_context.append(_lib.hook("context-update-post", _on_context_update_post))
 	_hooks_context.append(_lib.hook("interface-contexttake", _on_context_take_replace))
@@ -202,7 +204,12 @@ func _do_register() -> void:
 	_hooks_equip.append(_lib.hook("interface-grab-pre", _on_grab_pre))
 	_hooks_equip.append(_lib.hook("interface-release-post", _on_release_post))
 	_registered = true
-	Log.log("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + _hooks_notes.size() + _hooks_deposits.size() + _hooks_equip.size() + _hooks_context.size() + 1) + " hooks)")
+	Log.log("[VTK] Per-frame hooks registered (" + str(_hooks_kc.size() + _hooks_notes.size() + _hooks_deposits.size() + _hooks_equip.size() + _hooks_context.size() + 2) + " hooks)")
+
+# Compiler.Spawn() - точный момент готовности карты: контроллер уже расставлен
+# ванилой (Compiler.gd:205-220). Телепорт ждёт именно это, а не крутит кадры.
+func _on_compiler_spawn() -> void:
+	travel_arrived.emit()
 
 # Late Start (and any mod that saves the world from its own loader-newgame-post
 # handler) writes world.difficulty from gameData.difficulty. That value is stale:
