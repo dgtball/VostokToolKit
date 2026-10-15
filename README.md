@@ -22,7 +22,7 @@ A quality-of-life toolkit for **Road to Vostok** вЂ” loadout presets, smarte
 ## Installation
 
 1. Install Metro Mod Loader for Road to Vostok.
-2. Download `Loadouts.vmz` from [Releases](https://github.com/dgtball/VostokToolKit/releases).
+2. Download `Loadouts.vmz` from [Releases](https://github.com/dgtball/rtv-mods/releases).
 3. Drop it into `Road to Vostok\mods\`.
 4. Launch the game.
 
