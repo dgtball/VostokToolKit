@@ -115,6 +115,23 @@ static func agent_kind(n: Node) -> String:
 # (probe: /root/Map/AI/Enemies/@Node3D@1056/Bandit). Used by the kill feed.
 const MODEL_NAMES := ["Bandit", "Guard", "Military", "Nomad", "Punisher", "Bogeyman"]
 
+# "AI_Nomad_2"/"Nomad_2"/"Nomad7" -> "Nomad": пул AI клеит к имени узла
+# префикс AI_ и номер инстанса; ни то, ни другое не входит в имя фракции.
+# Срезаем хвостовые цифры и подчёркивание перед ними, но имя, целиком
+# состоящее из цифр, не трогаем — иначе "AI_2" схлопнется в пусто.
+static func clean_ai_name(raw: String) -> String:
+	var s := raw.strip_edges()
+	if s.begins_with("AI_"):
+		s = s.substr(3)
+	var i := s.length()
+	while i > 0 and s.unicode_at(i - 1) >= 48 and s.unicode_at(i - 1) <= 57:
+		i -= 1
+	if i == 0:
+		return s
+	if i < s.length() and s.unicode_at(i - 1) == 95:
+		i -= 1
+	return s.substr(0, i)
+
 static func agent_display_name(n: Node) -> String:
 	if n == null or not is_instance_valid(n):
 		return "NPC"
@@ -123,7 +140,7 @@ static func agent_display_name(n: Node) -> String:
 	for cand in _identities(n):
 		var s := String(cand)
 		if s.begins_with("AI_"):
-			return s.substr(3)
+			return clean_ai_name(s.substr(3))
 	for c in n.get_children():
 		var cn := String(c.name)
 		if cn in MODEL_NAMES:
