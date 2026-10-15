@@ -1528,7 +1528,7 @@ func _rebuild_gear_grid(facets: Array) -> void:
 		var picked: Array = []
 		for e in found:
 			var res_it = e.get("item")
-			if res_it != null and _draft.has_path(str(res_it.resource_path)):
+			if res_it != null and _draft.gear_index_of(str(res_it.resource_path)) >= 0:
 				picked.append(e)
 		found = picked
 	if found.is_empty():
