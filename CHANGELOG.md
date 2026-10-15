@@ -4,6 +4,17 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.17.7] - 2026-10-15
+
+### Changed
+
+- Minor performance improvements and internal cleanup.
+
+### Fixed
+
+- Using map travel or shelter teleport with a panel open no longer grabs the item under the cursor.
+- Restarting after death is more reliable and no longer overrides the run mode the game applies to the new scene.
+
 ## [4.17.6] - 2026-10-15
 
 ### Fixed
