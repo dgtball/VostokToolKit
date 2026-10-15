@@ -4,11 +4,17 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.17.5] - 2026-10-15
+
+### Fixed
+
+- Depositing items into a task is more robust and no longer interferes with the vanilla task flow.
+
 ## [4.17.4] - 2026-10-15
 
 ### Fixed
 
-- «Kill attribution is more reliable for unusual weapon and explosion kills.»
+- Kill attribution is more reliable for unusual weapon and explosion kills.
 
 ## [4.17.3] - 2026-10-15
 
