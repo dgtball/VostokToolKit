@@ -15,7 +15,6 @@ const RU := {
 	' · To catalog: ': ' · В каталог: ',
 	' · Occupied slots: ': ' · Занятые слоты: ',
 	' failed to load': ' не прогрузилась',
-	' rnd.': ' обв.',
 	'Armor': 'Броня',
 	'Armor plates': 'Бронеплиты',
 	'Ammo': 'Патроны',

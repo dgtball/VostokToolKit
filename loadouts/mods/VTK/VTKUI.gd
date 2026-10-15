@@ -1317,8 +1317,6 @@ func _make_gear_action_row(path: String, desc: Dictionary) -> Control:
 		return _make_full_mag_btn(path, desc)
 	if str(_item_info(path).get("type")) == "Ammo":
 		return _make_full_ammo_btn(path, desc)
-	if _att_panel_needed(_item_info(path)):
-		return _make_att_btn(desc)
 	return null
 
 # Потолок для ручного ввода. cap = 0 значит "без потолка": в вводе берём
@@ -2612,12 +2610,10 @@ func _make_att_btn(desc) -> Button:
 	var path_now := str(desc.get("path", ""))
 	var atts = desc.get("attachments") if desc.has("attachments") else []
 	var b := Button.new()
-	b.text = Loc.txt(" rnd.") + str(atts.size()) + " "
-	b.custom_minimum_size = Vector2(0, 18)
-	b.add_theme_font_size_override("font_size", 8)
-	if atts.size() > 0:
-		b.add_theme_color_override("font_color", _gold)
-	VTKSurface.style_button(b, true)
+	b.icon = VTKSurface.gear_icon(18, _gold if atts.size() > 0 else VTKSurface.GREY)
+	b.expand_icon = true
+	b.custom_minimum_size = Vector2(20, 20)
+	VTKSurface.style_button(b, true, false, 2, 2, 2, 2)
 	b.pressed.connect(func(): _toggle_attachment_panel(path_now))
 	return b
 
@@ -2797,11 +2793,22 @@ func _make_item_cell(item, forced_slot = null, gear := false, force_gear := fals
 		vbox.add_child(row_a)
 
 		# Строка B: одно контекстное действие предмета, если оно есть.
-		# Патроны - разовый Full, обоймы - тумблер Full magazine/Empty,
-		# остальное с обвесами - rnd. (переехала из строки A).
+		# Патроны - разовый Full, обоймы - тумблер Full magazine/Empty.
+		# Обвесы больше не здесь: шестерёнка уехала в угол клетки.
 		var row_b := _make_gear_action_row(path_now, desc_g)
 		if row_b != null:
 			vbox.add_child(row_b)
+
+		# Обвесы: шестерёнка в левом верхнем углу, зеркально ✕ справа.
+		# Прежняя текстовая «обв.N» занимала строку B и больше не нужна.
+		if _att_panel_needed(_item_info(path_now)):
+			var gear_btn := _make_att_btn(desc_g)
+			cell.add_child(gear_btn)
+			gear_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+			gear_btn.offset_left = 2
+			gear_btn.offset_top = 2
+			gear_btn.offset_right = 22
+			gear_btn.offset_bottom = 22
 
 		# Удаление - крестик в правом верхнем углу клетки, красный: это
 		# уничтожение набора, его не должно быть рядом с «В инвентарь».
