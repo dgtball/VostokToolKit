@@ -1319,66 +1319,21 @@ func _make_gear_action_row(path: String, desc: Dictionary) -> Control:
 		return _make_full_ammo_btn(path, desc)
 	return null
 
-# Потолок для ручного ввода. cap = 0 значит "без потолка": в вводе берём
-# большое число, иначе клампилось бы к нулю.
-func _gear_edit_cap(path: String) -> int:
-	var cap := _gear_cap(path)
-	return int(cap) if cap >= 1.0 else 999999
-
-# Число в строке A: клик открывает ввод точного значения. Внутри - Label,
-# который подменяется LineEdit'ом на месте.
-func _make_gear_count(path: String, cnt: int) -> Control:
-	var holder := Control.new()
+# Число в строке A, по центру между «−» и «+». Голый Control детей не
+# раскладывает - число липло к левому верхнему углу; CenterContainer держит
+# его посередине. Ввод точного значения убран: поле наезжало на «+».
+func _make_gear_count(cnt: int) -> Control:
+	var holder := CenterContainer.new()
 	holder.custom_minimum_size = Vector2(30, 28)
+	holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var lbl := Label.new()
 	lbl.text = str(cnt)
 	lbl.add_theme_font_size_override("font_size", 13)
 	lbl.add_theme_color_override("font_color", _gold)
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	lbl.mouse_filter = Control.MOUSE_FILTER_STOP
-	lbl.gui_input.connect(func(ev: InputEvent):
-		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
-			_open_gear_amount_edit(holder, lbl, path, cnt)
-	)
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	holder.add_child(lbl)
 	return holder
-
-# Клик по числу: Label -> LineEdit. Enter/потеря фокуса применяют значение,
-# Esc отменяет. settled гасит двойной вызов (Enter + focus_exited).
-func _open_gear_amount_edit(holder: Control, lbl: Label, path: String, cnt: int) -> void:
-	var edit := LineEdit.new()
-	edit.text = str(cnt)
-	edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	edit.add_theme_font_size_override("font_size", 12)
-	edit.custom_minimum_size = Vector2(30, 28)
-	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	edit.add_theme_stylebox_override("normal", VTKSurface.panel(true, 6))
-	edit.add_theme_stylebox_override("focus", VTKSurface.focus_style())
-	lbl.visible = false
-	holder.add_child(edit)
-	edit.grab_focus()
-	var settled := false
-	var apply := func(ok: bool) -> void:
-		if settled:
-			return
-		settled = true
-		if ok and _draft != null:
-			var v := clampi(edit.text.to_int(), 1, _gear_edit_cap(path))
-			_draft.set_gear_amount(path, float(v))
-		# Пересборка сетки убирает поле - откладываем на кадр, чтобы не
-		# освобождать узел внутри его же сигнала.
-		refresh.call_deferred(RefreshScope.PAGES)
-	edit.text_submitted.connect(func(_t: String) -> void: apply.call(true))
-	edit.focus_exited.connect(func() -> void: apply.call(true))
-	edit.gui_input.connect(func(ev: InputEvent) -> void:
-		if ev is InputEventKey and ev.pressed and ev.keycode == KEY_ESCAPE:
-			apply.call(false)
-	)
 
 func _set_gear_search(t: String) -> void:
 	_gear_search = t
@@ -2777,8 +2732,7 @@ func _make_item_cell(item, forced_slot = null, gear := false, force_gear := fals
 		var desc_g: Dictionary = _draft.gear[gi]
 		var cnt_g := Draft.shown_count(desc_g)
 
-		# Строка A: шаг. Число между «−» и «+» кликабельно (ввод точного
-		# значения). Дубль ×N убран - число живёт здесь само.
+		# Строка A: шаг «− n +». Дубль ×N убран - число живёт здесь само.
 		var row_a := HBoxContainer.new()
 		row_a.add_theme_constant_override("separation", 4)
 		row_a.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -2786,7 +2740,7 @@ func _make_item_cell(item, forced_slot = null, gear := false, force_gear := fals
 		var minus := _make_mini_btn("−", Vector2(28, 28), 15)
 		minus.pressed.connect(func(): _bump_gear(path_now, -1.0))
 		row_a.add_child(minus)
-		row_a.add_child(_make_gear_count(path_now, cnt_g))
+		row_a.add_child(_make_gear_count(cnt_g))
 		var plus := _make_mini_btn("+", Vector2(28, 28), 15)
 		plus.pressed.connect(func(): _bump_gear(path_now, 1.0))
 		row_a.add_child(plus)
