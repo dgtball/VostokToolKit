@@ -3,6 +3,7 @@ const Paths = preload("res://mods/VTK/VTKPaths.gd")
 
 var _enabled: bool = false
 var _label: Label = null
+var _panel: PanelContainer = null
 var _kills: int = 0
 var _alive_cnt: int = 0
 var _nomad_cnt: int = 0
@@ -17,20 +18,32 @@ var _scene_ref: Node = null
 func _ready() -> void:
 	name = "VTKKillCounter"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Подложка: без неё светлый HUD на солнце съедает надпись. Тот же приём,
+	# что у строки ленты (VTKFeed): чёрный 0.45 + узкие поля.
+	_panel = PanelContainer.new()
+	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_panel.position = Vector2(10, 10)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0.45)
+	sb.content_margin_left = 6.0
+	sb.content_margin_right = 6.0
+	sb.content_margin_top = 1.0
+	sb.content_margin_bottom = 1.0
+	_panel.add_theme_stylebox_override("panel", sb)
 	_label = Label.new()
 	_label.add_theme_color_override("font_color", Color(0.9, 0.85, 0.7))
 	_label.add_theme_font_size_override("font_size", 13)
 	var hud := Paths.hud_font()
 	if hud != null:
 		_label.add_theme_font_override("font", hud)
-	_label.position = Vector2(10, 10)
-	_label.visible = false
-	add_child(_label)
+	_panel.add_child(_label)
+	_panel.visible = false
+	add_child(_panel)
 	get_tree().node_added.connect(_on_node_added)
 
 func set_enabled(v: bool) -> void:
 	_enabled = v
-	_label.visible = v
+	_panel.visible = v
 	if v:
 		_reseed()
 	if not v:
