@@ -4,6 +4,20 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.17.3] - 2026-10-15
+
+### Changed
+
+- The magazine Full/Empty toggle is shorter and fits the gear item's cell.
+- Attachments now open from a gear icon in the cell's corner.
+- The gear count is centered between − and +; click-to-type amount was removed.
+
+### Fixed
+
+- "Only selected" on the Gear tab no longer lists items already worn in equipment.
+- Kill stats got a background so they stay readable in daylight.
+- The kill feed no longer appends a number suffix to enemy or Nomad names.
+
 ## [4.17.2] - 2026-10-14
 
 ### Changed
