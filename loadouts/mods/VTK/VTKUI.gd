@@ -1300,7 +1300,7 @@ func _make_full_ammo_btn(path: String, _desc: Dictionary) -> Button:
 func _make_full_mag_btn(path: String, desc: Dictionary) -> Button:
 	var on := Draft.is_full(desc)
 	var b := Button.new()
-	_style_full_btn(b, on, Loc.txt("Full magazine") if on else Loc.txt("Empty"))
+	_style_full_btn(b, on, Loc.txt("Full mag") if on else Loc.txt("Empty mag"))
 	b.pressed.connect(func():
 		if _draft == null:
 			return
