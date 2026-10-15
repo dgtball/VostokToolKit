@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.0] - 2026-10-15
+
+### Added
+- The mod loader now shows this mod's thumbnail and checks for updates.
+
 ## [1.0.0] - 2026-10-14
 
 ### Added

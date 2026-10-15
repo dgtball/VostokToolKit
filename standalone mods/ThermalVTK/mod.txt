@@ -1,10 +1,13 @@
 [mod]
 name="ThermalVTK"
 id="thermal-vtk"
-version="1.0.0"
+version="1.1.0"
 
 [autoload]
 ThermalVTK="res://mods/ThermalVTK/ThermalVTK.gd"
 
 [dependencies]
 optional=["mod_configuration_menu"]
+
+[updates]
+source="vostokmods:01a13ece-21bc-7143-b326-e66cccf9790e"
