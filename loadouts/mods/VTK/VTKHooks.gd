@@ -1247,27 +1247,21 @@ func _on_task_complete_pressed() -> void:
 	if card == null or not is_instance_valid(card) or not _card_covered(card):
 		return
 	var iface = card.get("interface")
-	var trader = iface.get("trader") if iface != null else null
-	var task_data = card.get("taskData") if card != null else null
-	if iface == null or trader == null or task_data == null:
+	if iface == null or not is_instance_valid(iface):
 		return
+	var task_data = card.get("taskData")
+	if task_data == null:
+		return
+	# Ванильный путь завершения задачи: StartInput ставит inputTarget=card,
+	# Complete сам делает CompleteTask/UpdateTraderInfo/DestroyInputItems/
+	# GetOutputItems/ResetInput. Вклад уже списал предметы, поэтому удалять
+	# нечего и повторного CompleteTask нет.
+	if iface.has_method("StartInput"):
+		iface.call("StartInput", card)
 	if card.has_method("Completed"):
 		card.Completed()
-	if trader.has_method("CompleteTask"):
-		trader.call("CompleteTask", task_data)
-	if iface.has_method("UpdateTraderInfo"):
-		iface.call("UpdateTraderInfo")
-	# Награды — ванильным GetOutputItems, который читает inputTarget.outputGrid.
-	var prev_target = iface.get("inputTarget")
-	var prev_inputting = iface.get("isInputting")
-	iface.set("inputTarget", card)
-	iface.set("isInputting", true)
-	if iface.has_method("GetOutputItems"):
-		iface.call("GetOutputItems")
-	iface.set("inputTarget", prev_target)
-	iface.set("isInputting", prev_inputting)
-	if iface.has_method("ResetInput"):
-		iface.call("ResetInput")
+	if iface.has_method("Complete"):
+		iface.call("Complete", task_data)
 	if _lib != null:
 		_lib.skip_super()
 	_render_task_card(iface, card)
