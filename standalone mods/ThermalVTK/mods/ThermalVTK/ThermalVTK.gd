@@ -44,7 +44,7 @@ func _toggle_thermal() -> void:
 		Color.GREEN if _thermal_enabled else Color(0.7, 0.7, 0.7))
 	_save_thermal_enabled(_thermal_enabled)
 
-# Same toast channel the toolkit uses for "Loadout ... applied".
+# Toast channel exposed by the game's /root/Loader (loader.Message).
 func _notify(text: String, color: Color) -> void:
 	var loader = get_node_or_null(Paths.LOADER)
 	if loader != null and loader.has_method("Message"):
@@ -55,7 +55,9 @@ func _notify(text: String, color: Color) -> void:
 func _save_thermal_enabled(v: bool) -> void:
 	var sf := ConfigFile.new()
 	sf.set_value("state", "thermal_enabled", v)
-	sf.save(STATE_FILE)
+	var err := sf.save(STATE_FILE)
+	if err != OK:
+		push_warning("ThermalVTK: failed to save thermal state (%d)" % err)
 
 func _read_thermal_enabled() -> Variant:
 	if not FileAccess.file_exists(STATE_FILE):
@@ -91,7 +93,7 @@ func _register_mcm() -> void:
 	cfg.set_value("Int", "thermal_bot_preset", {"default": 0, "value": 0, "minRange": 0, "maxRange": 3, "step": 1, "category": CAT, "menu_pos": 10, "tooltip": "0 = Amber, 1 = White, 2 = Orange, 3 = Red. Living bots glow in this colour; a corpse cools from the head down before disappearing.", "name": "Bot colour"})
 	cfg.set_value("Float", "thermal_far_distance", {"default": 45.0, "value": 45.0, "minRange": 5.0, "maxRange": 300.0, "step": 5.0, "category": CAT, "menu_pos": 11, "tooltip": "Bots and mines only glow within this distance; past it they read as ordinary scenery. 5 = only right beside you, 300 = the whole map.", "name": "Distance"})
 	cfg.set_value("Info", "version", _mod_version())
-	cfg.set_value("Info", "author", "opencode")
+	cfg.set_value("Info", "author", "CaptiveAI and opencode")
 	DirAccess.make_dir_recursive_absolute(CONFIG_DIR)
 	_sync_config(cfg)
 	MCM.RegisterConfiguration(MOD_ID, MOD_NAME, CONFIG_DIR, "NVG thermal overlay: bot, mine and Nomad highlighting", _mcm_apply, self)
