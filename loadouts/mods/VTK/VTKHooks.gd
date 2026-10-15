@@ -61,11 +61,11 @@ var _death_find_since: int = 0
 var _death_gave_up: bool = false
 const DEATH_PROBE_MS := 1000
 var _death_probe_at: int = 0
-# Поиск сцены Death - это обращение к дереву; в живом рейде она всегда
-# отсутствует. Держим результат 200 мс, чтобы не искать её каждый кадр.
-const DEATH_SCENE_POLL_MS := 200
-var _death_scene_at: int = 0
-var _death_scene_hit: bool = false
+# Сцена Death отслеживается событийно: SceneTree.scene_changed эмитится, когда
+# новая сцена уже добавлена и инициализирована, поэтому current_scene в
+# обработчике достоверна. Кадровый опрос с TTL больше не нужен - флаг читает
+# _death_scene_present, а обновляет _on_scene_changed.
+var _death_scene_flag: bool = false
 
 # The death screen was never handled at all: the whole handler rode the
 # controller-_physics_process hook, and Controller is a node inside /root/Map,
@@ -82,6 +82,7 @@ const IRONMAN_MAPS := ["Highway", "School", "Outpost", "Apartments"]
 
 func _ready() -> void:
 	name = "VTKHooks"
+	get_tree().scene_changed.connect(_on_scene_changed)
 	Log.log("[VTK] Hooks node ready, RTVModLib=" + str(Engine.has_meta("RTVModLib")))
 
 func get_kill_count() -> int:
@@ -109,17 +110,14 @@ const GAME_DATA_RES := Paths.GAME_DATA
 func _resolve_gamedata() -> Variant:
 	if _gd_node != null and is_instance_valid(_gd_node):
 		return _gd_node
-	var direct = load(GAME_DATA_RES) if ResourceLoader.exists(GAME_DATA_RES) else null
-	if direct != null:
-		_gd_node = direct
-		return _gd_node
-	# Fall back to whatever exposes the permadeath flags.
-	for c in get_tree().root.get_children():
-		if "isDead" in c and "permadeath" in c:
-			_gd_node = c
-			Log.log("[VTK] GameData resolved by flag scan: " + str(c.name) + " (" + c.get_class() + ")")
-			return _gd_node
-	return null
+	# Only the real resource: GameData.tres is a known path (Paths.GAME_DATA).
+	# Scanning the tree for a node that happens to expose isDead/permadeath was a
+	# guess that could latch onto an unrelated object; the typed load is exact.
+	if ResourceLoader.exists(GAME_DATA_RES):
+		var direct = load(GAME_DATA_RES)
+		if direct != null:
+			_gd_node = direct
+	return _gd_node
 
 func _poll_death() -> void:
 	var gd = _resolve_gamedata()
@@ -1320,12 +1318,14 @@ func _death_scene_root() -> Node:
 		return cs
 	return get_tree().root.get_node_or_null("Death")
 
+# scene_changed сообщает о новой сцене, уже добавленной в дерево, поэтому
+# читаем текущую сцену прямо здесь; _death_scene_root() сохраняет прежнюю
+# двойную проверку (current_scene или /root/Death) без изменений поведения.
+func _on_scene_changed() -> void:
+	_death_scene_flag = _death_scene_root() != null
+
 func _death_scene_present() -> bool:
-	var now := Time.get_ticks_msec()
-	if now - _death_scene_at >= DEATH_SCENE_POLL_MS:
-		_death_scene_at = now
-		_death_scene_hit = _death_scene_root() != null
-	return _death_scene_hit
+	return _death_scene_flag
 
 func _find_load_button(root: Node) -> BaseButton:
 	var best: BaseButton = null
@@ -1384,32 +1384,6 @@ func _resolve_start_season() -> int:
 			return int(s)
 	return 1
 
-func _wipe_saves_for_restart() -> void:
-	var ldr = get_node_or_null(Paths.LOADER)
-	if ldr != null and ldr.has_method("FormatSave"):
-		Log.log("[VTK] Restart: wiping saves via Loader.FormatSave()")
-		ldr.call("FormatSave")
-		return
-	var dir = DirAccess.open("user://")
-	if dir == null:
-		Log.log("[VTK] Restart: ERROR cannot open user://")
-		return
-	var names: Array = []
-	dir.list_dir_begin()
-	var f := dir.get_next()
-	while f != "":
-		if f.ends_with(".tres") and f != "Validator.tres" and f != "Preferences.tres":
-			names.append(f)
-		f = dir.get_next()
-	dir.list_dir_end()
-	for n in names:
-		var path := "user://" + String(n)
-		if dir.remove(path) == OK:
-			Log.log("[VTK] Restart: removed " + String(n))
-		else:
-			Log.log("[VTK] Restart: FAILED to remove " + String(n))
-
-
 func _on_restart_pressed(gd, root) -> void:
 	Log.log("[VTK] Restart: starting new game...")
 	_death_latched = false
@@ -1426,12 +1400,7 @@ func _on_restart_pressed(gd, root) -> void:
 	var start_map = "Cabin"
 	if _death_is_ironman:
 		start_map = IRONMAN_MAPS[randi() % IRONMAN_MAPS.size()]
-		gd.set("shelter", false)
-		gd.set("permadeath", true)
 		gd.set("difficulty", 3)
-	else:
-		gd.set("shelter", true)
-		gd.set("permadeath", false)
 	gd.set("currentMap", start_map)
 	var ldr = get_node_or_null(Paths.LOADER)
 	if ldr == null:
@@ -1442,9 +1411,9 @@ func _on_restart_pressed(gd, root) -> void:
 		difficulty = 3
 	elif gd.get("difficulty") != null:
 		difficulty = int(gd.get("difficulty"))
-	if ldr.has_method("NewGame"):
-		ldr.call("NewGame", difficulty, _resolve_start_season())
-	else:
-		_wipe_saves_for_restart()
+	# Loader.NewGame() сам пересобирает World/Character/Traders, а режим карты
+	# (shelter/permadeath) выставляет LoadScene по имени сцены (Loader.gd:252-361);
+	# дублировать их здесь незачем. Рестарт без NewGame невозможен.
+	ldr.call("NewGame", difficulty, _resolve_start_season())
 	ldr.LoadScene(start_map)
 	Log.log("[VTK] Restart: loading " + start_map + " ironman=" + str(_death_is_ironman))
