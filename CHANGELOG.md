@@ -4,6 +4,12 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.17.6] - 2026-10-15
+
+### Fixed
+
+- Map travel and shelter teleport are more reliable across scene changes.
+
 ## [4.17.5] - 2026-10-15
 
 ### Fixed
