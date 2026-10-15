@@ -76,98 +76,39 @@ func _deferred_check(node_id: int) -> void:
 	if kind != "":
 		_agents[node_id] = kind
 
-# AISpawner.gd never calls add_to_group() on itself, so walking the
-# "AISpawner" group always comes back empty. Match bots by the same
-# signature the NVG node uses instead -- a node with an Activate() entry
-# point and a `dead` flag.
+# Игровой агент AI.gd несёт @export identifier+var variant: AIData (AI.gd:20/60),
+# а не только Activate/dead. variant - устойчивый маркер агента и источник
+# фракции/имени, в отличие от duck-typing по методам и разбора имён узлов.
 static func _is_agent(n: Node) -> bool:
-	return n is Node3D and n.has_method("Activate") and "dead" in n
+	return n is Node3D and "variant" in n
 
-# Vanilla keeps spawned AI under fixed pools: /root/Map/AI/E_Pool holds the
-# Bandits/Guards, N_Pool the Nomads, B_Pool the Bogeyman/Punisher. Some maps also
-# Classify by the agent's own script, not by the pool it sits in.
-# AISpawner reparents every activated agent out of E_Pool/N_Pool into the shared
-# "Enemies" node, so walking up the ancestor chain reported a live AI_Nomad as an
-# enemy the moment it spawned -- which is how a Nomad ended up in the enemy tally.
-# AISpawner preloads res://AI/Nomad/AI_Nomad.tscn and the hostiles from
-# res://AI/Bandit, /Guard, /Military, so the script name is the stable identity.
-const SCRIPT_NOMAD := "AI_Nomad"
-const SCRIPTS_ENEMY := ["AI_Bandit", "AI_Guard", "AI_Military"]
+# AIData.Faction (headless probe): Nomad 0, Bandit 1, Guard 2, Military 3, Boss 4.
+const FACTION_NOMAD := 0
+const FACTION_BOSS := 4
 
-# Every bot shares the same AI.gd base script, so get_script().resource_path
-# only ever yields "AI" and never names the variant. The instantiated node name
-# is what actually carries the identity (AI_Nomad, AI_Bandit, ...), and its
-# scene owner carries it too. Test all of them and take the first that matches.
 static func agent_kind(n: Node) -> String:
 	if not _is_agent(n):
 		return ""
-	for cand in _identities(n):
-		if cand.begins_with(SCRIPT_NOMAD):
-			return "nomad"
-		for e in SCRIPTS_ENEMY:
-			if cand.begins_with(String(e)):
-				return "enemy"
-	# Punisher/Bogeyman (B_Pool) and anything else stay uncounted.
-	return ""
-
-# Pool instances created without a preset name come out as "@Node3D@N" and
-# carry no "AI_" identity, but the faction model under them is always named
-# (probe: /root/Map/AI/Enemies/@Node3D@1056/Bandit). Used by the kill feed.
-const MODEL_NAMES := ["Bandit", "Guard", "Military", "Nomad", "Punisher", "Bogeyman"]
-
-# "AI_Nomad_2"/"Nomad_2"/"Nomad7" -> "Nomad": пул AI клеит к имени узла
-# префикс AI_ и номер инстанса; ни то, ни другое не входит в имя фракции.
-# Срезаем хвостовые цифры и подчёркивание перед ними, но имя, целиком
-# состоящее из цифр, не трогаем — иначе "AI_2" схлопнется в пусто.
-static func clean_ai_name(raw: String) -> String:
-	var s := raw.strip_edges()
-	if s.begins_with("AI_"):
-		s = s.substr(3)
-	var i := s.length()
-	while i > 0 and s.unicode_at(i - 1) >= 48 and s.unicode_at(i - 1) <= 57:
-		i -= 1
-	if i == 0:
-		return s
-	if i < s.length() and s.unicode_at(i - 1) == 95:
-		i -= 1
-	return s.substr(0, i)
+	var v = n.get("variant")
+	if v == null:
+		return ""
+	var f := int(v.get("faction"))
+	if f == FACTION_NOMAD:
+		return "nomad"
+	if f == FACTION_BOSS:
+		return ""
+	return "enemy"
 
 static func agent_display_name(n: Node) -> String:
 	if n == null or not is_instance_valid(n):
 		return "NPC"
-	if "boss" in n and bool(n.get("boss")):
-		return "Punisher"
-	for cand in _identities(n):
-		var s := String(cand)
-		if s.begins_with("AI_"):
-			return clean_ai_name(s.substr(3))
-	for c in n.get_children():
-		var cn := String(c.name)
-		if cn in MODEL_NAMES:
-			return cn
-	var kind := agent_kind(n)
-	if kind == "nomad":
-		return "Nomad"
+	var v = n.get("variant")
+	if v == null:
+		return "NPC"
+	var s := str(v.get("name")).strip_edges()
+	if s != "":
+		return s
 	return "NPC"
-
-static func _identities(n: Node) -> Array:
-	var out: Array = []
-	var s = n.get_script()
-	if s != null:
-		var path := String(s.resource_path)
-		if path != "":
-			var b := path.get_file().get_basename()
-			if b != "" and b != "AI":
-				out.append(b)
-	var nm := String(n.name)
-	if nm != "":
-		out.append(nm)
-	var o = n.owner
-	if o != null:
-		var on := String(o.name)
-		if on != "":
-			out.append(on)
-	return out
 
 func _reseed() -> void:
 	_agents.clear()

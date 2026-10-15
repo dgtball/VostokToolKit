@@ -776,11 +776,17 @@ func _agent_root(n: Node) -> Node:
 	return n
 
 func _weapon_name_of(n: Node) -> String:
-	for p in ["currentWeaponName", "weaponName", "currentWeapon", "weapon", "equippedWeapon", "activeWeapon"]:
-		if p in n:
-			var s := _weapon_str(n.get(p))
+	if n != null and is_instance_valid(n) and "weaponData" in n:
+		var wd = n.get("weaponData")
+		if wd != null and "name" in wd:
+			var s := str(wd.get("name")).strip_edges()
 			if s != "":
 				return s
+	for p in ["currentWeaponName", "weaponName", "currentWeapon", "weapon", "equippedWeapon", "activeWeapon"]:
+		if p in n:
+			var s2 := _weapon_str(n.get(p))
+			if s2 != "":
+				return s2
 	return ""
 
 # Значение свойства может быть строкой, именем или ресурсом предмета.
