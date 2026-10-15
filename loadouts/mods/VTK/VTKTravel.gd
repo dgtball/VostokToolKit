@@ -242,6 +242,18 @@ func _close_interfaces() -> void:
 		iface.call("Close")
 	elif ui != null and ui.has_method("ToggleInterface"):
 		ui.call("ToggleInterface")
+	# Клик по кнопке телепорта обрабатывается в том же кадре, что и ванильный
+	# Interface._physics_process, где ввод читается ДО обновления hover
+	# (блок ввода Interface.gd:290-322 стоит раньше вызова Hover() :346).
+	# С ещё живыми hoverItem/hoverGrid ваниль зовёт Grab() (:317) -> Pick/
+	# Unequip наведённого предмета ровно при смене сцены; HideAllUI() (:587)
+	# чистит только панели и hover не трогает. Зануляем hover здесь, пока
+	# клик ещё "свежий" и Hover() его не перетёр.
+	if iface != null:
+		iface.set("hoverItem", null)
+		iface.set("hoverGrid", null)
+		iface.set("hoverSlot", null)
+		iface.set("canUnequip", false)
 	if game_data != null:
 		game_data.set("interface", false)
 
