@@ -197,6 +197,12 @@ func _save_before_transition(target_map: String, loader: Node) -> void:
 	if iface == null:
 		return
 	loader.call("SaveCharacter")
+	# Мир (Simulation.*) сохраняем ДО смены сцены: Compiler.Spawn при загрузке
+	# карты зовёт Loader.LoadWorld(), а тот восстанавливает user://World.tres.
+	# Без этой записи телепорт откатывал время к последнему сохранению мира
+	# (обычный переход так делает сам — SAVE: World перед LoadScene).
+	if loader.has_method("SaveWorld"):
+		loader.call("SaveWorld")
 
 
 func _resolve_final_offset(final_offset: Variant) -> Variant:
