@@ -11,6 +11,7 @@ const TeleportTab := preload("res://mods/VTK/VTKTeleportTab.gd")
 const Features := preload("res://mods/VTK/VTKFeatureHost.gd")
 const MCMBridge := preload("res://mods/VTK/VTKMCMBridge.gd")
 const SetsRail := preload("res://mods/VTK/VTKSetsRail.gd")
+const Session := preload("res://mods/VTK/VTKLoadoutSession.gd")
 
 const UI_LAYER := 4095
 
@@ -29,7 +30,7 @@ var _main_vbox: VBoxContainer = null
 # здесь остаётся редактор черновика.
 var _rail: RefCounted = null
 var _editor_panel: VBoxContainer = null
-var _draft: Draft = null
+var _session: RefCounted = null
 var _name_input: LineEdit = null
 # Полосы категорий строятся как VBox из заголовка и HFlow с клетками: у
 # GridContainer нет растягивания на всю ширину, а полоса во всю ширину
@@ -38,23 +39,6 @@ var _shelves_box: VBoxContainer = null
 var _equip_grid_box: VBoxContainer = null
 var _target_bar: VBoxContainer = null
 var _gear_box: HBoxContainer = null
-# Какой панелью обвесов занят каждый шаг: путь своя у Экипировки и
-# Снаряжения, оверлей рендерит панель по текущей странице.
-var _open_equip_att: String = ""
-var _open_gear_att: String = ""
-# Предмет, который только что положили в набор: его обвесы открываются сами.
-var _last_placed: String = ""
-# Трёхшаговый выбор предмета. Страницы строятся один раз, переключение - visible,
-# поэтому _page_* и _step_btns переживают обновление содержимого.
-var _page: int = 0
-var _target_slot: String = ""
-# Фильтры каталога шага 1: категория и её подкатегория. Для экипировки
-# смотреть все предметы не нужно, поэтому отдельного пункта "Все предметы"
-# здесь нет - сбрасывает строку фильтров чип "Сброс".
-var _target_cat: String = ""
-var _target_sub: String = ""
-var _search_text: String = ""
-var _gear_search: String = ""
 var _search_debounce: Timer
 var _gear_search_debounce: Timer
 var _step_btns: Array = []
@@ -69,15 +53,6 @@ var _step_circles: Array = []
 var _step_numbers: Array = []
 var _step_checks: Array = []
 var _gear_search_field: LineEdit = null
-# Пунктирная строка «Только выбранные» в колонке категорий: в сетке
-# остаются только предметы, уже лежащие в сете.
-var _gear_only_selected: bool = false
-var _gear_facet_key: String = ""
-# Второй уровень фасетов шага 2: подкатегория внутри выбранной категории.
-var _gear_sub_key: String = ""
-# Повторный клик по активной категории сворачивает её подкатегории;
-# категория при этом остаётся выбранным фильтром.
-var _gear_subs_collapsed: bool = false
 var _gear_facets_box: VBoxContainer = null
 var _gear_grid: GridContainer = null
 var _gear_grid_scroll: ScrollContainer = null
@@ -191,6 +166,7 @@ func _init_later() -> void:
 	# Рейл до _build_ui: вкладка «Сеты» строится его builders.
 	_rail = SetsRail.new(self)
 	_rail.refresh_rail = Callable(self, "_refresh_rail")
+	_session = Session.new()
 	_build_ui()
 	_features._ensure_hooks()
 	_mcm.register(_features, Callable(self, "_rebuild_ui"), Callable(self, "_set_key_ui_toggle"))
@@ -619,7 +595,7 @@ func _build_editor() -> void:
 	_gear_search_field = null
 	_gear_facets_box = null
 	_gear_grid = null
-	_gear_facet_key = ""
+	_session.gear_facet_key = ""
 	_gear_grid_scroll = null
 	_shelves_box = null
 	_equip_grid_box = null
@@ -630,8 +606,8 @@ func _build_editor() -> void:
 	title_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_row.add_theme_constant_override("separation", 4)
 	var ed_title = Label.new()
-	if _draft != null and _draft.set_name != "":
-		ed_title.text = Loc.txt("Editing: ") + _draft.set_name
+	if _session.draft != null and _session.draft.set_name != "":
+		ed_title.text = Loc.txt("Editing: ") + _session.draft.set_name
 	else:
 		ed_title.text = Loc.txt("Create new loadout")
 	ed_title.add_theme_font_size_override("font_size", 12)
@@ -649,9 +625,9 @@ func _build_editor() -> void:
 	_editor_panel.add_child(_page_gear)
 	_editor_panel.add_child(_page_done)
 
-	_reset_picker_state()
+	_session.reset_picker_state()
 	_show_page(0)
-	_editor_panel.visible = _draft != null
+	_editor_panel.visible = _session.draft != null
 	refresh(RefreshScope.PAGES | RefreshScope.PREVIEW)
 
 # Кнопки шагов строятся один раз, переключение идёт через _show_page.
@@ -672,14 +648,14 @@ func _build_stepper() -> Control:
 		var card := PanelContainer.new()
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card.mouse_filter = Control.MOUSE_FILTER_STOP
-		card.add_theme_stylebox_override("panel", _make_step_row_style(_page == idx))
+		card.add_theme_stylebox_override("panel", _make_step_row_style(_session.page == idx))
 		card.gui_input.connect(func(ev):
 			var mb := ev as InputEventMouseButton
 			if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 				_show_page(idx)
 		)
 		_attach_row_hover(card, func(hv: bool):
-			return _make_step_row_style(_page == idx, hv))
+			return _make_step_row_style(_session.page == idx, hv))
 		_attach_motion(card)
 
 		var hb := HBoxContainer.new()
@@ -687,7 +663,7 @@ func _build_stepper() -> Control:
 		hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		card.add_child(hb)
 
-		var circle := _make_step_circle(idx + 1, _page == idx)
+		var circle := _make_step_circle(idx + 1, _session.page == idx)
 		_step_circles.append(circle)
 		hb.add_child(circle)
 		var num := circle.get_child(0) as Label
@@ -696,7 +672,7 @@ func _build_stepper() -> Control:
 		var lab := Label.new()
 		lab.text = titles[i]
 		lab.add_theme_font_size_override("font_size", 11)
-		lab.add_theme_color_override("font_color", _gold if _page == idx else VTKSurface.GREY)
+		lab.add_theme_color_override("font_color", _gold if _session.page == idx else VTKSurface.GREY)
 		lab.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_step_labels.append(lab)
 		hb.add_child(lab)
@@ -705,7 +681,7 @@ func _build_stepper() -> Control:
 		chk.text = "\u2713"
 		chk.add_theme_font_size_override("font_size", 10)
 		chk.add_theme_color_override("font_color", _gold)
-		chk.visible = idx < _page
+		chk.visible = idx < _session.page
 		chk.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_step_checks.append(chk)
 		hb.add_child(chk)
@@ -764,15 +740,15 @@ func _attach_row_hover(row: Control, make_style: Callable) -> void:
 		row.add_theme_stylebox_override("panel", make_style.call(false)))
 
 func _show_page(n: int) -> void:
-	_page = clampi(n, 0, 2)
+	_session.page = clampi(n, 0, 2)
 	if _page_equip != null:
-		_page_equip.visible = _page == 0
+		_page_equip.visible = _session.page == 0
 	if _page_gear != null:
-		_page_gear.visible = _page == 1
+		_page_gear.visible = _session.page == 1
 	if _page_done != null:
-		_page_done.visible = _page == 2
+		_page_done.visible = _session.page == 2
 	for i in range(_step_btns.size()):
-		var on := i == _page
+		var on: bool = i == _session.page
 		var card := _step_btns[i] as PanelContainer
 		if card != null:
 			card.add_theme_stylebox_override("panel", _make_step_row_style(on))
@@ -791,7 +767,7 @@ func _show_page(n: int) -> void:
 		if i < _step_checks.size():
 			var chk := _step_checks[i] as Label
 			if chk != null:
-				chk.visible = i < _page
+				chk.visible = i < _session.page
 	# При смене шага оверлей перерисовывается по пути новой страницы:
 	# чужая панель закрывается, своя - открывается.
 	refresh(RefreshScope.OVERLAY)
@@ -804,19 +780,6 @@ func _clear_problem() -> void:
 	if _page_label != null:
 		_page_label.text = ""
 
-# Цель и поиск живут между пересборками редактора. Без сброса новый сет
-# начинался бы с чужим слотом в цели и невидимым запросом в поле поиска.
-func _reset_picker_state() -> void:
-	_target_slot = ""
-	_search_text = ""
-	_gear_search = ""
-	_gear_facet_key = ""
-	_gear_sub_key = ""
-	_gear_subs_collapsed = false
-	_gear_only_selected = false
-	_open_equip_att = ""
-	_open_gear_att = ""
-	_last_placed = ""
 
 # У ScrollContainer минимальная высота 0: содержимое скроллится, а сам он
 # место не занимает. Высоту area получает только от custom_minimum_size либо
@@ -1029,12 +992,12 @@ func _make_mini_btn(label: String, size := Vector2(15, 16), font := 8) -> Button
 	return b
 
 func _remove_gear(path: String) -> void:
-	if _draft == null:
+	if _session.draft == null:
 		return
-	if _open_gear_att == path:
-		_open_equip_att = ""
-		_open_gear_att = ""
-	_draft.remove_gear(path)
+	if _session.open_gear_att == path:
+		_session.open_equip_att = ""
+		_session.open_gear_att = ""
+	_session.draft.remove_gear(path)
 	refresh(RefreshScope.PAGES)
 
 # Единый вид кнопок Full: включено - заливка и золотая точка, выключено -
@@ -1053,13 +1016,13 @@ func _style_full_btn(b: Button, on: bool, label: String, dot := true) -> void:
 # удлиняли кнопку и вылезали за клетку.
 func _make_full_ammo_btn(path: String, _desc: Dictionary) -> Button:
 	var cap := _gear_cap(path)
-	var on := cap > 0.0 and _draft != null and _draft.amount_of(path) >= cap
+	var on: bool = cap > 0.0 and _session.draft != null and _session.draft.amount_of(path) >= cap
 	var b := Button.new()
 	_style_full_btn(b, on, Loc.txt("Full"), false)
 	b.pressed.connect(func():
-		if _draft == null or cap <= 0.0:
+		if _session.draft == null or cap <= 0.0:
 			return
-		_draft.set_gear_amount(path, cap)
+		_session.draft.set_gear_amount(path, cap)
 		refresh(RefreshScope.PAGES)
 	)
 	return b
@@ -1071,11 +1034,11 @@ func _make_full_mag_btn(path: String, desc: Dictionary) -> Button:
 	var b := Button.new()
 	_style_full_btn(b, on, Loc.txt("Full mag") if on else Loc.txt("Empty mag"))
 	b.pressed.connect(func():
-		if _draft == null:
+		if _session.draft == null:
 			return
 		# Состояние берём с актуального descriptor'а, а не с захваченного
 		# desc: после пересборки клеток он уже может быть не тем объектом.
-		_draft.set_full_mag(path, not Draft.is_full(_draft.descriptor_of(path)))
+		_session.draft.set_full_mag(path, not Draft.is_full(_session.draft.descriptor_of(path)))
 		refresh(RefreshScope.PAGES)
 	)
 	return b
@@ -1105,7 +1068,7 @@ func _make_gear_count(cnt: int) -> Control:
 	return holder
 
 func _set_gear_search(t: String) -> void:
-	_gear_search = t
+	_session.gear_search = t
 	# Дебаунс, как у шага 1: пересборка каталога идёт не на каждый символ.
 	if _gear_search_debounce != null:
 		_gear_search_debounce.start()
@@ -1120,8 +1083,8 @@ func _apply_gear_search() -> void:
 # дважды.
 func _refresh_gear_catalog() -> void:
 	var facets: Array = []
-	if _draft != null:
-		facets = Picker.facets_of(_items_for_gear(), _gear_search)
+	if _session.draft != null:
+		facets = Picker.facets_of(_items_for_gear(), _session.gear_search)
 	_rebuild_gear_facets(facets)
 	_rebuild_gear_grid(facets)
 
@@ -1171,7 +1134,7 @@ func _rebuild_gear_facets(facets: Array) -> void:
 	for child in _gear_facets_box.get_children():
 		_gear_facets_box.remove_child(child)
 		child.queue_free()
-	if _draft == null:
+	if _session.draft == null:
 		return
 	for f in facets:
 		var key := str(f.get("key", ""))
@@ -1179,13 +1142,13 @@ func _rebuild_gear_facets(facets: Array) -> void:
 		# Подкатегории - второй уровень: они идут сразу под своей категорией и
 		# отступом от неё отличаются. На строке "Все предметы" их нет: список
 		# занял бы полколонки и означал бы третье измерение фильтра.
-		if _gear_facet_key != "" and key == _gear_facet_key and not _gear_subs_collapsed:
+		if _session.gear_facet_key != "" and key == _session.gear_facet_key and not _session.gear_subs_collapsed:
 			for s in _gear_subfacets(f.get("items", [])):
 				_gear_facets_box.add_child(_make_facet_row(s, true))
 	# Пунктирная строка «Только выбранные» - в конце списка категорий.
-	_gear_facets_box.add_child(ChosenRow.new(_gear_only_selected,
+	_gear_facets_box.add_child(ChosenRow.new(_session.gear_only_selected,
 		Loc.txt("Only selected"), func():
-			_gear_only_selected = not _gear_only_selected
+			_session.gear_only_selected = not _session.gear_only_selected
 			refresh(RefreshScope.GEAR)))
 
 # Клик по активной строке сворачивает/разворачивает её подкатегории;
@@ -1193,7 +1156,7 @@ func _rebuild_gear_facets(facets: Array) -> void:
 # строка «Все предметы»
 func _make_facet_row(facet: Dictionary, level: bool) -> Control:
 	var key := str(facet.get("key", ""))
-	var active := _gear_sub_key == key if level else _gear_facet_key == key
+	var active: bool = _session.gear_sub_key == key if level else _session.gear_facet_key == key
 	var row := PanelContainer.new()
 	row.custom_minimum_size = Vector2(0, 28 if level else 31)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1259,21 +1222,21 @@ func _gear_subfacets(items) -> Array:
 	return out
 
 func _set_gear_sub(key: String) -> void:
-	_gear_sub_key = "" if _gear_sub_key == key else key
+	_session.gear_sub_key = "" if _session.gear_sub_key == key else key
 	refresh(RefreshScope.GEAR)
 
 # Фасет меняет только набор клеток: предметы из набора не уходят, поэтому
 # открытая панель обвесов остаётся уместной.
 func _set_gear_facet(key: String) -> void:
-	if key != "" and key == _gear_facet_key:
+	if key != "" and key == _session.gear_facet_key:
 		# Повторный клик по активной категории сворачивает её подкатегории.
-		_gear_subs_collapsed = not _gear_subs_collapsed
+		_session.gear_subs_collapsed = not _session.gear_subs_collapsed
 	else:
-		_gear_facet_key = key
+		_session.gear_facet_key = key
 		# Смена категории сбрасывает подкатегорию: иначе после "Винтовки" ->
 		# "Пистолеты" остался бы фильтр "Снайперки" из прошлой ветки.
-		_gear_sub_key = ""
-		_gear_subs_collapsed = false
+		_session.gear_sub_key = ""
+		_session.gear_subs_collapsed = false
 	refresh(RefreshScope.GEAR)
 
 func _facet_items(facets: Array, key: String) -> Array:
@@ -1291,18 +1254,18 @@ func _rebuild_gear_grid(facets: Array) -> void:
 	for child in _gear_grid.get_children():
 		_gear_grid.remove_child(child)
 		child.queue_free()
-	var found := _facet_items(facets, _gear_facet_key)
-	if _gear_sub_key != "":
+	var found := _facet_items(facets, _session.gear_facet_key)
+	if _session.gear_sub_key != "":
 		var only: Array = []
 		for e in found:
-			if str(e.get("sub", "")) == _gear_sub_key:
+			if str(e.get("sub", "")) == _session.gear_sub_key:
 				only.append(e)
 		found = only
-	if _gear_only_selected and _draft != null:
+	if _session.gear_only_selected and _session.draft != null:
 		var picked: Array = []
 		for e in found:
 			var res_it = e.get("item")
-			if res_it != null and _draft.gear_index_of(str(res_it.resource_path)) >= 0:
+			if res_it != null and _session.draft.gear_index_of(str(res_it.resource_path)) >= 0:
 				picked.append(e)
 		found = picked
 	if found.is_empty():
@@ -1342,8 +1305,8 @@ func _build_page_done() -> Control:
 	_name_input.add_theme_color_override("placeholder_color", VTKSurface.GREY_DIM)
 	_name_input.add_theme_stylebox_override("normal", VTKSurface.panel(true, 10))
 	_name_input.add_theme_stylebox_override("focus", VTKSurface.focus_style())
-	if _draft != null:
-		_name_input.text = _draft.set_name
+	if _session.draft != null:
+		_name_input.text = _session.draft.set_name
 
 	# Хоткей назначается до сохранения: для нового сета бинд копится в
 	# _pending_qk и применяется в _save_loadout.
@@ -1381,8 +1344,8 @@ func _refresh_page_done() -> void:
 	VTKSurface.style_button(cancel_btn)
 	cancel_btn.pressed.connect(_cancel_draft)
 	_done_preview.add_child(_rail._build_set_preview(
-		_draft.equip if _draft else {},
-		_draft.gear if _draft else [],
+		_session.draft.equip if _session.draft else {},
+		_session.draft.gear if _session.draft else [],
 		false,
 		_rail._make_control_column(Loc.txt("Controls").to_upper(),
 			[_name_input, _rail._done_bind_btn, save_btn, cancel_btn])))
@@ -1426,7 +1389,7 @@ func _refresh_slots() -> void:
 	for child in _equip_grid_box.get_children():
 		_equip_grid_box.remove_child(child)
 		child.queue_free()
-	if _draft == null:
+	if _session.draft == null:
 		return
 	if _equip_cells.is_empty():
 		_build_equip_layout()
@@ -1547,12 +1510,12 @@ func _x_size(w: int, h: int) -> Dictionary:
 func _make_equip_cell(slot: String, w: int, h: int, desc: Dictionary = {}, interactive := true) -> Control:
 	var src: Dictionary = desc
 	if src.is_empty() and interactive:
-		if _draft != null:
-			var raw = _draft.equip.get(slot)
+		if _session.draft != null:
+			var raw = _session.draft.equip.get(slot)
 			if typeof(raw) == TYPE_DICTIONARY:
 				src = raw
 	var occupied := not src.is_empty()
-	var active := interactive and _target_slot == slot
+	var active: bool = interactive and _session.target_slot == slot
 	var box := Panel.new()
 	box.custom_minimum_size = Vector2(w * EQ_CELL + (w - 1) * EQ_GAP, h * EQ_CELL + (h - 1) * EQ_GAP)
 	box.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -1801,7 +1764,7 @@ func _on_slot_row_input(ev: InputEvent, slot: String, desc: Dictionary) -> void:
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
 	var path_now := str(desc.get("path", ""))
-	if path_now != "" and _target_slot == slot:
+	if path_now != "" and _session.target_slot == slot:
 		_toggle_attachment_panel(path_now)
 		return
 	_set_target_slot(slot)
@@ -1902,7 +1865,7 @@ func _rebuild_target_bar(found: Array) -> void:
 		child.queue_free()
 
 	var tgt := Label.new()
-	tgt.text = Loc.txt(_target_slot) if _target_slot != "" else "-"
+	tgt.text = Loc.txt(_session.target_slot) if _session.target_slot != "" else "-"
 	tgt.add_theme_font_size_override("font_size", 10)
 	tgt.add_theme_color_override("font_color", _gold)
 	_target_bar.add_child(tgt)
@@ -1916,8 +1879,8 @@ func _rebuild_target_bar(found: Array) -> void:
 	var show_line := false
 	if cats.size() > 1:
 		show_line = true
-		if _target_cat != "":
-			show_subs = _target_subs(found, _target_cat)
+		if _session.target_cat != "":
+			show_subs = _target_subs(found, _session.target_cat)
 	elif cats.size() == 1:
 		show_subs = _target_subs(found, cats[0])
 		show_line = show_subs.size() > 1
@@ -1937,15 +1900,15 @@ func _rebuild_target_bar(found: Array) -> void:
 
 	if cats.size() > 1:
 		for c in cats:
-			line.add_child(_make_filter_chip(c, _target_cat == c))
+			line.add_child(_make_filter_chip(c, _session.target_cat == c))
 	for sub in show_subs:
-		line.add_child(_make_filter_chip(sub, _target_sub == sub, true))
+		line.add_child(_make_filter_chip(sub, _session.target_sub == sub, true))
 
 	var reset := Button.new()
 	reset.text = Loc.txt("Reset")
 	reset.add_theme_font_size_override("font_size", 9)
 	reset.tooltip_text = Loc.txt("Reset")
-	var any_on := _target_cat != "" or _target_sub != ""
+	var any_on: bool = _session.target_cat != "" or _session.target_sub != ""
 	reset.add_theme_stylebox_override("normal", _make_chip_style(any_on))
 	reset.add_theme_color_override("font_color", _gold if any_on else VTKSurface.BROWN)
 	reset.pressed.connect(_reset_target_filters)
@@ -1971,19 +1934,19 @@ func _make_filter_chip(key: String, on: bool, level: bool = false) -> Button:
 	return b
 
 func _set_target_cat(c: String) -> void:
-	_target_cat = "" if _target_cat == c else c
+	_session.target_cat = "" if _session.target_cat == c else c
 	# Смена старшего уровня сбрасывает младший: иначе после "Винтовки" ->
 	# "Пистолеты" остался бы фильтр "Снайперки" из прошлой ветки.
-	_target_sub = ""
+	_session.target_sub = ""
 	refresh(RefreshScope.EQUIP)
 
 func _set_target_sub(s: String) -> void:
-	_target_sub = "" if _target_sub == s else s
+	_session.target_sub = "" if _session.target_sub == s else s
 	refresh(RefreshScope.EQUIP)
 
 func _reset_target_filters() -> void:
-	_target_cat = ""
-	_target_sub = ""
+	_session.target_cat = ""
+	_session.target_sub = ""
 	refresh(RefreshScope.EQUIP)
 
 # Записи каталога, подходящие слоту-цели и запросу, с посчитанной
@@ -1991,7 +1954,7 @@ func _reset_target_filters() -> void:
 # сетка под ней всегда показывают один и тот же набор.
 func _target_filter_items() -> Array:
 	var out: Array = []
-	if _draft == null:
+	if _session.draft == null:
 		return out
 	for e in _items_for_target():
 		var it = e.get("item")
@@ -2039,51 +2002,51 @@ func _target_subs(found: Array, cat: String) -> Array:
 # могло остаться одно или ноль предметов, и фильтр без чипов молча пускал бы
 # пустую сетку. Сбрасываем только то, чего больше нет в данных.
 func _validate_target_filters() -> void:
-	if _target_cat == "" and _target_sub == "":
+	if _session.target_cat == "" and _session.target_sub == "":
 		return
 	var found := _target_filter_items()
 	var cats := _target_cats(found)
-	if _target_cat != "":
-		if not cats.has(_target_cat):
-			_target_cat = ""
-			_target_sub = ""
-		elif _target_sub != "" and not _target_subs(found, _target_cat).has(_target_sub):
-			_target_sub = ""
+	if _session.target_cat != "":
+		if not cats.has(_session.target_cat):
+			_session.target_cat = ""
+			_session.target_sub = ""
+		elif _session.target_sub != "" and not _target_subs(found, _session.target_cat).has(_session.target_sub):
+			_session.target_sub = ""
 		return
 	if cats.size() == 1:
-		if _target_sub != "" and not _target_subs(found, cats[0]).has(_target_sub):
-			_target_sub = ""
+		if _session.target_sub != "" and not _target_subs(found, cats[0]).has(_session.target_sub):
+			_session.target_sub = ""
 	else:
-		_target_sub = ""
+		_session.target_sub = ""
 
 func _remove_slot(slot: String) -> void:
-	if _draft == null:
+	if _session.draft == null:
 		return
-	var path_now := str(_draft.equip.get(slot, {}).get("path", ""))
-	if _open_equip_att == path_now:
-		_open_equip_att = ""
-		_open_gear_att = ""
-	if _target_slot == slot:
-		_target_slot = ""
-	_draft.remove_slot(slot)
+	var path_now := str(_session.draft.equip.get(slot, {}).get("path", ""))
+	if _session.open_equip_att == path_now:
+		_session.open_equip_att = ""
+		_session.open_gear_att = ""
+	if _session.target_slot == slot:
+		_session.target_slot = ""
+	_session.draft.remove_slot(slot)
 	refresh(RefreshScope.PAGES)
 
 func _set_target_slot(slot: String) -> void:
-	_target_slot = slot
+	_session.target_slot = slot
 	# Цель сбрасывает открытую панель обвесов: она относилась к другому
 	# предмету, и оставить её висеть значило бы врать про набор.
-	_open_equip_att = ""
-	_open_gear_att = ""
-	_last_placed = ""
-	_target_cat = ""
-	_target_sub = ""
+	_session.open_equip_att = ""
+	_session.open_gear_att = ""
+	_session.last_placed = ""
+	_session.target_cat = ""
+	_session.target_sub = ""
 	_show_page(0)
 	refresh(RefreshScope.PAGES)
 
 # Живой поиск с дебаунсом: пересборка идёт не на каждый символ, а через
 # короткую паузу. Поле поиска не пересоздаётся и держит курсор.
 func _set_search(t: String) -> void:
-	_search_text = t
+	_session.search_text = t
 	if _search_debounce != null:
 		_search_debounce.start()
 
@@ -2109,12 +2072,12 @@ func _items_for_target() -> Array:
 	for it in Items.all():
 		if it == null:
 			continue
-		if not Picker.matches_search(str(it.get("name")), _search_text):
+		if not Picker.matches_search(str(it.get("name")), _session.search_text):
 			continue
-		if _target_slot != "" and not Picker.matches_slot(it.get("slots"), _target_slot):
+		if _session.target_slot != "" and not Picker.matches_slot(it.get("slots"), _session.target_slot):
 			continue
 		var e := _entry(it)
-		if not Picker.category_allowed(str(e.get("cat", "")), _target_slot):
+		if not Picker.category_allowed(str(e.get("cat", "")), _session.target_slot):
 			continue
 		out.append(e)
 	return out
@@ -2125,16 +2088,16 @@ func _rebuild_shelves(found: Array) -> void:
 	for child in _shelves_box.get_children():
 		_shelves_box.remove_child(child)
 		child.queue_free()
-	if _target_cat != "":
+	if _session.target_cat != "":
 		var only: Array = []
 		for e in found:
-			if str(e.get("cat", "")) == _target_cat:
+			if str(e.get("cat", "")) == _session.target_cat:
 				only.append(e)
 		found = only
-	if _target_sub != "":
+	if _session.target_sub != "":
 		var only_sub: Array = []
 		for e in found:
-			if str(e.get("sub", "")) == _target_sub:
+			if str(e.get("sub", "")) == _session.target_sub:
 				only_sub.append(e)
 		found = only_sub
 	if found.is_empty():
@@ -2216,17 +2179,14 @@ func _gear_cap(path: String) -> float:
 # от ресурса, поэтому считаются здесь, а не в вызывающем коде. У патронов пол 0:
 # «−» на последней коробке убирает патроны из набора, как ✕.
 func _bump_gear(path: String, dir: float) -> void:
-	if _draft == null:
+	if _session.draft == null:
 		return
 	var floor := 0.0 if str(_item_info(path).get("type")) == "Ammo" else 1.0
-	_draft.bump_amount(path, dir, _gear_step(path), _gear_cap(path), floor)
+	_session.draft.bump_amount(path, dir, _gear_step(path), _gear_cap(path), floor)
 	refresh(RefreshScope.GEAR | RefreshScope.DONE)
 
 func _toggle_attachment_panel(path: String) -> void:
-	if _page == 1:
-		_open_gear_att = "" if _open_gear_att == path else path
-	else:
-		_open_equip_att = "" if _open_equip_att == path else path
+	_session.toggle_attachment_target(path)
 	refresh(RefreshScope.OVERLAY)
 
 # Оверлей рендерит панель текущей страницы: путь своя у Экипировки и
@@ -2237,8 +2197,8 @@ func _refresh_att_overlay() -> void:
 	for child in _att_overlay_body.get_children():
 		_att_overlay_body.remove_child(child)
 		child.queue_free()
-	var path := _open_gear_att if _page == 1 else _open_equip_att
-	if _draft == null or path == "":
+	var path: String = _session.attachment_target()
+	if _session.draft == null or path == "":
 		_att_overlay.visible = false
 		return
 	var panel := _build_att_panel(path)
@@ -2249,8 +2209,7 @@ func _refresh_att_overlay() -> void:
 	_att_overlay.visible = true
 
 func _close_att_overlay() -> void:
-	_open_equip_att = ""
-	_open_gear_att = ""
+	_session.clear_attachments()
 	refresh(RefreshScope.OVERLAY)
 
 # Иконка предмета - форвардер на VTKItemStore. VTKFeed ходит сюда же через
@@ -2299,7 +2258,7 @@ func _icon_stack(host: Control, art: Texture2D, icon_min: Vector2, name_text: St
 
 func _make_item_cell(item, forced_slot = null, gear := false, force_gear := false) -> Control:
 	var path_now: String = item.resource_path
-	var gi := _draft.gear_index_of(path_now) if (gear and _draft != null) else -1
+	var gi: int = _session.draft.gear_index_of(path_now) if (gear and _session.draft != null) else -1
 	var cell = Panel.new()
 	# Клетка снаряжения выше и шире: под именем два ряда - шаговый «− n +»
 	# и контекстная кнопка (Full/обойма/обвес); ✕ живёт в углу. Каталог
@@ -2320,11 +2279,11 @@ func _make_item_cell(item, forced_slot = null, gear := false, force_gear := fals
 	var vbox := _icon_stack(cell, _item_icon(item), Vector2(GEAR_CELL_W - 32, 56),
 		str(item.name), 9, Color("#aaa"), 2)
 
-	var already := _draft != null and _draft.has_path(path_now)
+	var already: bool = _session.draft != null and _session.draft.has_path(path_now)
 	if already and not gear:
-		var cur_slot := _draft.equip_slot_of(path_now)
+		var cur_slot: String = _session.draft.equip_slot_of(path_now)
 		if cur_slot == "":
-			var n := int(_draft.amount_of(path_now))
+			var n := int(_session.draft.amount_of(path_now))
 			if n > 1:
 				var cnt = Label.new()
 				cnt.text = "×" + str(n)
@@ -2335,9 +2294,9 @@ func _make_item_cell(item, forced_slot = null, gear := false, force_gear := fals
 				vbox.add_child(cnt)
 		cell.add_theme_stylebox_override("panel", in_set_style)
 
-	if gear and _draft != null and gi >= 0:
+	if gear and _session.draft != null and gi >= 0:
 		cell.add_theme_stylebox_override("panel", in_set_style)
-		var desc_g: Dictionary = _draft.gear[gi]
+		var desc_g: Dictionary = _session.draft.gear[gi]
 		var cnt_g := Draft.shown_count(desc_g)
 
 		# Строка A: шаг «− n +». Дубль ×N убран - число живёт здесь само.
@@ -2394,7 +2353,7 @@ func _make_item_cell(item, forced_slot = null, gear := false, force_gear := fals
 	# Шаг 2 зовёт клетку с пустой целью явно, иначе цель шага 1 переехала бы
 	# на шаг 2 вместе с клеткой. Клик по пустой gear-клетке добавляет предмет
 	# тем же _place_into (Draft.add_gear).
-	var slot := _target_slot if forced_slot == null else str(forced_slot)
+	var slot: String = _session.target_slot if forced_slot == null else str(forced_slot)
 	cell.gui_input.connect(func(ev: InputEvent):
 		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
 			_place_into(it, slot, force_gear)
@@ -2417,7 +2376,7 @@ func _make_item_cell(item, forced_slot = null, gear := false, force_gear := fals
 # слотов нет - уходит в снаряжение. force_gear (шаг 2) кладёт предмет сразу в
 # снаряжение через Draft.add_gear, минуя свободный слот экипировки.
 func _place_into(item, slot: String, force_gear := false) -> void:
-	if _draft == null or item == null:
+	if _session.draft == null or item == null:
 		return
 	var path := str(item.resource_path)
 	if path == "":
@@ -2430,7 +2389,7 @@ func _place_into(item, slot: String, force_gear := false) -> void:
 	# Запоминаем предмет до расчёта количества: если предмет не влезет в слот,
 	# _after_place не зовётся, и без этого строка ушла бы в следующий клик и
 	# открыла панель не того предмета.
-	_last_placed = path
+	_session.last_placed = path
 	var t := str(res.get("type"))
 	# Патроны в снаряжение попадают коробкой (defaultAmount) и той же коробкой
 	# шагают: клик и «+/−» в одном масштабе, потолок - maxAmount. Прочие
@@ -2456,7 +2415,7 @@ func _place_into(item, slot: String, force_gear := false) -> void:
 	# Шаг 2 («Снаряжение»): слот не выбирается, предмет идёт в снаряжение и
 	# не занимает свободный слот экипировки.
 	if force_gear:
-		_draft.add_gear(path, item_name, amt, t, counted, step, cap)
+		_session.draft.add_gear(path, item_name, amt, t, counted, step, cap)
 		_after_place()
 		return
 	if slot != "":
@@ -2464,13 +2423,13 @@ func _place_into(item, slot: String, force_gear := false) -> void:
 		# слоту. Отказ - это не вытеснение, поэтому сообщаем и выходим, а не
 		# падаем в add(): иначе предмет молча уехал бы в другое место мимо
 		# выбранной цели.
-		if _draft.add_to_slot(path, item_name, slots, amt, t, slot, counted) != "":
+		if _session.draft.add_to_slot(path, item_name, slots, amt, t, slot, counted) != "":
 			_after_place()
 			return
 		if not Picker.matches_slot(slots, slot):
 			_set_problem(Loc.txt("Does not fit: ") + Loc.txt(slot))
 			return
-	_draft.add(path, item_name, slots, amt, t, counted, step, cap)
+	_session.draft.add(path, item_name, slots, amt, t, counted, step, cap)
 	_after_place()
 
 func _after_place() -> void:
@@ -2478,13 +2437,10 @@ func _after_place() -> void:
 	# Клик по предмету открывает его обвесы: иначе до них надо было
 	# добираться через кнопку в строке слота, о чём мало кто догадывался.
 	# У обоймы панели нет - там тумблер заполнения, открывать нечего.
-	if _last_placed != "" and not _is_magazine(_last_placed) \
-			and _att_panel_needed(_item_info(_last_placed)):
-		if _page == 1:
-			_open_gear_att = _last_placed
-		else:
-			_open_equip_att = _last_placed
-	_last_placed = ""
+	if _session.last_placed != "" and not _is_magazine(_session.last_placed) \
+			and _att_panel_needed(_item_info(_session.last_placed)):
+		_session.set_attachment_target(_session.last_placed)
+	_session.last_placed = ""
 	refresh(RefreshScope.PAGES)
 
 # У обоймы единственный "обвес" — совместимый патрон, и он уезжает в
@@ -2564,9 +2520,9 @@ func _att_entries(desc: Dictionary) -> Array:
 # Панель одного предмета. Возвращает null, если панели нет: кнопка RND тогда
 # не показывается вовсе, и незачем создавать пустой блок.
 func _build_att_panel(path: String) -> Control:
-	if _draft == null:
+	if _session.draft == null:
 		return null
-	var desc := _draft.descriptor_of(path)
+	var desc: Dictionary = _session.draft.descriptor_of(path)
 	if desc.is_empty():
 		return null
 	if _is_magazine(path):
@@ -2626,7 +2582,7 @@ func _make_att_cell(owner_path: String, grp: String, att_res) -> Control:
 
 	# Принадлежность, а не "первый в списке": дуло, коллиматор и лазер стоят
 	# одновременно, и золотым должен быть каждый из них.
-	var on := _draft != null and _draft.has_attachment(owner_path, str(att_res.resource_path))
+	var on: bool = _session.draft != null and _session.draft.has_attachment(owner_path, str(att_res.resource_path))
 
 	var normal := VTKSurface.surface("normal")
 	var hover := VTKSurface.surface("hover")
@@ -2641,9 +2597,9 @@ func _make_att_cell(owner_path: String, grp: String, att_res) -> Control:
 	cell.tooltip_text = str(att_res.name) + "\n" + str(att_res.resource_path)
 	cell.gui_input.connect(func(ev: InputEvent):
 		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
-			if _draft == null:
+			if _session.draft == null:
 				return
-			_draft.toggle_attachment(owner_path, str(att_res.resource_path), grp, _att_group_of)
+			_session.draft.toggle_attachment(owner_path, str(att_res.resource_path), grp, _att_group_of)
 			# Панель остаётся открытой: подбор обвесов идёт списком, и закрывать
 			# её после каждого клика значило бы кликать дважды на каждый обвес.
 			refresh(RefreshScope.PAGES)
@@ -2674,9 +2630,9 @@ func _build_mag_panel(path: String, desc: Dictionary) -> Control:
 	b.button_pressed = on
 	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	b.toggled.connect(func(is_on: bool):
-		if _draft == null:
+		if _session.draft == null:
 			return
-		_draft.set_full_mag(path, is_on)
+		_session.draft.set_full_mag(path, is_on)
 		refresh(RefreshScope.PAGES)
 	)
 	row.add_child(b)
@@ -2727,33 +2683,29 @@ func _rebuild_ui() -> void:
 # ============== SAVE / LOAD / DELETE ==============
 
 func _start_new_draft() -> void:
-	_draft = Draft.new()
-	_open_equip_att = ""
-	_open_gear_att = ""
+	_session.new_draft()
 	_rail._editing_name = ""
 	_build_editor()
 
 func _cancel_draft() -> void:
-	_draft = null
-	_open_equip_att = ""
-	_open_gear_att = ""
+	_session.clear_draft()
 	_rail._editing_name = ""
 	_build_editor()
 	refresh(RefreshScope.LIST | RefreshScope.PREVIEW)
 
 func _save_loadout() -> void:
-	if _draft == null:
+	if _session.draft == null:
 		return
 	if _name_input != null:
-		_draft.set_name = _name_input.text.strip_edges()
-	var name_new := _draft.set_name.strip_edges()
+		_session.draft.set_name = _name_input.text.strip_edges()
+	var name_new: String = _session.draft.set_name.strip_edges()
 	# Отказы сообщаем в том же ряду, где живут шаги: раньше пустой ввод и
 	# пустой сет просто ничего не делали, и пользователь не понимал, почему
 	# кнопка молчит.
 	if name_new == "":
 		_set_problem(Loc.txt("Loadout name required"))
 		return
-	if _draft.item_count() == 0:
+	if _session.draft.item_count() == 0:
 		_set_problem(Loc.txt("Set is empty"))
 		return
 	var all = LD.get_all()
@@ -2771,14 +2723,14 @@ func _save_loadout() -> void:
 				kept_key = int(ld.get("quick_key", 0))
 				break
 		LD.remove(_rail._editing_name)
-	LD.replace_set(name_new, _draft.equip, _draft.gear)
+	LD.replace_set(name_new, _session.draft.equip, _session.draft.gear)
 	if kept_key != 0:
 		LD.set_quick_key(name_new, kept_key)
 	if _rail._pending_qk != 0:
 		LD.set_quick_key_unique(name_new, _rail._pending_qk)
 		_rail._pending_qk = 0
 		_rail._apply_qk_btn(_rail._bind_btn, int(LD.get_set(name_new).get("quick_key", 0)))
-	_draft.set_name = name_new
+	_session.draft.set_name = name_new
 	_rail._editing_name = name_new
 	_clear_problem()
 	refresh(RefreshScope.LIST | RefreshScope.PREVIEW)
@@ -2789,10 +2741,8 @@ func _edit_loadout(name: String) -> void:
 		return
 	var d = Draft.new()
 	d.load_from(raw)
-	_draft = d
+	_session.edit_draft(d)
 	_rail._editing_name = name
-	_open_equip_att = ""
-	_open_gear_att = ""
 	_build_editor()
 
 func _delete_loadout(name: String) -> void:

@@ -6,7 +6,7 @@ extends RefCounted
 # Ссылка на узел VTKUI (_ui) нужна для общих сцен: перерисовка списка/превью
 # (refresh_rail), рендер предметных колонок превью
 # (_make_equip_preview/_make_inventory_panel), открытие/закрытие черновика
-# (_ui._draft/_ui._cancel_draft) и подвес hover/motion на карточки.
+# (_ui._session.draft/_ui._cancel_draft) и подвес hover/motion на карточки.
 const Loc = preload("res://mods/VTK/VTKLoc.gd")
 const VTKSurface := preload("res://mods/VTK/VTKSurface.gd")
 const LD := preload("res://mods/VTK/VTKData.gd")
@@ -143,8 +143,8 @@ func _refresh_preview() -> void:
 	for child in _preview_box.get_children():
 		_preview_box.remove_child(child)
 		child.queue_free()
-	_preview_box.visible = _ui._draft == null
-	if _ui._draft != null:
+	_preview_box.visible = _ui._session.draft == null
+	if _ui._session.draft != null:
 		return
 	var pack: Dictionary = {}
 	if _selected_set != "":
@@ -334,7 +334,7 @@ func _select_set(nm: String) -> void:
 	_selected_set = nm
 	# Клик по сету при открытом редакторе закрывает черновик и открывает
 	# превью: правки не сохранённого черновика теряются, без диалога.
-	if _ui._draft != null:
+	if _ui._session.draft != null:
 		_ui._cancel_draft()
 	else:
 		refresh_rail.call()
