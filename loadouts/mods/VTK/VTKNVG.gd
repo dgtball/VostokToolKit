@@ -458,11 +458,12 @@ func _process(delta: float) -> void:
 		if _installed:
 			_install_retry = 0
 	var on := set_thermal and _nvg_active()
-	# Позиция игрока — один вызов на кадр, а не по два на каждого бота
-	# (_update_bot звал её дважды: для маркера и для дистанции покраски).
-	var ppos := _player_pos()
 
 	if on:
+		# Позиция игрока — один вызов на кадр, а не по два на каждого бота
+		# (_update_bot звал её дважды: для маркера и для дистанции покраски).
+		# При off не читается вовсе: покраски нет, а мировой скан идёт на тике.
+		var ppos := _player_pos()
 		# Key paint tracks NVG state every frame, not every TICK: the tick gate
 		# below runs the world scan, but if painting waited for it, a quick NVG
 		# toggle left bots a frame behind on the flash of raw key pixels.

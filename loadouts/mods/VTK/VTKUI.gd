@@ -14,6 +14,9 @@ var _db_items: Array = []
 # сам Resource: без индекса каждая клетка искала бы его перебором всего
 # списка, а раньше просто грузила с диска.
 var _item_index: Dictionary = {}
+# resource_path -> готовый info-словарь (_info_of). Предметы неизменны в рантайме,
+# поэтому считается один раз на предмет, а не на каждую клетку/обвес при пересборке.
+var _info_cache: Dictionary = {}
 var _equip_cells: Array = []
 var _equip_cols := 6
 var _equip_rows := 8
@@ -77,6 +80,7 @@ var _target_sub: String = ""
 var _search_text: String = ""
 var _gear_search: String = ""
 var _search_debounce: Timer
+var _gear_search_debounce: Timer
 var _step_btns: Array = []
 var _page_equip: Control = null
 var _page_gear: Control = null
@@ -342,6 +346,7 @@ func _apply_qk_btn(btn: Button, qk: int) -> void:
 func _load_items() -> void:
 	_db_items.clear()
 	_item_index.clear()
+	_info_cache.clear()
 	var db = get_node_or_null(Paths.DATABASE)
 	if not db:
 		return
@@ -388,11 +393,18 @@ func _attach_motion(c: Control) -> void:
 			_tween_scale(c, 1.008 if hv else 1.0))
 
 func _tween_scale(c: Control, target: float) -> void:
+	# Один Tween на клетку: пока он жив (ещё доворачивает предыдущий hover),
+	# перезапускаем его вместо свежего create_tween. Готовый или убитый заводим заново.
+	var tw: Tween = null
 	if c.has_meta("vtk_tween"):
 		var old: Tween = c.get_meta("vtk_tween")
-		if old != null:
+		if old != null and old.is_valid():
+			old.stop()
+			tw = old
+		elif old != null:
 			old.kill()
-	var tw := create_tween()
+	if tw == null:
+		tw = create_tween()
 	tw.tween_property(c, "scale", Vector2(target, target), 0.14) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	c.set_meta("vtk_tween", tw)
@@ -1194,6 +1206,14 @@ func _build_page_gear() -> Control:
 	var search := _make_search_field(func(t): _set_gear_search(t))
 	_gear_search_field = search
 	main.add_child(search)
+	# Тот же дебаунс, что у шага 1: без него каталог пересобирался на каждый символ.
+	if _gear_search_debounce != null and is_instance_valid(_gear_search_debounce):
+		_gear_search_debounce.queue_free()
+	_gear_search_debounce = Timer.new()
+	_gear_search_debounce.one_shot = true
+	_gear_search_debounce.wait_time = 0.12
+	_gear_search_debounce.timeout.connect(_apply_gear_search)
+	add_child(_gear_search_debounce)
 
 	# Каталог всегда открыт: он и раньше был длиннее окна, поэтому кнопка
 	# раскрытия только добавляла лишний клик к выбору предмета.
@@ -1322,6 +1342,11 @@ func _make_gear_count(cnt: int) -> Control:
 
 func _set_gear_search(t: String) -> void:
 	_gear_search = t
+	# Дебаунс, как у шага 1: пересборка каталога идёт не на каждый символ.
+	if _gear_search_debounce != null:
+		_gear_search_debounce.start()
+
+func _apply_gear_search() -> void:
 	# Только каталог: пересборка страницы пересоздала бы поле поиска и выкинула
 	# бы из него курсор на каждом символе.
 	refresh(RefreshScope.GEAR)
@@ -1624,9 +1649,12 @@ func refresh(scope: int) -> void:
 		_refresh_preview()
 
 func _refresh_page_equipment() -> void:
-	_rebuild_target_bar()
+	# Один обход каталога на пересборку: и шапка фильтров, и полки берут один
+	# и тот же набор, а _target_filter_items проходит _db_items целиком.
+	var found := _target_filter_items()
+	_rebuild_target_bar(found)
 	_refresh_slots()
-	_rebuild_shelves()
+	_rebuild_shelves(found)
 
 func _refresh_slots() -> void:
 	if _equip_grid_box == null:
@@ -2106,7 +2134,7 @@ class ToggleSwitch:
 		else:
 			_knob.position = target
 
-func _rebuild_target_bar() -> void:
+func _rebuild_target_bar(found: Array) -> void:
 	if _target_bar == null:
 		return
 	for child in _target_bar.get_children():
@@ -2123,7 +2151,6 @@ func _rebuild_target_bar() -> void:
 	# чипы категорий (плюс подкатегории выбранной), одна категория с
 	# несколькими подкатегориями - только подкатегории, единственный
 	# экземпляр и того и другого - не показываем вовсе.
-	var found := _target_filter_items()
 	var cats := _target_cats(found)
 	var show_subs: Array = []
 	var show_line := false
@@ -2332,13 +2359,12 @@ func _items_for_target() -> Array:
 		out.append(e)
 	return out
 
-func _rebuild_shelves() -> void:
+func _rebuild_shelves(found: Array) -> void:
 	if _shelves_box == null:
 		return
 	for child in _shelves_box.get_children():
 		_shelves_box.remove_child(child)
 		child.queue_free()
-	var found := _target_filter_items()
 	if _target_cat != "":
 		var only: Array = []
 		for e in found:
@@ -2404,8 +2430,11 @@ func _item_info(path: String) -> Dictionary:
 func _info_of(res) -> Dictionary:
 	if res == null:
 		return {}
+	var key := String(res.resource_path)
+	if key != "" and _info_cache.has(key):
+		return _info_cache[key]
 	var compat = res.get("compatible")
-	return {
+	var info := {
 		"resource": res,
 		"name": str(res.get("name")),
 		"type": str(res.get("type")),
@@ -2416,6 +2445,9 @@ func _info_of(res) -> Dictionary:
 		"maxAmount": res.get("maxAmount"),
 		"defaultAmount": res.get("defaultAmount"),
 	}
+	if key != "":
+		_info_cache[key] = info
+	return info
 
 # Пунктирная карточка «+ Создать сет». StyleBoxFlat штрихов не умеет, а
 # штатный компонент рамки убран из вёрстки, поэтому рамка рисуется вручную.

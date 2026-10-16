@@ -62,6 +62,7 @@ var _rows: Array = []
 var _vbox: VBoxContainer = null
 var _scene_ref: Node = null
 var _was_shelter: bool = false
+var _accum: float = 0.0
 var _iface_cache = null
 var _hooks: Node = null
 
@@ -226,26 +227,34 @@ func _weapon_texture(weapon: String) -> Texture2D:
 			return Picker.item_art(item["icon"])
 	return null
 
-func _process(delta: float) -> void:
-	if not _enabled:
-		return
-	# Смена карты и шелтер чистят ленту теми же признаками, что и счётчик.
-	var cs = get_tree().current_scene
-	if cs != _scene_ref:
-		_scene_ref = cs
-		clear()
-	var in_shelter := false
+func _in_shelter() -> bool:
 	if _iface_cache == null or not is_instance_valid(_iface_cache):
 		_iface_cache = get_tree().root.get_node_or_null(Paths.INTERFACE)
 	var iface = _iface_cache
-	if iface != null and "gameData" in iface:
-		var gd = iface.get("gameData")
-		if gd != null:
-			in_shelter = bool(gd.get("shelter"))
-	if in_shelter and not _was_shelter:
+	if iface == null or not ("gameData" in iface):
+		return false
+	var gd = iface.get("gameData")
+	if gd == null:
+		return false
+	return bool(gd.get("shelter"))
+
+func _process(delta: float) -> void:
+	if not _enabled:
+		return
+	# Смена сцены дешёвая и должна чистить ленту сразу; чтение gameData.shelter —
+	# только на тике (0.5 с), как у счётчика: при off лента не видна, а переход
+	# в шелтер всё равно должен лишь очистить её.
+	if get_tree().current_scene != _scene_ref:
+		_scene_ref = get_tree().current_scene
 		clear()
-	_was_shelter = in_shelter
-	if in_shelter:
+	_accum += delta
+	if _accum >= 0.5:
+		_accum = 0.0
+		var in_shelter := _in_shelter()
+		if in_shelter and not _was_shelter:
+			clear()
+		_was_shelter = in_shelter
+	if _was_shelter:
 		return
 	if _rows.is_empty():
 		return
