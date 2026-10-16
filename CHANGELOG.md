@@ -4,6 +4,17 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.17.8] - 2026-10-15
+
+### Changed
+
+- Texts the mod draws inside the game's own interface (the deposit button on task cards and notification messages) are now always in English; only the Loadouts window follows the language setting.
+
+### Fixed
+
+- Your saved presets are no longer lost if the game is closed in the middle of saving; a damaged presets file is recovered from a backup instead of silently emptying the list.
+- Depositing items toward a task can no longer take them from you without recording the deposit.
+
 ## [4.17.7] - 2026-10-15
 
 ### Changed
