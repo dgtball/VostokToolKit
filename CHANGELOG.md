@@ -4,6 +4,12 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.17.19] - 2026-10-16
+
+### Changed
+
+- Minor performance improvements and internal cleanup.
+
 ## [4.17.18] - 2026-10-16
 
 ### Changed
