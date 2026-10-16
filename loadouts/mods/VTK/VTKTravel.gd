@@ -5,6 +5,13 @@ const GAME_DATA_RES := Paths.GAME_DATA
 const CONTROLLER_PATH := Paths.CONTROLLER
 const LOADER_PATH := Paths.LOADER
 const SCENE_WAIT_FRAMES := 600
+# Верхние границы ожиданий телепорта: кадры на вход/выход из кэширования карты
+# и паузы после смены сцены. Ждём по флагу game_data.isCaching, а не по событию
+# загрузчика; лимиты не дают зависнуть, если флаг не придёт.
+const CACHE_ENTER_WAIT_FRAMES := 180
+const CACHE_DRAIN_WAIT_FRAMES := 1800
+const SCENE_SETTLE_SEC := 0.1
+const MAP_SETTLE_SEC := 0.35
 const TRADER_STAND_DISTANCE := 2.0
 const FLOOR_PROBE_UP := 1.5
 const FLOOR_PROBE_DOWN := 3.0
@@ -219,7 +226,7 @@ func _wait_scene_change(prev_id: int) -> bool:
 		await get_tree().process_frame
 		var scene := get_tree().current_scene
 		if scene != null and scene.get_instance_id() != prev_id:
-			await get_tree().create_timer(0.1, false).timeout
+			await get_tree().create_timer(SCENE_SETTLE_SEC, false).timeout
 			return true
 	return false
 
@@ -347,17 +354,17 @@ func _await_map_ready() -> bool:
 	if not is_inside_tree():
 		return false
 	var guard := 0
-	while guard < 180 and game_data != null and not bool(game_data.get("isCaching")):
+	while guard < CACHE_ENTER_WAIT_FRAMES and game_data != null and not bool(game_data.get("isCaching")):
 		await get_tree().process_frame
 		guard += 1
 	guard = 0
-	while guard < 1800 and game_data != null and bool(game_data.get("isCaching")):
+	while guard < CACHE_DRAIN_WAIT_FRAMES and game_data != null and bool(game_data.get("isCaching")):
 		await get_tree().process_frame
 		guard += 1
 	var caching := game_data != null and bool(game_data.get("isCaching"))
 	if caching:
 		return false
-	await get_tree().create_timer(0.35, true, false, true).timeout
+	await get_tree().create_timer(MAP_SETTLE_SEC, true, false, true).timeout
 	return is_inside_tree()
 
 
