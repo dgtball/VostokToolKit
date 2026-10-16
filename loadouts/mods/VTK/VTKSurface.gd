@@ -103,9 +103,9 @@ static func panel(inset: bool = false, margin: int = 16) -> StyleBoxFlat:
 	_panels[key] = s
 	return s
 
-# Пунктирная рамка для карточек без заливки. StyleBoxFlat штрихов не умеет,
-# а DashedBorder в GONE стенда - рисуем штрихами через CanvasItem. dash/gap
-# в пикселях, width - толщина линии.
+# Пунктирная рамка для карточек без заливки. StyleBoxFlat штрихов не умеет, а
+# узел-рамка с таким поведением удалён и держится в GONE стенда - поэтому рисуем
+# штрихами через CanvasItem. dash/gap в пикселях, width - толщина линии.
 static func draw_dashes(ci: CanvasItem, rect: Rect2, color: Color,
 		dash: float = 4.0, gap: float = 4.0, width: float = 1.0) -> void:
 	var x0 := rect.position.x + width * 0.5
