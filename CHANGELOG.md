@@ -4,6 +4,12 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.17.17] - 2026-10-16
+
+### Fixed
+
+- Teleporting no longer rolls the in-game time back to the last world save.
+
 ## [4.17.16] - 2026-10-16
 
 ### Changed
