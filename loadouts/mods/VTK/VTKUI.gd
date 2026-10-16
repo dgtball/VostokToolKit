@@ -8,6 +8,7 @@ const VTKSurface := preload("res://mods/VTK/VTKSurface.gd")
 const LD := preload("res://mods/VTK/VTKData.gd")
 const Items := preload("res://mods/VTK/VTKItemStore.gd")
 const TeleportTab := preload("res://mods/VTK/VTKTeleportTab.gd")
+const Features := preload("res://mods/VTK/VTKFeatureHost.gd")
 
 const UI_LAYER := 4095
 
@@ -112,7 +113,6 @@ var _ui_nodes: Array = []
 var _current_tab: String = ""
 
 # teleport tab
-var _travel: Node = null
 var _tp_tab: RefCounted = null
 
 var game_data: Resource = null
@@ -203,10 +203,10 @@ func _init_later() -> void:
 	Log.log("[VTK] Starting UI init")
 	_load_items()
 	_load_lang()
+	# Хост до _build_ui: вкладка телепорта берёт у него узел travel.
+	_features = Features.new(self)
 	_build_ui()
-	var Hooks = preload("res://mods/VTK/VTKHooks.gd")
-	_hooks = Hooks.new()
-	add_child(_hooks)
+	_features._ensure_hooks()
 	_register_mcm()
 	Log.log("[VTK] UI init done")
 
@@ -535,11 +535,11 @@ func _build_ui() -> void:
 		_tab_containers[tname] = vb
 
 	_build_loadouts_tab(_tab_containers[Loc.txt("Sets")])
-	_ensure_travel()
+	_features._ensure_travel()
 	_tp_tab = TeleportTab.new()
 	_tp_tab.hover = Callable(self, "_attach_row_hover")
 	_tp_tab.motion = Callable(self, "_attach_motion")
-	_tp_tab._build_teleport_tab(_tab_containers[Loc.txt("Teleport")], _travel, game_data)
+	_tp_tab._build_teleport_tab(_tab_containers[Loc.txt("Teleport")], _features.travel(), game_data)
 
 	_switch_tab(Loc.txt("Sets"))
 
@@ -555,9 +555,9 @@ func _switch_tab(name: String) -> void:
 			_att_overlay.visible = false
 	_current_tab = name
 	if name == Loc.txt("Teleport"):
-		_ensure_travel()
+		_features._ensure_travel()
 		if _tp_tab != null:
-			_tp_tab._refresh_teleport_tab(_travel, game_data)
+			_tp_tab._refresh_teleport_tab(_features.travel(), game_data)
 	if _tab_containers.has(name):
 		_tab_containers[name].show()
 	if name == Loc.txt("Sets"):
@@ -3056,15 +3056,7 @@ func _build_mag_panel(path: String, desc: Dictionary) -> Control:
 
 # ============== HUD / LANGUAGE ==============
 
-var _kc_node: Control = null
-var _hooks: Node = null
-var _nvg_node: Node = null
-var _kc_mcm: bool = true
-var _feed_mcm: bool = true
-var _hud_canvas = null
-var _feed_node = null
-var _thermal_active: bool = false
-var _mines_active: bool = true
+var _features: RefCounted = null
 
 func _load_lang() -> void:
 	Loc.set_lang(Loc.DEFAULT)
@@ -3098,65 +3090,6 @@ func _rebuild_ui() -> void:
 	_build_ui()
 	if idx >= 0 and idx < _tab_btns.size():
 		_switch_tab((_tab_btns[idx] as Button).text)
-
-# Единая точка применения обоих HUD-виджетов. Зовётся только из _mcm_apply:
-# состояние приходит из MCM, отдельного UI-тумблера больше нет.
-func _apply_hud() -> void:
-	_set_counter_enabled(_kc_mcm)
-	_set_feed_enabled(_feed_mcm)
-
-func _set_counter_enabled(v: bool) -> void:
-	if v:
-		_ensure_hud()
-		_kc_node.set_enabled(true)
-	elif _kc_node != null and is_instance_valid(_kc_node):
-		_kc_node.set_enabled(false)
-
-func _set_feed_enabled(v: bool) -> void:
-	if v:
-		_ensure_hud()
-		_feed_node.set_enabled(true)
-	elif _feed_node != null and is_instance_valid(_feed_node):
-		_feed_node.set_enabled(false)
-
-# Один CanvasLayer на оба виджета; лениво, пока хотя бы один не включён.
-func _ensure_hud() -> void:
-	if _kc_node != null and is_instance_valid(_kc_node) \
-			and _feed_node != null and is_instance_valid(_feed_node):
-		return
-	if _hud_canvas == null or not is_instance_valid(_hud_canvas):
-		_hud_canvas = CanvasLayer.new()
-		_hud_canvas.name = "VTKKC_Canvas"
-		_hud_canvas.layer = 9999
-		get_tree().root.add_child(_hud_canvas)
-	if _kc_node == null or not is_instance_valid(_kc_node):
-		var KC = preload("res://mods/VTK/VTKKillCounter.gd")
-		_kc_node = KC.new()
-		_hud_canvas.add_child(_kc_node)
-	if _feed_node == null or not is_instance_valid(_feed_node):
-		var Feed = preload("res://mods/VTK/VTKFeed.gd")
-		_feed_node = Feed.new()
-		_hud_canvas.add_child(_feed_node)
-
-func _ensure_nvg() -> void:
-	if _nvg_node != null and is_instance_valid(_nvg_node):
-		return
-	var NVG = preload("res://mods/VTK/VTKNVG.gd")
-	_nvg_node = NVG.new()
-	add_child(_nvg_node)
-
-func _ensure_travel() -> void:
-	if _travel != null and is_instance_valid(_travel):
-		return
-	var T := preload("res://mods/VTK/VTKTravel.gd")
-	_travel = T.new()
-	add_child(_travel)
-
-func _apply_nvg_settings() -> void:
-	_ensure_nvg()
-	if _nvg_node != null and is_instance_valid(_nvg_node):
-		_nvg_node.set_mines_enabled(_mines_active)
-		_nvg_node.set_thermal_enabled(_thermal_active)
 
 # ============== SAVE / LOAD / DELETE ==============
 
@@ -3254,7 +3187,7 @@ static func _keycode_to_string(kc: int) -> String:
 
 func _register_mcm() -> void:
 	if not ResourceLoader.exists("res://ModConfigurationMenu/Scripts/Doink Oink/MCM_Helpers.tres"):
-		_apply_hud()
+		_features._apply_hud()
 		return
 	var MCM = load("res://ModConfigurationMenu/Scripts/Doink Oink/MCM_Helpers.tres")
 	if MCM == null or not MCM.has_method("RegisterConfiguration"):
@@ -3356,31 +3289,28 @@ func _mcm_apply(cfg: ConfigFile) -> void:
 			_rebuild_ui()
 	_key_ui_toggle = int(_mcm_key_val(cfg, "Keycode", "key_ui_toggle", 0))
 	Log.enabled = bool(_mcm_key_val(cfg, "Bool", "debug_log", false))
-	_kc_mcm = bool(_mcm_key_val(cfg, "Bool", "kill_counter_enabled", true))
-	_feed_mcm = bool(_mcm_key_val(cfg, "Bool", "kill_feed_enabled", true))
-	_apply_hud()
-	if _hooks != null and is_instance_valid(_hooks):
-		_hooks.set_equip_enabled(bool(_mcm_key_val(cfg, "Bool", "auto_equip", true)))
-		_hooks.set_equip_debug(bool(_mcm_key_val(cfg, "Bool", "nvg_debug_probe", false)))
-	_ensure_travel()
-	if _travel != null and is_instance_valid(_travel):
-		var tp_unlocked = bool(_mcm_key_val(cfg, "Bool", "tp_unlocked_shelters_only", false))
-		_travel.set_unlocked_only(tp_unlocked)
-	_ensure_nvg()
-	if _nvg_node == null or not is_instance_valid(_nvg_node):
+	_features.set_hud(
+		bool(_mcm_key_val(cfg, "Bool", "kill_counter_enabled", true)),
+		bool(_mcm_key_val(cfg, "Bool", "kill_feed_enabled", true)))
+	_features.set_equip(
+		bool(_mcm_key_val(cfg, "Bool", "auto_equip", true)),
+		bool(_mcm_key_val(cfg, "Bool", "nvg_debug_probe", false)))
+	_features.set_travel_unlocked(bool(_mcm_key_val(cfg, "Bool", "tp_unlocked_shelters_only", false)))
+	var nvg: Node = _features.nvg()
+	if nvg == null:
 		return
-	_nvg_node.set_nvg_noise = float(_mcm_key_val(cfg, "Float", "nvg_noise", 4.0))
-	_nvg_node.set_nvg_white = float(_mcm_key_val(cfg, "Float", "nvg_white", 1.0))
-	_nvg_node.set_palette = int(_mcm_key_val(cfg, "Int", "thermal_palette", 0))
-	_nvg_node.set_world = float(_mcm_key_val(cfg, "Float", "thermal_world", 1.70))
-	_nvg_node.set_debug_probe = bool(_mcm_key_val(cfg, "Bool", "nvg_debug_probe", false))
-	_nvg_node.set_mark_nomads = bool(_mcm_key_val(cfg, "Bool", "thermal_mark_nomads", true))
-	_nvg_node.set_winter_auto = bool(_mcm_key_val(cfg, "Bool", "thermal_winter_auto", true))
-	_nvg_node.set_winter_dim = float(_mcm_key_val(cfg, "Float", "thermal_winter_dim", 0.55))
-	_nvg_node.set_bot_preset = int(_mcm_key_val(cfg, "Int", "thermal_bot_preset", 0))
-	_nvg_node.set_far_distance = float(_mcm_key_val(cfg, "Float", "thermal_far_distance", 45.0))
-	_nvg_node.apply_debug_probe()
+	nvg.set_nvg_noise = float(_mcm_key_val(cfg, "Float", "nvg_noise", 4.0))
+	nvg.set_nvg_white = float(_mcm_key_val(cfg, "Float", "nvg_white", 1.0))
+	nvg.set_palette = int(_mcm_key_val(cfg, "Int", "thermal_palette", 0))
+	nvg.set_world = float(_mcm_key_val(cfg, "Float", "thermal_world", 1.70))
+	nvg.set_debug_probe = bool(_mcm_key_val(cfg, "Bool", "nvg_debug_probe", false))
+	nvg.set_mark_nomads = bool(_mcm_key_val(cfg, "Bool", "thermal_mark_nomads", true))
+	nvg.set_winter_auto = bool(_mcm_key_val(cfg, "Bool", "thermal_winter_auto", true))
+	nvg.set_winter_dim = float(_mcm_key_val(cfg, "Float", "thermal_winter_dim", 0.55))
+	nvg.set_bot_preset = int(_mcm_key_val(cfg, "Int", "thermal_bot_preset", 0))
+	nvg.set_far_distance = float(_mcm_key_val(cfg, "Float", "thermal_far_distance", 45.0))
+	nvg.apply_debug_probe()
 	# Mines/thermal moved out of the Settings tab into MCM; read them here.
-	_thermal_active = bool(_mcm_key_val(cfg, "Bool", "thermal_enabled", false))
-	_mines_active = bool(_mcm_key_val(cfg, "Bool", "thermal_mines", true))
-	_apply_nvg_settings()
+	_features.set_thermal(
+		bool(_mcm_key_val(cfg, "Bool", "thermal_enabled", false)),
+		bool(_mcm_key_val(cfg, "Bool", "thermal_mines", true)))
