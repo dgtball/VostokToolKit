@@ -4,6 +4,13 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.17.11] - 2026-10-16
+
+### Fixed
+
+- In a loadout, decreasing ammo with "−" now steps a whole box at a time and clears the ammo from the set when the last box is taken away, instead of jumping to a single round.
+- The "Full" button for ammo cells now reads just "Full"; the extra dot and capacity number that made it stick out of the cell are gone.
+
 ## [4.17.10] - 2026-10-16
 
 ### Changed
