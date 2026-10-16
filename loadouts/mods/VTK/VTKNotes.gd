@@ -4,8 +4,6 @@ extends RefCounted
 ## (без узлов сцены и без путей внутрь игры) тестируется headless, как
 ## VTKPicker/VTKDraft: ни load(), ни res:// внутрь игры.
 
-const Loc = preload("res://mods/VTK/VTKLoc.gd")
-
 const ICON_CELL := 52.0
 const ART_INSET := 6.0
 
@@ -122,7 +120,7 @@ static func build_progress(entries: Array, cov_map) -> Control:
 		pct = int(round(float(got) / float(need) * 100.0))
 	var line := HBoxContainer.new()
 	var left := Label.new()
-	left.text = Loc.txt("Deposited") + " " + str(got) + " / " + str(need)
+	left.text = "Deposited " + str(got) + " / " + str(need)
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left.add_theme_font_size_override("font_size", 11)
 	left.add_theme_color_override("font_color", COL_GOLD_DIM)

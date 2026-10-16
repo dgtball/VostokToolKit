@@ -1,8 +1,6 @@
 extends Node
 const Paths = preload("res://mods/VTK/VTKPaths.gd")
 const Log = preload("res://mods/VTK/VTKLog.gd")
-const Loc = preload("res://mods/VTK/VTKLoc.gd")
-
 const SAVE_FILE := "user://MCM/vostok-toolkit/VTKsets.json"
 const LEGACY_SAVE_FILE := "user://MCM/vostok-toolkit/loadouts.json"
 
@@ -55,23 +53,45 @@ static func _root_node() -> Node:
 
 # ---------- storage ----------
 
+const BAK_SUFFIX := ".bak"
+const TMP_SUFFIX := ".tmp"
+const CORRUPT_MARK := ".corrupt-"
+
 static func get_all() -> Array:
-	var file = FileAccess.open(SAVE_FILE, FileAccess.READ)
-	if not file:
-		return []
+	var payload = _read_payload(SAVE_FILE)
+	if payload != null:
+		return payload as Array
+	# Основной файл отсутствует или нечитаем. Если он есть - сохраняем байты
+	# в сторонний .corrupt, прежде чем путь что-либо перезапишет.
+	if FileAccess.file_exists(SAVE_FILE):
+		_quarantine(SAVE_FILE)
+	var bak_payload = _read_payload(SAVE_FILE + BAK_SUFFIX)
+	if bak_payload != null:
+		Log.log("[VTK] sets file unreadable; recovered from " + SAVE_FILE.get_file() + BAK_SUFFIX)
+		return bak_payload as Array
+	return []
+
+# Возвращает массив сетов или null, если прочитать/разобрать не удалось.
+# null - это «данные негодны», в отличие от пустого массива «сетов нет».
+static func _read_payload(path: String) -> Variant:
+	if not FileAccess.file_exists(path):
+		return null
+	var file = FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return null
 	var text = file.get_as_text()
 	file.close()
-	if text.is_empty():
-		return []
+	if text.strip_edges().is_empty():
+		return null
 	var json = JSON.new()
 	if json.parse(text) != OK:
-		return []
+		return null
 	var data = json.data
 	if typeof(data) != TYPE_DICTIONARY or not data.has("loadouts"):
-		return []
+		return null
 	var arr = data["loadouts"]
 	if typeof(arr) != TYPE_ARRAY:
-		return []
+		return null
 	return arr
 
 static func save_all(loadouts: Array) -> void:
@@ -86,11 +106,49 @@ static func save_all(loadouts: Array) -> void:
 				d.make_dir("vostok-toolkit")
 				real_dir = OS.get_user_data_dir() + "/MCM/vostok-toolkit"
 				d = DirAccess.open(real_dir)
-	var file = FileAccess.open(SAVE_FILE, FileAccess.WRITE)
-	if not file:
+	var payload := JSON.stringify({"loadouts": loadouts})
+	# Держим предыдущую исправную версию: перед перезаписью копируем её в .bak.
+	if FileAccess.file_exists(SAVE_FILE):
+		var bak := SAVE_FILE + BAK_SUFFIX
+		if FileAccess.file_exists(bak):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(bak))
+		DirAccess.copy_absolute(ProjectSettings.globalize_path(SAVE_FILE), ProjectSettings.globalize_path(bak))
+	var tmp := SAVE_FILE + TMP_SUFFIX
+	var file = FileAccess.open(tmp, FileAccess.WRITE)
+	if file == null:
+		Log.log("[VTK] save_all: cannot open " + tmp)
 		return
-	file.store_string(JSON.stringify({"loadouts": loadouts}))
+	file.store_string(payload)
 	file.close()
+	var err := _replace(tmp, SAVE_FILE)
+	if err != OK:
+		Log.log("[VTK] save_all: replace failed (code " + str(err) + ")")
+
+# Атомарная замена: пишем в .tmp и переносим на место основного. На Windows
+# rename поверх существующего файла может упасть - тогда убираем цель и повторяем.
+static func _replace(from_path: String, to_path: String) -> int:
+	var g_from := ProjectSettings.globalize_path(from_path)
+	var g_to := ProjectSettings.globalize_path(to_path)
+	var err := DirAccess.rename_absolute(g_from, g_to)
+	if err == OK:
+		return OK
+	DirAccess.remove_absolute(g_to)
+	return DirAccess.rename_absolute(g_from, g_to)
+
+# Битый файл не затираем, а переносим в *.corrupt-<время>: байты остаются для
+# разбора, а повторные get_all не плодят дубликаты - основного файла уже нет.
+static func _quarantine(path: String) -> void:
+	var dst := path + CORRUPT_MARK + str(int(Time.get_unix_time_from_system()))
+	var g_src := ProjectSettings.globalize_path(path)
+	var g_dst := ProjectSettings.globalize_path(dst)
+	if DirAccess.rename_absolute(g_src, g_dst) == OK:
+		Log.log("[VTK] corrupt sets file quarantined: " + dst.get_file())
+		return
+	if DirAccess.copy_absolute(g_src, g_dst) == OK:
+		DirAccess.remove_absolute(g_src)
+		Log.log("[VTK] corrupt sets file copied to " + dst.get_file())
+		return
+	Log.log("[VTK] corrupt sets file could not be quarantined: " + path)
 
 static func _find(name: String) -> Variant:
 	for ld in get_all():
@@ -324,21 +382,21 @@ static func apply_loadout(name: String, equip: bool) -> void:
 		+ " reset=skipped saved=1")
 
 	if not equip:
-		var inv_msg := Loc.txt("Loadout \"") + name + Loc.txt("\" → to inventory: ") + str(grid_count)
+		var inv_msg := 'Loadout "' + name + '" → to inventory: ' + str(grid_count)
 		if to_catalog > 0:
-			inv_msg += Loc.txt(" · To catalog: ") + str(to_catalog)
+			inv_msg += ' · To catalog: ' + str(to_catalog)
 		_notify(loader, inv_msg, Color.GREEN)
 		return
 
-	var msg := Loc.txt("Loadout \"") + name + Loc.txt("\" applied")
+	var msg := 'Loadout "' + name + '" applied'
 	if fitted > 0:
-		msg += Loc.txt(" \u00b7 Equipped: ") + str(fitted)
+		msg += ' · Equipped: ' + str(fitted)
 	if skipped > 0:
-		msg += Loc.txt(" \u00b7 Occupied slots: ") + str(skipped)
+		msg += ' · Occupied slots: ' + str(skipped)
 	if grid_count > 0:
-		msg += Loc.txt(" \u00b7 In inventory: ") + str(grid_count)
+		msg += ' · In inventory: ' + str(grid_count)
 	if to_catalog > 0:
-		msg += Loc.txt(" · To catalog: ") + str(to_catalog)
+		msg += ' · To catalog: ' + str(to_catalog)
 	_notify(loader, msg, Color.GREEN)
 
 # ---------- internals ----------

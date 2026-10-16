@@ -17,7 +17,6 @@ const Notes = preload("res://mods/VTK/VTKNotes.gd")
 const VTKDeposits = preload("res://mods/VTK/VTKDeposits.gd")
 const VTKData = preload("res://mods/VTK/VTKData.gd")
 const EquipFlow = preload("res://mods/VTK/VTKEquip.gd")
-const Loc = preload("res://mods/VTK/VTKLoc.gd")
 const HIT_WINDOW_MSEC := 15000
 const SEEN_DEATHS_TTL_MSEC := 600000
 const PLAYER_HITS_TTL_MSEC := 30000
@@ -921,12 +920,16 @@ func _ledger() -> Dictionary:
 	var m = traders.get_meta("vtk_deposits", {})
 	return m if typeof(m) == TYPE_DICTIONARY else {}
 
-func _ledger_set(data: Dictionary) -> void:
+func _ledger_set(data: Dictionary) -> bool:
 	var traders = _traders()
 	if traders == null:
-		return
+		return false
 	traders.set_meta("vtk_deposits", data)
-	ResourceSaver.save(traders, Paths.TRADER_SAVE)
+	var err := ResourceSaver.save(traders, Paths.TRADER_SAVE)
+	if err != OK:
+		Log.log("[VTK] deposit ledger save failed (code " + str(err) + ")")
+		return false
+	return true
 
 func _key_of(task_data) -> String:
 	return VTKDeposits.task_key(str(task_data.get("resource_path")), str(task_data.get("name")), str(task_data.get("trader")))
@@ -1098,8 +1101,8 @@ func _make_deposit_button(card) -> Button:
 		return null
 	var btn := Button.new()
 	btn.name = "VTKDepositButton"
-	btn.text = Loc.txt("Deposit")
-	btn.tooltip_text = Loc.txt("Deposit selected items toward this task")
+	btn.text = "Deposit"
+	btn.tooltip_text = "Deposit selected items toward this task"
 	btn.add_theme_font_size_override("font_size", _sibling_button_font_size(buttons))
 	btn.pressed.connect(_on_deposit_pressed.bind(card))
 	buttons.add_child(btn)
@@ -1236,12 +1239,15 @@ func _on_deposit_pressed(card) -> void:
 	if offered.is_empty():
 		return
 	var key := _key_of(task_data)
-	var res := VTKDeposits.apply(_ledger(), key, slots, offered)
-	var take: Array = res.get("take", [])
+	# Леджер сохраняется до списания: если персист не удался, commit отдаёт
+	# пустой take и предметы остаются у игрока, а вклад не фиксируется.
+	var committed := VTKDeposits.commit(_ledger(), key, slots, offered, Callable(self, "_ledger_set"))
+	if not bool(committed.get("ok", false)):
+		return
+	var take: Array = committed.get("take", [])
 	if take.is_empty():
 		return
 	_consume(take)
-	_ledger_set(res.get("ledger", {}))
 	_render_task_card(iface, card)
 	_refresh_notes_for(iface, task_data)
 	if card.has_method("CanComplete"):

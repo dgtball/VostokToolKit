@@ -93,6 +93,19 @@ static func apply(ledger: Dictionary, key: String, slots: Array, offered: Array)
 		out[key] = task
 	return {"ledger": out, "take": take}
 
+## Фиксирует вклад: сперва сохраняет леджер (persist), и только при успехе
+## отдаёт take на списание. Сбой персиста -> ok=false и пустой take: предметы
+## остаются у игрока, расхождения «списано без записи вклада» не бывает.
+static func commit(ledger: Dictionary, key: String, slots: Array, offered: Array, persist: Callable) -> Dictionary:
+	var res := apply(ledger, key, slots, offered)
+	var take: Array = res.get("take", [])
+	if take.is_empty():
+		return {"ok": true, "take": [], "ledger": ledger}
+	var next: Dictionary = res.get("ledger", {})
+	if not persist.is_valid() or not bool(persist.call(next)):
+		return {"ok": false, "take": [], "ledger": ledger}
+	return {"ok": true, "take": take, "ledger": next}
+
 static func clear_task(ledger: Dictionary, key: String) -> Dictionary:
 	var out := _copy_ledger(ledger)
 	out.erase(key)

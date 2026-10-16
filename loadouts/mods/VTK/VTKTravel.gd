@@ -1,8 +1,6 @@
 extends Node
 const Paths = preload("res://mods/VTK/VTKPaths.gd")
 const Log = preload("res://mods/VTK/VTKLog.gd")
-const Loc = preload("res://mods/VTK/VTKLoc.gd")
-
 const GAME_DATA_RES := Paths.GAME_DATA
 const CONTROLLER_PATH := Paths.CONTROLLER
 const LOADER_PATH := Paths.LOADER
@@ -40,17 +38,17 @@ func _ready() -> void:
 
 func travel_to_map(map_name: String) -> void:
 	if not MAPS.has(map_name):
-		_message(Loc.txt("Unknown map: ") + map_name, Color.RED)
+		_message("Unknown map: " + map_name, Color.RED)
 		return
 	_teleport_internal(map_name, null)
 
 
 func travel_to_shelter(shelter_name: String) -> void:
 	if not SHELTERS.has(shelter_name):
-		_message(Loc.txt("Unknown shelter: ") + shelter_name, Color.RED)
+		_message("Unknown shelter: " + shelter_name, Color.RED)
 		return
 	if unlocked_only and not is_shelter_unlocked(shelter_name):
-		_message(Loc.txt("Shelter not unlocked yet: ") + shelter_name, Color.RED)
+		_message("Shelter not unlocked yet: " + shelter_name, Color.RED)
 		return
 	_teleport_internal(shelter_name, null)
 
@@ -111,14 +109,14 @@ func set_unlocked_only(on: bool) -> void:
 
 func _teleport_internal(target_map: String, final_offset: Variant, dest_label: String = "") -> void:
 	if _busy:
-		_message(Loc.txt("Teleport already in progress"), Color.YELLOW)
+		_message("Teleport already in progress", Color.YELLOW)
 		return
 	if game_data != null and bool(game_data.get("tutorial")):
-		_message(Loc.txt("Teleport unavailable in the tutorial"), Color.RED)
+		_message("Teleport unavailable in the tutorial", Color.RED)
 		return
 	var loader := _loader()
 	if loader == null or not loader.has_method("LoadScene"):
-		_message(Loc.txt("Scene loader not found"), Color.RED)
+		_message("Scene loader not found", Color.RED)
 		return
 	_has_look_at = false
 	_busy = true
@@ -145,7 +143,7 @@ func _teleport_internal(target_map: String, final_offset: Variant, dest_label: S
 		if wait_hook:
 			hooks.disconnect("travel_arrived", cb)
 		_busy = false
-		_message(Loc.txt("Scene failed to load: ") + target_map, Color.RED)
+		_message("Scene failed to load: " + target_map, Color.RED)
 		return
 	var arrived := true
 	if wait_hook:
@@ -163,7 +161,7 @@ func _teleport_internal(target_map: String, final_offset: Variant, dest_label: S
 	if not arrived:
 		_busy = false
 		var label0 := dest_label if dest_label == "" else " (" + dest_label + ")"
-		_message(Loc.txt("Map ") + target_map + Loc.txt(" failed to load") + label0, Color.RED)
+		_message("Map " + target_map + " failed to load" + label0, Color.RED)
 		return
 	if loader.has_method("SaveWorld"):
 		loader.SaveWorld()
@@ -172,11 +170,11 @@ func _teleport_internal(target_map: String, final_offset: Variant, dest_label: S
 		_place_player(point)
 	elif final_offset is Callable:
 		_busy = false
-		_message(Loc.txt("Trader not found: ") + dest_label + Loc.txt(" (you are on ") + target_map + ")", Color.RED)
+		_message("Trader not found: " + dest_label + " (you are on " + target_map + ")", Color.RED)
 		return
 	_busy = false
 	var dest := target_map if dest_label == "" else target_map + " (" + dest_label + ")"
-	_message(Loc.txt("Teleport: ") + dest, Color.GREEN)
+	_message("Teleport: " + dest, Color.GREEN)
 
 
 func _hooks() -> Node:
