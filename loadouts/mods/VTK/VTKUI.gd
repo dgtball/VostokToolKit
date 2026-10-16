@@ -1279,19 +1279,23 @@ func _remove_gear(path: String) -> void:
 
 # Единый вид кнопок Full: включено - заливка и золотая точка, выключено -
 # серый контур без точки. Точка - символ в тексте, а не отдельный узел:
-# Button не контейнер, позиционировать детей вручную здесь хрупко.
-func _style_full_btn(b: Button, on: bool, label: String) -> void:
-	b.text = ("● " if on else "") + label
+# Button не контейнер, позиционировать детей вручную здесь хрупко. dot=false
+# у патронов: состояние уже видно числом в строке A, а точка удлиняла текст и
+# вылезала за клетку.
+func _style_full_btn(b: Button, on: bool, label: String, dot := true) -> void:
+	b.text = ("● " if on and dot else "") + label
 	b.custom_minimum_size = Vector2(0, 22)
 	VTKSurface.style_button(b, on, false, 8, 8, 4, 4)
 	b.add_theme_color_override("font_color", _gold if on else VTKSurface.GREY_DIM)
 
 # Разовое действие патронов: выставить полный стак. Горит, когда уже полный.
+# Подпись - только "Full": число патронов стоит в строке A, а «●» и «· 300»
+# удлиняли кнопку и вылезали за клетку.
 func _make_full_ammo_btn(path: String, _desc: Dictionary) -> Button:
 	var cap := _gear_cap(path)
 	var on := cap > 0.0 and _draft != null and _draft.amount_of(path) >= cap
 	var b := Button.new()
-	_style_full_btn(b, on, Loc.txt("Full") + " · " + str(int(cap)))
+	_style_full_btn(b, on, Loc.txt("Full"), false)
 	b.pressed.connect(func():
 		if _draft == null or cap <= 0.0:
 			return
@@ -2612,12 +2616,14 @@ func _gear_cap(path: String) -> float:
 		return float(ma)
 	return 0.0
 
-# dir - направление шага (+1 / -1), не сырая дельта: шаг и потолок зависят от
-# ресурса, поэтому считаются здесь, а не в вызывающем коде.
+# dir - направление шага (+1 / -1), не сырая дельта: шаг, потолок и пол зависят
+# от ресурса, поэтому считаются здесь, а не в вызывающем коде. У патронов пол 0:
+# «−» на последней коробке убирает патроны из набора, как ✕.
 func _bump_gear(path: String, dir: float) -> void:
 	if _draft == null:
 		return
-	_draft.bump_amount(path, dir, _gear_step(path), _gear_cap(path))
+	var floor := 0.0 if str(_item_info(path).get("type")) == "Ammo" else 1.0
+	_draft.bump_amount(path, dir, _gear_step(path), _gear_cap(path), floor)
 	refresh(RefreshScope.GEAR | RefreshScope.DONE)
 
 func _toggle_attachment_panel(path: String) -> void:

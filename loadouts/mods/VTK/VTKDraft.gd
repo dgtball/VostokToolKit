@@ -235,13 +235,15 @@ func set_gear_amount(path: String, amount: float) -> void:
 		return
 	gear[idx]["amount"] = amount
 
-# Инкремент количества с полом и потолком. Пол = 1: «−» не удаляет запись,
-# удаление - только ✕. step/cap приходят от UI: черновик не грузит ресурсы и
-# не знает ни стака калибра, ни вместимости.
-func bump_amount(path: String, dir: float, step: float, cap: float) -> void:
+# Инкремент количества с полом и потолком. Пол по умолчанию 1: «−» не удаляет
+# запись, удаление - только ✕. Патроны передают пол 0: на последней коробке «−»
+# доводит до нуля, а set_gear_amount по нулю убирает запись. step/cap/floor
+# приходят от UI: черновик не грузит ресурсы и не знает ни стака калибра, ни
+# вместимости.
+func bump_amount(path: String, dir: float, step: float, cap: float, floor := 1.0) -> void:
 	var t := amount_of(path) + dir * step
-	if t < 1.0:
-		t = 1.0
+	if t < floor:
+		t = floor
 	if cap > 0.0 and t > cap:
 		t = cap
 	set_gear_amount(path, t)
