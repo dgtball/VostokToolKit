@@ -111,6 +111,20 @@ static func clear_task(ledger: Dictionary, key: String) -> Dictionary:
 	out.erase(key)
 	return out
 
+# Убирает вклады задач, чей файл-ресурс больше не существует (апдейт игры
+# переименовал или удалил задачу). Без этого брошенные ключи копятся в сейве.
+# Ключи-фолбэки (name::trader) не проверяются и остаются: сверить их не с чем.
+# Список живых задач для этого не нужен, поэтому нет риска стереть вклад
+# задачи, которой просто нет в текущем списке Notes. exists — Callable(path) -> bool.
+static func prune_missing(ledger: Dictionary, exists: Callable) -> Dictionary:
+	var out := {}
+	for k in ledger:
+		var key := str(k)
+		if (key.begins_with("res://") or key.begins_with("user://")) and exists.is_valid() and not bool(exists.call(key)):
+			continue
+		out[k] = _dup_task(ledger[k])
+	return out
+
 static func badge_text(deposited: int, required: int) -> String:
 	return str(deposited) + " / " + str(required)
 

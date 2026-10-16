@@ -937,6 +937,20 @@ func _clear_ledger_key(task_data) -> void:
 		return
 	_ledger_set(VTKDeposits.clear_task(ledger, key))
 
+# GC леджера вкладов: сносим ключи задач, чей ресурс больше не существует
+# (задачу переименовал или удалил апдейт игры). Ключи-фолбэки (name::trader)
+# не трогаем — их не с чем сверить. Пишем в сейв только при изменениях.
+func _gc_ledger() -> void:
+	var ledger := _ledger()
+	if ledger.is_empty():
+		return
+	var pruned := VTKDeposits.prune_missing(ledger, Callable(self, "_resource_exists"))
+	if pruned.size() != ledger.size():
+		_ledger_set(pruned)
+
+func _resource_exists(path: String) -> bool:
+	return ResourceLoader.exists(path)
+
 func _live_children(grid) -> Array:
 	var out: Array = []
 	if grid == null or not (grid is Node):
@@ -1030,6 +1044,7 @@ func _on_tasks_rendered() -> void:
 	var iface = _lib._caller if _lib else null
 	if iface == null or not is_instance_valid(iface):
 		return
+	_gc_ledger()
 	_render_all_tasks(iface)
 
 func _on_tasks_startinput(_target) -> void:
