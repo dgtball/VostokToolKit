@@ -13,8 +13,9 @@ static func log(msg) -> void:
 ## Единый fail-closed резолв привязок внутрь игры: о промахе сообщаем один
 ## раз на путь (V11), чтобы обновление игры не превращалось в молчание.
 static func warn_once(path: String, msg: String = "") -> void:
+	if not enabled:
+		return
 	if _warned.has(path):
 		return
 	_warned[path] = true
-	if enabled:
-		print("[VTK][WARN] " + (msg if msg != "" else ("missing: " + path)))
+	print("[VTK][WARN] " + (msg if msg != "" else ("missing: " + path)))

@@ -4,13 +4,6 @@ const Log = preload("res://mods/VTK/VTKLog.gd")
 const SAVE_FILE := "user://MCM/vostok-toolkit/VTKsets.json"
 const LEGACY_SAVE_FILE := "user://MCM/vostok-toolkit/loadouts.json"
 
-# Метка последней операции мода, кладущей предметы в инвентарь (сборка сета,
-# спавн снаряжения).
-static var _own_op_msec: int = 0
-
-static func _touch_own_op() -> void:
-	_own_op_msec = Time.get_ticks_msec()
-
 # Одноразовый перенос loadouts.json -> VTKsets.json. Файл сетов переехал под
 # префикс VTK*, как остальные сущности мода, но имя не привязано к коду, поэтому
 # старые данные живут на диске и должны быть перенесены один раз.
@@ -465,6 +458,15 @@ static func _mag_unit(res, full: bool) -> int:
 		return int(round(float(d)))
 	return 0
 
+# Свойство игрового объекта с фолбэком. Object.get() принимает ровно один
+# аргумент: get(name, default) на Resource падает в debug (в release лишний
+# аргумент молча игнорируется). Фолбэк применяем сами; Dictionary тоже годится.
+static func prop(obj, name: String, default = null) -> Variant:
+	if obj == null:
+		return default
+	var v = obj.get(name)
+	return default if v == null else v
+
 # Сколько отдельных SlotData создавать из одного descriptor'а. Обоймы
 # считаются в count; у обычного снаряжения amount = число копий, но только
 # для нестекуемых предметов — стекуемое (аммо, maxAmount > 1) это одна
@@ -546,7 +548,6 @@ static func _nested_array(slotData) -> Array:
 	return arr
 
 static func _insert(interface, ig, slotData) -> Node:
-	_touch_own_op()
 	var before := {}
 	if ig != null and is_instance_valid(ig):
 		for child in ig.get_children():

@@ -1,5 +1,7 @@
 extends RefCounted
 
+const VTKData = preload("res://mods/VTK/VTKData.gd")
+
 # Логика авто-экипировки: что делать с предметом, попавшим в инвентарь, и
 # арифметика докладывания в уже экипированный стек. Ни load(), ни путей внутрь
 # игры: item_res/occupant_res приходят как Resource или Dictionary, читаются
@@ -34,8 +36,8 @@ static func same_item(a, b) -> bool:
 		return false
 	if a == b:
 		return true
-	var fa := str(a.get("file", ""))
-	return fa != "" and fa == str(b.get("file", ""))
+	var fa := str(VTKData.prop(a, "file", ""))
+	return fa != "" and fa == str(VTKData.prop(b, "file", ""))
 
 # Судьба предмета, попавшего в инвентарь:
 #   слот свободен (occupant == null)          -> "equip"
@@ -46,7 +48,7 @@ static func decide(item_res, occupant_res) -> String:
 		return "skip"
 	if occupant_res == null:
 		return "equip"
-	if same_item(item_res, occupant_res) and bool(item_res.get("stackable", false)):
+	if same_item(item_res, occupant_res) and bool(VTKData.prop(item_res, "stackable", false)):
 		return "merge"
 	return "skip"
 

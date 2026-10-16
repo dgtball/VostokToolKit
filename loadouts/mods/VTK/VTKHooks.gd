@@ -133,13 +133,13 @@ func _poll_death() -> void:
 		# frame that reports it, then keep serving the screen off the mounted
 		# scene until it goes away again.
 		var dead_scene := _death_scene_present()
-		is_dead = bool(gd.get("isDead", false)) or dead_scene
-		is_ironman = bool(gd.get("permadeath", false)) or (_death_latched and dead_scene)
+		is_dead = bool(VTKData.prop(gd, "isDead", false)) or dead_scene
+		is_ironman = bool(VTKData.prop(gd, "permadeath", false)) or (_death_latched and dead_scene)
 		if is_dead and is_ironman and not _death_latched:
 			# Latch it: the flags live on the map's GameData, which is torn down
 			# on death, so the next frame may have no source left to read.
 			_death_latched = true
-			Log.log("[VTK] poll: death+ironman latched from " + str(gd.get_class()) + " isDead=" + str(bool(gd.get("isDead", false))) + " permadeath=" + str(bool(gd.get("permadeath", false))) + " death_scene=" + str(dead_scene))
+			Log.log("[VTK] poll: death+ironman latched from " + str(gd.get_class()) + " isDead=" + str(bool(VTKData.prop(gd, "isDead", false))) + " permadeath=" + str(bool(VTKData.prop(gd, "permadeath", false))) + " death_scene=" + str(dead_scene))
 		elif not is_dead:
 			# Back in a live run (or on the main menu): release the latch so a
 			# missing GameData later cannot resurrect the death screen.
@@ -149,7 +149,7 @@ func _poll_death() -> void:
 			var pnow := Time.get_ticks_msec()
 			if pnow - _death_probe_at > DEATH_PROBE_MS:
 				_death_probe_at = pnow
-				Log.log("[VTK] poll: raw isDead=" + str(gd.get("isDead", false)) + " permadeath=" + str(gd.get("permadeath", false)) + " death_scene=" + str(dead_scene))
+				Log.log("[VTK] poll: raw isDead=" + str(VTKData.prop(gd, "isDead", false)) + " permadeath=" + str(VTKData.prop(gd, "permadeath", false)) + " death_scene=" + str(dead_scene))
 	_handle_death_screen(gd, is_dead, is_ironman)
 
 func _try_register() -> void:
@@ -565,7 +565,7 @@ func _equip_move(iface, ig, node, sl, picked: int) -> void:
 	if sd == null:
 		return
 	var res = sd.get("itemData")
-	var moved := EquipFlow.equip_move(picked, 0, int(res.get("maxAmount", 0)))
+	var moved := EquipFlow.equip_move(picked, 0, int(VTKData.prop(res, "maxAmount", 0)))
 	if moved <= 0:
 		return
 	var amt := int(sd.get("amount"))
@@ -599,7 +599,7 @@ func _do_equip_move(iface, ig, node, sl) -> void:
 
 func _merge_picked(iface, ig, node, occ, occ_sd, res, picked: int) -> void:
 	var occ_amt := int(occ_sd.get("amount"))
-	var moved := EquipFlow.equip_move(picked, occ_amt, int(res.get("maxAmount", 0)))
+	var moved := EquipFlow.equip_move(picked, occ_amt, int(VTKData.prop(res, "maxAmount", 0)))
 	if moved <= 0:
 		return
 	occ_sd.set("amount", VTKData._whole(float(occ_amt) + float(moved)))
@@ -634,7 +634,7 @@ func _on_ai_weapon_damage(_hitbox, _damage, _vector, id) -> void:
 		if id != null and is_instance_valid(id) and id is Node:
 			if id.is_in_group("Player"):
 				rec["player"] = true
-				rec["weapon"] = _player_weapon_name()
+				rec["weapon"] = _rig_weapon_name()
 			else:
 				# Игра отдаёт атакующего как ID-маркер, а не агента:
 				# kind/display/weapon живут на агенте-предке.
@@ -718,7 +718,7 @@ func _emit_kill_event(direction) -> void:
 	if killer_kind == "" and _direction_is_player(direction):
 		killer_kind = "player"
 		killer_name = "Player"
-		weapon = _player_weapon_name()
+		weapon = _rig_weapon_name()
 		grenade = _is_grenade(weapon)
 	if killer_kind == "":
 		_last_damager.erase(iid)
@@ -734,11 +734,6 @@ func _emit_kill_event(direction) -> void:
 		"t": now,
 	})
 	_last_damager.erase(iid)
-
-# Имя оружия игрока: GameData и узел игрока имени не несут (probe, Task 1),
-# настоящее оружие — WeaponRig под Camera/Manager, см. _rig_weapon_name().
-func _player_weapon_name() -> String:
-	return _rig_weapon_name()
 
 # Ни GameData, ни узел игрока не несут имени оружия (probe, Task 1): настоящее
 # оружие — WeaponRig под Camera/Manager, у него data.file (AKM, M4A1...).
@@ -905,7 +900,6 @@ func _on_notes_rendered(_result) -> void:
 			continue
 		Notes.augment_note(card, _notes_cov_map(task_data))
 
-const TRADERS_RES := Paths.TRADER_SAVE
 const DEPOSITS_META := "vtk_deposits"
 
 func _traders() -> Variant:
@@ -917,14 +911,14 @@ func _ledger() -> Dictionary:
 	var traders = _traders()
 	if traders == null:
 		return {}
-	var m = traders.get_meta("vtk_deposits", {})
+	var m = traders.get_meta(DEPOSITS_META, {})
 	return m if typeof(m) == TYPE_DICTIONARY else {}
 
 func _ledger_set(data: Dictionary) -> bool:
 	var traders = _traders()
 	if traders == null:
 		return false
-	traders.set_meta("vtk_deposits", data)
+	traders.set_meta(DEPOSITS_META, data)
 	var err := ResourceSaver.save(traders, Paths.TRADER_SAVE)
 	if err != OK:
 		Log.log("[VTK] deposit ledger save failed (code " + str(err) + ")")
@@ -965,7 +959,7 @@ func _slots_from_grid(grid) -> Array:
 				if item != null:
 					file = str(item.get("file"))
 					nm = str(item.get("name"))
-				amount = int(sd.get("amount", 1))
+				amount = int(VTKData.prop(sd, "amount", 1))
 		entries.append({"file": file, "name": nm, "amount": amount})
 	return VTKDeposits.normalize_slots(entries)
 
@@ -1039,10 +1033,7 @@ func _on_tasks_rendered() -> void:
 	_render_all_tasks(iface)
 
 func _on_tasks_startinput(_target) -> void:
-	var iface = _lib._caller if _lib else null
-	if iface == null or not is_instance_valid(iface):
-		return
-	_render_all_tasks(iface)
+	_on_tasks_rendered()
 
 func _render_all_tasks(iface) -> void:
 	var list = iface.get("taskList")
@@ -1187,7 +1178,7 @@ func _selected_stacks(iface) -> Array:
 		# проставляет amount только при defaultAmount != 0, поэтому почти все
 		# сдаваемые предметы лежат в инвентаре нулём. Для вклада такая ячейка —
 		# ровно один предмет, иначе apply() пропустит её как пустую.
-		var amt := int(sd.get("amount", 0))
+		var amt := int(VTKData.prop(sd, "amount", 0))
 		if amt < 1:
 			amt = 1
 		out.append({
@@ -1209,7 +1200,7 @@ func _consume(take: Array) -> void:
 		var sd = node.get("slotData")
 		if sd == null:
 			continue
-		var left := int(sd.get("amount", 0)) - amt
+		var left := int(VTKData.prop(sd, "amount", 0)) - amt
 		if left <= 0:
 			var grid = node.get_parent()
 			if grid != null and grid.has_method("Pick"):

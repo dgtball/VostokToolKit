@@ -300,17 +300,9 @@ func _handle_bind_key(event: InputEventKey) -> void:
 		_apply_qk_btn(_bind_btn, kc)
 		_bind_btn = null
 
-func _begin_bind(target: String, btn: Button) -> void:
+func _begin_bind(target: String, btn: Button, pending := false) -> void:
 	_bind_target = target
-	_bind_pending = false
-	_bind_btn = btn
-	if btn != null:
-		btn.text = Loc.txt("Press a key…")
-		btn.add_theme_color_override("font_color", VTKSurface.GREY_DIM)
-
-func _begin_bind_pending(btn: Button) -> void:
-	_bind_target = ""
-	_bind_pending = true
+	_bind_pending = pending
 	_bind_btn = btn
 	if btn != null:
 		btn.text = Loc.txt("Press a key…")
@@ -731,11 +723,7 @@ func _build_loadouts_tab(parent: VBoxContainer) -> void:
 	_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_rail_box.add_child(_list_container)
 
-	_cards_grid = GridContainer.new()
-	_cards_grid.columns = 1
-	_cards_grid.add_theme_constant_override("h_separation", 6)
-	_cards_grid.add_theme_constant_override("v_separation", 6)
-	_cards_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_cards_grid = _make_cards_grid()
 	_list_container.add_child(_cards_grid)
 
 	_right_box = VBoxContainer.new()
@@ -969,7 +957,7 @@ func _make_step_row_style(active: bool, hover: bool = false) -> StyleBox:
 func _make_step_circle_style(active: bool) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = _gold if active else Color("#1f1913")
-	s.border_color = _gold if active else Color("#3a2e20")
+	s.border_color = _gold if active else VTKSurface.BORDER
 	s.border_width_all = 1
 	s.corner_radius_all = 9
 	return s
@@ -1142,6 +1130,17 @@ func _page_columns(title: String, side: Control, main: Control, width := SIDE_WI
 	h.add_child(mv)
 	return h
 
+func _make_search_field(on_change: Callable) -> LineEdit:
+	var search := LineEdit.new()
+	search.placeholder_text = Loc.txt("Search items...")
+	search.add_theme_color_override("font_color", Color("#ffffff"))
+	search.add_theme_color_override("placeholder_color", VTKSurface.GREY_DIM)
+	search.add_theme_stylebox_override("normal", VTKSurface.panel(true, 10))
+	search.add_theme_stylebox_override("focus", VTKSurface.focus_style())
+	search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	search.text_changed.connect(on_change)
+	return search
+
 func _build_page_equipment() -> Control:
 	var v := _page_wrap()
 
@@ -1155,14 +1154,7 @@ func _build_page_equipment() -> Control:
 	# Поиск живёт над сеткой и обновляет её на лету. text_changed, а не
 	# gui_input: у LineEdit gui_input при потере фокуса Godot обрывает, и
 	# вторая вкладка с первого раза роняла бы редактор.
-	var search := LineEdit.new()
-	search.placeholder_text = Loc.txt("Search items...")
-	search.add_theme_color_override("font_color", Color("#ffffff"))
-	search.add_theme_color_override("placeholder_color", VTKSurface.GREY_DIM)
-	search.add_theme_stylebox_override("normal", VTKSurface.panel(true, 10))
-	search.add_theme_stylebox_override("focus", VTKSurface.focus_style())
-	search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	search.text_changed.connect(func(t): _set_search(t))
+	var search := _make_search_field(func(t): _set_search(t))
 	if _search_debounce != null and is_instance_valid(_search_debounce):
 		_search_debounce.queue_free()
 	_search_debounce = Timer.new()
@@ -1199,14 +1191,7 @@ func _build_page_gear() -> Control:
 
 	# Отдельное поле поиска: запрос шага 1 относится к выбору предмета в слот
 	# и не должен молча фильтровать снаряжение, и наоборот.
-	var search := LineEdit.new()
-	search.placeholder_text = Loc.txt("Search items...")
-	search.add_theme_color_override("font_color", Color("#ffffff"))
-	search.add_theme_color_override("placeholder_color", VTKSurface.GREY_DIM)
-	search.add_theme_stylebox_override("normal", VTKSurface.panel(true, 10))
-	search.add_theme_stylebox_override("focus", VTKSurface.focus_style())
-	search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	search.text_changed.connect(func(t): _set_gear_search(t))
+	var search := _make_search_field(func(t): _set_gear_search(t))
 	_gear_search_field = search
 	main.add_child(search)
 
@@ -1368,7 +1353,7 @@ class ChosenRow extends PanelContainer:
 		size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		var st := StyleBoxFlat.new()
-		st.bg_color = Color("#1a1510")
+		st.bg_color = VTKSurface.PANEL_BG
 		st.corner_radius_all = 4
 		add_theme_stylebox_override("panel", st)
 		var l := Label.new()
@@ -1577,7 +1562,7 @@ func _build_page_done() -> Control:
 	_done_bind_btn = _bind_btn
 	_bind_btn.custom_minimum_size = Vector2(120, 0)
 	_apply_qk_btn(_bind_btn, _display_qk())
-	_bind_btn.pressed.connect(func(): _begin_bind_pending(_bind_btn))
+	_bind_btn.pressed.connect(func(): _begin_bind("", _bind_btn, true))
 
 	_done_preview = _build_set_preview({}, [], false,
 		_make_control_column(Loc.txt("Controls").to_upper(), []))
@@ -2102,7 +2087,7 @@ class ToggleSwitch:
 			ts.border_color = GOLD
 		else:
 			ts.bg_color = Color("#241b12")
-			ts.border_color = Color("#3a2e20")
+			ts.border_color = VTKSurface.BORDER
 		ts.border_width_all = 1
 		ts.corner_radius_all = 9
 		_track.add_theme_stylebox_override("panel", ts)
@@ -2424,7 +2409,7 @@ func _info_of(res) -> Dictionary:
 		"resource": res,
 		"name": str(res.get("name")),
 		"type": str(res.get("type")),
-		"cat": str(res.get("type", "")).to_lower(),
+		"cat": str(LD.prop(res, "type", "")).to_lower(),
 		"subtype": str(res.get("subtype")),
 		"slots": _item_slots(res),
 		"compatible": compat if typeof(compat) == TYPE_ARRAY else [],
@@ -2467,15 +2452,19 @@ class CreateCard extends Panel:
 		S.draw_dashes(self,
 			Rect2(Vector2(2, 2), size - Vector2(4, 4)), VTKSurface.BROWN)
 
+func _make_cards_grid() -> GridContainer:
+	var grid := GridContainer.new()
+	grid.columns = 1
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return grid
+
 func _refresh_loadout_list() -> void:
 	for child in _list_container.get_children():
 		_list_container.remove_child(child)
 		child.queue_free()
-	_cards_grid = GridContainer.new()
-	_cards_grid.columns = 1
-	_cards_grid.add_theme_constant_override("h_separation", 6)
-	_cards_grid.add_theme_constant_override("v_separation", 6)
-	_cards_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_cards_grid = _make_cards_grid()
 	_list_container.add_child(_cards_grid)
 
 	var loadouts = LD.get_all()

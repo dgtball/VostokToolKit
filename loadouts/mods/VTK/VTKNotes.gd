@@ -1,4 +1,5 @@
 extends RefCounted
+const Surface = preload("res://mods/VTK/VTKSurface.gd")
 ## Логика вкладки Notes: группировка предметов задачи, признак сдачи,
 ## построение строк иконок и прогресса вкладов (вариант A). Чистая часть
 ## (без узлов сцены и без путей внутрь игры) тестируется headless, как
@@ -15,9 +16,8 @@ const COL_CELL_DONE := Color(0.094, 0.141, 0.059) # 18240f
 const COL_GREEN := Color(0.549, 0.851, 0.549)     # 8cd98c
 const COL_GREEN_DIM := Color(0.306, 0.478, 0.306) # 4e7a4e
 const COL_PARTIAL := Color(0.420, 0.306, 0.141)   # 6b4e24
-const COL_BORDER := Color(0.227, 0.180, 0.126)    # 3a2e20
+const COL_BORDER := Surface.BORDER
 const COL_INK := Color(0.847, 0.804, 0.745)       # d8cdbe
-const COL_TICK_INK := Color(0.047, 0.078, 0.047)
 
 ## Ключ группировки: у предмета из БД стабильно есть resource_path; фолбэк —
 ## имя, затем str(). Notes и покрытие вкладов считают группы одинаково.

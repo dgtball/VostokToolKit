@@ -8,6 +8,8 @@ const GOLD_SOFT := Color("#e0b55a")
 const INK := Color("#d8cdbe")
 const MUTED := Color("#8a7a6a")
 const BROWN := Color("#5f5347")
+const BORDER := Color("#3a2e20")
+const PANEL_BG := Color("#1a1510")
 const GREY := Color("#888888")
 const GREY_DIM := Color("#666666")
 
@@ -15,12 +17,6 @@ static var _surfaces: Dictionary = {}
 static var _textures: Dictionary = {}
 static var _panels: Dictionary = {}
 static var _focus: StyleBoxFlat = null
-
-static func clear_cache() -> void:
-	_surfaces.clear()
-	_textures.clear()
-	_panels.clear()
-	_focus = null
 
 static func svg_texture(svg: String) -> Texture2D:
 	if _textures.has(svg):
@@ -96,7 +92,7 @@ static func panel(inset: bool = false, margin: int = 16) -> StyleBoxFlat:
 	if _panels.has(key):
 		return _panels[key]
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color("#171208") if inset else Color("#1a1510")
+	s.bg_color = Color("#171208") if inset else PANEL_BG
 	s.border_color = Color("#2a1f14")
 	s.set_border_width_all(1)
 	s.set_corner_radius_all(4)
@@ -145,7 +141,7 @@ static func style_button(button: Button, accent: bool = false, danger: bool = fa
 	button.add_theme_color_override("font_color", INK)
 	button.add_theme_color_override("font_hover_color", Color("#efe5d4"))
 	button.add_theme_color_override("font_pressed_color", GOLD)
-	button.add_theme_color_override("font_disabled_color", Color("#5f5347"))
+	button.add_theme_color_override("font_disabled_color", BROWN)
 	for state in ["normal", "hover", "pressed", "disabled"]:
 		button.add_theme_stylebox_override(state, surface(state, accent, danger, false, ml, mr, mt, mb))
 	button.add_theme_stylebox_override("focus", focus_style())

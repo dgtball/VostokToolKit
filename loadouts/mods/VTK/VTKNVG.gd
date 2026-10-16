@@ -128,8 +128,6 @@ const BOT_PRESETS := [
 	[Color(0.6, 0.33, 0.09), Color(0.5, 0.34, 0.2), Color(0.26, 0.22, 0.24)],   # Orange -> dim orange -> nearly black
 	[Color(0.6, 0.15, 0.09), Color(0.5, 0.22, 0.16), Color(0.28, 0.18, 0.2)],   # Red -> dim red -> barely warm
 ]
-const BOT_PRESET_NAMES: Array[String] = ["Amber", "White", "Orange", "Red"]
-
 # settings
 var set_nvg_noise: float = 4.0
 var set_nvg_white: float = 1.0
