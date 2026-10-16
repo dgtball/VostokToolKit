@@ -129,8 +129,8 @@ func _build_set_preview(eq: Dictionary, gear: Array, fill := true, controls: Con
 	row.add_theme_constant_override("separation", 8)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL if fill else Control.SIZE_SHRINK_BEGIN
-	row.add_child(_ui._make_equip_preview(eq))
-	row.add_child(_ui._make_inventory_panel(gear))
+	row.add_child(_ui._editor._make_equip_preview(eq))
+	row.add_child(_ui._editor._make_inventory_panel(gear))
 	if controls != null:
 		row.add_child(controls)
 	return row
