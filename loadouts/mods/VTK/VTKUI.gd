@@ -6,25 +6,17 @@ const Draft = preload("res://mods/VTK/VTKDraft.gd")
 const Picker = preload("res://mods/VTK/VTKPicker.gd")
 const VTKSurface := preload("res://mods/VTK/VTKSurface.gd")
 const LD := preload("res://mods/VTK/VTKData.gd")
+const Items := preload("res://mods/VTK/VTKItemStore.gd")
 
 const UI_LAYER := 4095
 
-var _db_items: Array = []
-# resource_path -> Resource. Строки сетов хранят пути, а панели обвесов нужен
-# сам Resource: без индекса каждая клетка искала бы его перебором всего
-# списка, а раньше просто грузила с диска.
-var _item_index: Dictionary = {}
-# resource_path -> готовый info-словарь (_info_of). Предметы неизменны в рантайме,
-# поэтому считается один раз на предмет, а не на каждую клетку/обвес при пересборке.
-var _info_cache: Dictionary = {}
+# Каталог предметов (список, индекс resource_path, кеши info и иконок) живёт в
+# VTKItemStore: сюда он попадает через _load_items, а читается отсюда Items.*.
 var _equip_cells: Array = []
 var _equip_cols := 6
 var _equip_rows := 8
 var _equip_styles: Dictionary = {}
 var _inven_bg_style: StyleBoxFlat
-# resource_path -> иконка либо null. Кеш нужен и для промахов: без него
-# отсутствующий PNG искался бы заново в каждой клетке.
-var _icon_cache: Dictionary = {}
 var _panel: Panel = null
 var _scroll: ScrollContainer = null
 var _main_vbox: VBoxContainer = null
@@ -344,9 +336,9 @@ func _apply_qk_btn(btn: Button, qk: int) -> void:
 		VTKSurface.style_button(btn)
 
 func _load_items() -> void:
-	_db_items.clear()
-	_item_index.clear()
-	_info_cache.clear()
+	# Чистка до чтения базы: при отказе Database каталог остаётся пустым, как и
+	# раньше, когда эти три строки жили здесь.
+	Items.clear()
 	var db = get_node_or_null(Paths.DATABASE)
 	if not db:
 		Log.warn_once(Paths.DATABASE, "item catalog: Database node missing")
@@ -354,10 +346,7 @@ func _load_items() -> void:
 	if not db.master:
 		Log.warn_once(Paths.DATABASE + "/master", "item catalog: Database.master missing")
 		return
-	for item in db.master.items:
-		if item and item.name != "":
-			_db_items.append(item)
-			_item_index[item.resource_path] = item
+	Items.rebuild(db.master.items)
 	_build_equip_layout()
 
 # Раскладка экипировки одна на сессию: набор слотов берётся из всего каталога,
@@ -365,7 +354,7 @@ func _load_items() -> void:
 # пересборке сетки/превью.
 func _build_equip_layout() -> void:
 	var lists: Array = []
-	for it in _db_items:
+	for it in Items.all():
 		if it != null:
 			lists.append(it.get("slots"))
 	var layout := Picker.equip_layout(Picker.all_slots(lists))
@@ -1566,7 +1555,7 @@ func _rebuild_gear_grid(facets: Array) -> void:
 # дважды - на входе и в счётчиках фасетов.
 func _items_for_gear() -> Array:
 	var out: Array = []
-	for it in _db_items:
+	for it in Items.all():
 		if it == null:
 			continue
 		out.append(_entry(it))
@@ -1656,7 +1645,7 @@ func refresh(scope: int) -> void:
 
 func _refresh_page_equipment() -> void:
 	# Один обход каталога на пересборку: и шапка фильтров, и полки берут один
-	# и тот же набор, а _target_filter_items проходит _db_items целиком.
+	# и тот же набор, а _target_filter_items проходит весь каталог целиком.
 	var found := _target_filter_items()
 	_rebuild_target_bar(found)
 	_refresh_slots()
@@ -1707,7 +1696,7 @@ func _equip_cell_style(active: bool, hover: bool = false, occupied: bool = false
 func _rotates_icon(slot: String, desc: Dictionary) -> bool:
 	if slot != "Primary" and slot != "Secondary":
 		return false
-	var res: Variant = _cell_resource(desc)
+	var res: Variant = Items.cell_resource(desc)
 	if res == null:
 		return false
 	var path := str(res.get("resource_path"))
@@ -1805,9 +1794,9 @@ func _make_equip_cell(slot: String, w: int, h: int, desc: Dictionary = {}, inter
 		_attach_row_hover(box, func(hv: bool): return _equip_cell_style(active, hv, occupied))
 		box.gui_input.connect(func(ev): _on_slot_row_input(ev, slot, src))
 
-	# Variant: `_cell_resource` отдаёт Variant, а `:=` на нём - предупреждение,
+	# Variant: `Items.cell_resource` отдаёт Variant, а `:=` на нём - предупреждение,
 	# которое стенд считает ошибкой парсинга.
-	var res: Variant = _cell_resource(src) if occupied else null
+	var res: Variant = Items.cell_resource(src) if occupied else null
 	var rotated := occupied and _rotates_icon(slot, src)
 	var composited := false
 	if occupied and res != null and res.get("tetris") != null and str(res.get("type")) == "Weapon":
@@ -1934,7 +1923,7 @@ func _wall_item(desc: Dictionary) -> Control:
 	box.custom_minimum_size = Vector2(INVEN_CELL, INVEN_CELL)
 	box.mouse_filter = Control.MOUSE_FILTER_STOP
 	box.tooltip_text = str(desc.get("name", "?"))
-	var tex := _item_icon(_cell_resource(desc))
+	var tex := _item_icon(Items.cell_resource(desc))
 	if tex != null:
 		var img := _art_texture_rect(tex, Vector2.ZERO)
 		img.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -2034,10 +2023,6 @@ func _make_inventory_panel(gear: Array) -> Control:
 	pad.add_child(wall)
 	panel.add_child(pad)
 	return panel
-
-# Ресурс предмета слота для иконки. Пустой дескриптор - null.
-func _cell_resource(desc: Dictionary) -> Variant:
-	return _item_info(str(desc.get("path", ""))).get("resource")
 
 # Клик по строке слота: строка становится целью, а клик по текущей цели с
 # предметом открывает панель обвесов. Иначе обвесы пришлось бы искать
@@ -2352,7 +2337,7 @@ func _entry(it) -> Dictionary:
 # обязательство: клик по предмету без цели сам выбирает свободный слот.
 func _items_for_target() -> Array:
 	var out: Array = []
-	for it in _db_items:
+	for it in Items.all():
 		if it == null:
 			continue
 		if not Picker.matches_search(str(it.get("name")), _search_text):
@@ -2423,37 +2408,10 @@ func _make_shelf(shelf: Dictionary) -> Control:
 	box.add_child(flow)
 	return box
 
-# Сведения о предмете по пути. Пути приходят из сохранённого сета, поэтому
-# за индексом идёт только загрузка - но предмет из базы берётся из индекса
-# без диска.
+# Сведения о предмете по пути - тонкий форвардер на VTKItemStore: сам каталог,
+# кеши и дисковая ветка живут там, а здесь имя держит ~15 внутренних вызовов.
 func _item_info(path: String) -> Dictionary:
-	if path == "":
-		return {}
-	if _item_index.has(path):
-		return _info_of(_item_index[path])
-	return _info_of(load(path))
-
-func _info_of(res) -> Dictionary:
-	if res == null:
-		return {}
-	var key := String(res.resource_path)
-	if key != "" and _info_cache.has(key):
-		return _info_cache[key]
-	var compat = res.get("compatible")
-	var info := {
-		"resource": res,
-		"name": str(res.get("name")),
-		"type": str(res.get("type")),
-		"cat": str(LD.prop(res, "type", "")).to_lower(),
-		"subtype": str(res.get("subtype")),
-		"slots": _item_slots(res),
-		"compatible": compat if typeof(compat) == TYPE_ARRAY else [],
-		"maxAmount": res.get("maxAmount"),
-		"defaultAmount": res.get("defaultAmount"),
-	}
-	if key != "":
-		_info_cache[key] = info
-	return info
+	return Items.item_info(path)
 
 # Пунктирная карточка «+ Создать сет». StyleBoxFlat штрихов не умеет, а
 # штатный компонент рамки убран из вёрстки, поэтому рамка рисуется вручную.
@@ -2659,25 +2617,10 @@ func _close_att_overlay() -> void:
 	_open_gear_att = ""
 	refresh(RefreshScope.OVERLAY)
 
-# Иконка предмета. У части предметов в данных игры icon пуст, хотя PNG лежит
-# рядом в Files/ под именем Icon_<имя файла>.png - так в игре
-# AKS-74U_Magazine. Путь собирается относительно самого предмета, а не по
-# шаблону каталога: после обновления игры фолбэк просто не срабатывает и
-# остаётся пустая иконка, как раньше.
+# Иконка предмета - форвардер на VTKItemStore. VTKFeed ходит сюда же через
+# ui.call("_item_icon", item), поэтому имя на VTKUI обязано остаться.
 func _item_icon(res) -> Texture2D:
-	if not (res is Resource):
-		return null
-	if "icon" in res and res["icon"]:
-		return res["icon"]
-	var base := str(res.resource_path)
-	if not base.ends_with(".tres"):
-		return null
-	if _icon_cache.has(base):
-		return _icon_cache[base]
-	var p := base.get_base_dir() + "/Files/Icon_" + base.get_file().get_basename() + ".png"
-	var tex = load(p) if ResourceLoader.exists(p) else null
-	_icon_cache[base] = tex
-	return tex
+	return Items.item_icon(res)
 
 # Иконка предмета: кроп прозрачных полей через Picker.item_art и режим
 # сохранения пропорций. Общая для клеток шага 1/2 и чипа инвентаря.
@@ -2833,14 +2776,6 @@ func _make_item_cell(item, forced_slot = null, gear := false, force_gear := fals
 	)
 	return cell
 
-func _item_slots(item) -> Array:
-	if item == null:
-		return []
-	var slots = item.get("slots")
-	if typeof(slots) != TYPE_ARRAY:
-		return []
-	return slots
-
 # Клик по предмету. Слот-цель решает всё: при явной цели предмет вытесняет то,
 # что стояло в этом слоте, при пустой занимает первый свободный слот сам, а если
 # слотов нет - уходит в снаряжение. force_gear (шаг 2) кладёт предмет сразу в
@@ -2851,7 +2786,7 @@ func _place_into(item, slot: String, force_gear := false) -> void:
 	var path := str(item.resource_path)
 	if path == "":
 		return
-	var res = _item_index.get(path)
+	var res = Items.index_of(path)
 	if res == null:
 		res = load(path)
 	if res == null:
@@ -2880,7 +2815,7 @@ func _place_into(item, slot: String, force_gear := false) -> void:
 		if max_am != null and float(max_am) > 1.0:
 			amt = float(max_am)
 	var counted := t == "Attachment" and str(res.get("subtype")) == "Magazine"
-	var slots = _item_slots(res)
+	var slots = Items.item_slots(res)
 	var item_name := str(res.get("name"))
 	# Шаг 2 («Снаряжение»): слот не выбирается, предмет идёт в снаряжение и
 	# не занимает свободный слот экипировки.
@@ -2954,7 +2889,7 @@ func _att_group_label(grp: String) -> String:
 # Группа обвеса по его пути. Черновик не грузит ресурсы, поэтому проверку
 # группы делаем здесь, а в toggle_attachment() передаём её Callable'ом.
 func _att_group_of(path: String) -> String:
-	var res = _item_index.get(path)
+	var res = Items.index_of(path)
 	if res == null:
 		res = load(path)
 	if res == null:
@@ -3038,7 +2973,7 @@ func _build_att_panel(path: String) -> Control:
 		flow.add_theme_constant_override("v_separation", 2)
 		flow.add_theme_constant_override("margin_left", 8)
 		for a in g.get("items", []):
-			flow.add_child(_make_att_cell(path, grp, _attachment_resource(a)))
+			flow.add_child(_make_att_cell(path, grp, Items.attachment_resource(a)))
 		vb.add_child(flow)
 	return panel
 
@@ -3083,11 +3018,6 @@ func _make_att_cell(owner_path: String, grp: String, att_res) -> Control:
 	cell.mouse_exited.connect(func():
 		cell.add_theme_stylebox_override("panel", picked if on else normal))
 	return cell
-
-# Из записи группы обвесов достаётся ресурс: _item_info отдаёт словарь с
-# полем "resource", а плитке нужен сам ресурс - ради иконки и имени.
-func _attachment_resource(a: Dictionary):
-	return _item_info(str(a.get("path", ""))).get("resource")
 
 # У обоймы единственный "обвес" - совместимый патрон, и он уезжает в
 # slotData.nested, который игра не читает. Число патронов задаёт сам amount
