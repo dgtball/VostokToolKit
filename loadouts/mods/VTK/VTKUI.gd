@@ -9,6 +9,7 @@ const LD := preload("res://mods/VTK/VTKData.gd")
 const Items := preload("res://mods/VTK/VTKItemStore.gd")
 const TeleportTab := preload("res://mods/VTK/VTKTeleportTab.gd")
 const Features := preload("res://mods/VTK/VTKFeatureHost.gd")
+const MCMBridge := preload("res://mods/VTK/VTKMCMBridge.gd")
 
 const UI_LAYER := 4095
 
@@ -196,19 +197,23 @@ func _init_later() -> void:
 		return
 	_late_initialized = true
 	_migrate_mcm_dir()
-	# Обе миграции - до _load_items и _register_mcm: обеим нужен готовый
+	# Обе миграции - до _load_items и регистрации в MCM: обеим нужен готовый
 	# каталог MCM/vostok-toolkit.
 	LD.migrate_save_file()
 	game_data = load(Paths.GAME_DATA)
 	Log.log("[VTK] Starting UI init")
 	_load_items()
-	_load_lang()
+	_mcm = MCMBridge.new()
+	_mcm.load_lang()
 	# Хост до _build_ui: вкладка телепорта берёт у него узел travel.
 	_features = Features.new(self)
 	_build_ui()
 	_features._ensure_hooks()
-	_register_mcm()
+	_mcm.register(_features, Callable(self, "_rebuild_ui"), Callable(self, "_set_key_ui_toggle"))
 	Log.log("[VTK] UI init done")
+
+func _set_key_ui_toggle(v: int) -> void:
+	_key_ui_toggle = v
 
 func _is_toggle_event(event: InputEvent) -> bool:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
@@ -473,7 +478,7 @@ func _build_ui() -> void:
 	rail.add_child(fill)
 
 	var rver := Label.new()
-	rver.text = "v" + _mod_version()
+	rver.text = "v" + _mcm.version()
 	rver.add_theme_font_size_override("font_size", 10)
 	rver.add_theme_color_override("font_color", VTKSurface.BROWN)
 	rver.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -3054,18 +3059,10 @@ func _build_mag_panel(path: String, desc: Dictionary) -> Control:
 	row.add_child(cap_lbl)
 	return panel
 
-# ============== HUD / LANGUAGE ==============
+# ============== FEATURES / MCM ==============
 
 var _features: RefCounted = null
-
-func _load_lang() -> void:
-	Loc.set_lang(Loc.DEFAULT)
-	var cf := ConfigFile.new()
-	if cf.load("user://MCM/vostok-toolkit/config.ini") != OK:
-		return
-	var d = cf.get_value("Dropdown", "language", {})
-	if typeof(d) == TYPE_DICTIONARY:
-		Loc.set_lang(str(d.get("value", Loc.DEFAULT)))
+var _mcm: RefCounted = null
 
 func _clear_ui() -> void:
 	for n in _ui_nodes:
@@ -3184,133 +3181,3 @@ static func _keycode_to_string(kc: int) -> String:
 	if kc <= 0:
 		return "?"
 	return OS.get_keycode_string(kc)
-
-func _register_mcm() -> void:
-	if not ResourceLoader.exists("res://ModConfigurationMenu/Scripts/Doink Oink/MCM_Helpers.tres"):
-		_features._apply_hud()
-		return
-	var MCM = load("res://ModConfigurationMenu/Scripts/Doink Oink/MCM_Helpers.tres")
-	if MCM == null or not MCM.has_method("RegisterConfiguration"):
-		return
-	var cfg = ConfigFile.new()
-	var CAT := "01. General"
-	cfg.set_value("Keycode", "key_ui_toggle", {"name": "Hotkey: Toggle UI", "default": 0, "default_type": "Keycode", "value": 0, "category": CAT, "menu_pos": 0, "tooltip": "Press once to open/close the Loadouts UI."})
-	cfg.set_value("Dropdown", "language", {"name": "Language", "default": Loc.DEFAULT, "value": Loc.get_lang(), "options": {"en": "English", "ru": "Русский"}, "category": CAT, "menu_pos": 1, "tooltip": "Interface language of the Loadouts window. English is the source language."})
-	cfg.set_value("Bool", "auto_equip", {"name": "Auto-equip on pickup", "default": true, "value": true, "category": CAT, "menu_pos": 2, "tooltip": "When a picked-up item fits an empty equipment slot it is equipped right away. Stackables top up an already equipped stack; loading a save or starting a new game is left untouched."})
-	var TP := "02. ThermalVision"
-	cfg.set_value("Bool", "thermal_enabled", {"name": "Thermal vision", "default": false, "value": false, "category": TP, "menu_pos": 0, "tooltip": "Master switch for the thermal vision layer: bot heat glow, mines and the Nomad marker. Plain green NVG is unaffected while this is off."})
-	cfg.set_value("Bool", "thermal_mines", {"name": "Mine highlighting", "default": true, "value": true, "category": TP, "menu_pos": 1, "tooltip": "Highlight mines while thermal vision is on."})
-	cfg.set_value("Bool", "thermal_mark_nomads", {"name": "Mark friendly Nomads", "default": true, "value": true, "category": TP, "menu_pos": 2, "tooltip": "Draw a floating green marker over friendly Nomads so they are not shot by accident."})
-	cfg.set_value("Bool", "thermal_winter_auto", {"name": "Winter auto-dimming", "default": true, "value": true, "category": TP, "menu_pos": 3, "tooltip": "In winter (season 2) snow blows the thermal image out; dim the world so bots stay readable."})
-	cfg.set_value("Float", "thermal_winter_dim", {"name": "Winter dimming", "default": 0.55, "value": 0.55, "minRange": 0.2, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 4, "tooltip": "Multiplier applied to world brightness while winter auto-dimming is active. Lower means darker snow."})
-	cfg.set_value("Float", "nvg_noise", {"name": "NVG noise", "default": 4.0, "value": 4.0, "minRange": 0.0, "maxRange": 60.0, "step": 0.5, "category": TP, "menu_pos": 5, "tooltip": "Grain amount over the NVG image. Lower is cleaner. Vanilla is fixed at 10."})
-	cfg.set_value("Float", "nvg_white", {"default": 1.0, "value": 1.0, "minRange": 0.05, "maxRange": 1.0, "step": 0.05, "category": TP, "menu_pos": 6, "tooltip": "Brightness of the NVG image. 1 = full brightness; lower darkens the whole overlay (helps cut shimmer in bright scenes).", "name": "NVG brightness"})
-	cfg.set_value("Int", "thermal_palette", {"default": 0, "value": 0, "minRange": 0, "maxRange": 5, "step": 1, "category": TP, "menu_pos": 7, "tooltip": "0 = Classic, 1 = White Hot (grey), 2 = Black Hot (inverted grey), 3 = Amber, 4 = Forest, 5 = Ice.", "name": "World palette"})
-	cfg.set_value("Float", "thermal_world", {"default": 1.70, "value": 1.70, "minRange": 1.0, "maxRange": 4.0, "step": 0.05, "category": TP, "menu_pos": 8, "tooltip": "How bright the surrounding world reads in thermal.", "name": "World brightness"})
-	cfg.set_value("Int", "thermal_bot_preset", {"default": 0, "value": 0, "minRange": 0, "maxRange": 3, "step": 1, "category": TP, "menu_pos": 9, "tooltip": "0 = Amber, 1 = White, 2 = Orange, 3 = Red. Living bots glow in this colour; a corpse cools from the head down before disappearing.", "name": "Bot colour"})
-	cfg.set_value("Float", "thermal_far_distance", {"default": 45.0, "value": 45.0, "minRange": 5.0, "maxRange": 300.0, "step": 5.0, "category": TP, "menu_pos": 10, "tooltip": "Bots and mines only glow within this distance; past it they read as ordinary scenery. 5 = only right beside you, 300 = the whole map.", "name": "Distance"})
-	var TR := "03. Travel"
-	cfg.set_value("Bool", "tp_unlocked_shelters_only", {"name": "Unlocked shelters only", "default": false, "value": false, "category": TR, "menu_pos": 0, "tooltip": "When enabled, teleporting to a locked shelter is refused."})
-	var KF := "04. KillFeed"
-	cfg.set_value("Bool", "kill_counter_enabled", {"name": "Kill counter", "default": true, "value": true, "category": KF, "menu_pos": 0, "tooltip": "Show the kill counter HUD line (Killed / Enemies / Nomads)."})
-	cfg.set_value("Bool", "kill_feed_enabled", {"name": "Kill feed", "default": true, "value": true, "category": KF, "menu_pos": 1, "tooltip": "Show the kill feed under the counter: killer, weapon/headshot icons, victim."})
-	var DBG := "05. Debug"
-	cfg.set_value("Bool", "debug_log", {"name": "Mod debug log", "default": false, "value": false, "category": DBG, "menu_pos": 0, "tooltip": "Print mod diagnostics (item resolution, hooks, teleports, saves) to the game log. Off during normal play; turn on only to troubleshoot."})
-	cfg.set_value("Bool", "nvg_debug_probe", {"name": "NVG probe log", "default": false, "value": false, "category": DBG, "menu_pos": 1, "tooltip": "Write NVG/thermal probes to user://loadouts_debug.log and enable the F4 detection overlay. Leave off during normal play; turn on only to diagnose something."})
-	cfg.set_value("Info", "version", _mod_version())
-	cfg.set_value("Info", "author", "opencode")
-	var path = "user://MCM/vostok-toolkit"
-	DirAccess.make_dir_recursive_absolute(path)
-	var cfile = path + "/config.ini"
-	if FileAccess.file_exists(cfile):
-		var existing = ConfigFile.new()
-		existing.load(cfile)
-		var stale_sections := []
-		for s in existing.get_sections():
-			if s != "Info" and not cfg.has_section(s):
-				stale_sections.append(s)
-		for s in stale_sections:
-			existing.erase_section(s)
-		for s in cfg.get_sections():
-			var stale_keys: Array = []
-			if existing.has_section(s):
-				for k in existing.get_section_keys(s):
-					if not cfg.has_section_key(s, k):
-						stale_keys.append(k)
-			for k in stale_keys:
-				existing.erase_section_key(s, k)
-		for s in cfg.get_sections():
-			for k in cfg.get_section_keys(s):
-				if s == "Info":
-					existing.set_value(s, k, cfg.get_value(s, k, {}))
-					continue
-				if not existing.has_section_key(s, k):
-					existing.set_value(s, k, cfg.get_value(s, k, {}))
-					continue
-				var old_v = existing.get_value(s, k, {})
-				var new_v = cfg.get_value(s, k, {})
-				if typeof(old_v) == TYPE_DICTIONARY and typeof(new_v) == TYPE_DICTIONARY:
-					var merged = new_v.duplicate()
-					merged["value"] = old_v.get("value", new_v.get("value"))
-					existing.set_value(s, k, merged)
-		existing.save(cfile)
-	if not FileAccess.file_exists(cfile):
-		cfg.save(cfile)
-	MCM.RegisterConfiguration("vostok-toolkit", "Vostok Toolkit", path, "Loadouts, ESP and teleport", _mcm_apply, self)
-	_mcm_apply(ConfigFile.new())
-
-func _mod_version() -> String:
-	# Единственный источник версии - version.txt, который пишет pack.ps1.
-	# res://mod.txt не читаем: он общий для всех модов и в заголовке может
-	# оказаться чужая версия.
-	var vf = FileAccess.open("res://mods/VTK/version.txt", FileAccess.READ)
-	if vf == null:
-		return "unknown"
-	var v := vf.get_as_text().strip_edges()
-	vf.close()
-	return v if v != "" else "unknown"
-
-func _mcm_key_val(cfg: ConfigFile, section: String, key: String, fallback):
-	if not cfg.has_section_key(section, key):
-		return fallback
-	var d = cfg.get_value(section, key, {})
-	if typeof(d) == TYPE_DICTIONARY and d.has("value"):
-		return d["value"]
-	return d if typeof(d) in [TYPE_BOOL, TYPE_INT, TYPE_FLOAT] else fallback
-
-func _mcm_apply(cfg: ConfigFile) -> void:
-	var cpath = "user://MCM/vostok-toolkit/config.ini"
-	if cfg.get_sections().is_empty() and FileAccess.file_exists(cpath):
-		cfg.load(cpath)
-	var want := str(_mcm_key_val(cfg, "Dropdown", "language", Loc.get_lang()))
-	if want != Loc.get_lang():
-		Loc.set_lang(want)
-		if Loc.get_lang() == want:
-			_rebuild_ui()
-	_key_ui_toggle = int(_mcm_key_val(cfg, "Keycode", "key_ui_toggle", 0))
-	Log.enabled = bool(_mcm_key_val(cfg, "Bool", "debug_log", false))
-	_features.set_hud(
-		bool(_mcm_key_val(cfg, "Bool", "kill_counter_enabled", true)),
-		bool(_mcm_key_val(cfg, "Bool", "kill_feed_enabled", true)))
-	_features.set_equip(
-		bool(_mcm_key_val(cfg, "Bool", "auto_equip", true)),
-		bool(_mcm_key_val(cfg, "Bool", "nvg_debug_probe", false)))
-	_features.set_travel_unlocked(bool(_mcm_key_val(cfg, "Bool", "tp_unlocked_shelters_only", false)))
-	var nvg: Node = _features.nvg()
-	if nvg == null:
-		return
-	nvg.set_nvg_noise = float(_mcm_key_val(cfg, "Float", "nvg_noise", 4.0))
-	nvg.set_nvg_white = float(_mcm_key_val(cfg, "Float", "nvg_white", 1.0))
-	nvg.set_palette = int(_mcm_key_val(cfg, "Int", "thermal_palette", 0))
-	nvg.set_world = float(_mcm_key_val(cfg, "Float", "thermal_world", 1.70))
-	nvg.set_debug_probe = bool(_mcm_key_val(cfg, "Bool", "nvg_debug_probe", false))
-	nvg.set_mark_nomads = bool(_mcm_key_val(cfg, "Bool", "thermal_mark_nomads", true))
-	nvg.set_winter_auto = bool(_mcm_key_val(cfg, "Bool", "thermal_winter_auto", true))
-	nvg.set_winter_dim = float(_mcm_key_val(cfg, "Float", "thermal_winter_dim", 0.55))
-	nvg.set_bot_preset = int(_mcm_key_val(cfg, "Int", "thermal_bot_preset", 0))
-	nvg.set_far_distance = float(_mcm_key_val(cfg, "Float", "thermal_far_distance", 45.0))
-	nvg.apply_debug_probe()
-	# Mines/thermal moved out of the Settings tab into MCM; read them here.
-	_features.set_thermal(
-		bool(_mcm_key_val(cfg, "Bool", "thermal_enabled", false)),
-		bool(_mcm_key_val(cfg, "Bool", "thermal_mines", true)))
