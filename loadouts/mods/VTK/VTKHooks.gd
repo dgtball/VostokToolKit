@@ -161,9 +161,9 @@ func _try_register() -> void:
 			if not _lib.frameworks_ready.is_connected(_do_register):
 				_lib.frameworks_ready.connect(_do_register)
 	else:
-		var mml = get_node_or_null("/root/RTVModLib")
+		var mml = get_node_or_null(Paths.RTVMODLIB)
 		if mml == null:
-			mml = get_node_or_null("/root/MML")
+			mml = get_node_or_null(Paths.MML)
 		if mml and mml.has_method("hook"):
 			_lib = mml
 			_do_register()
@@ -226,7 +226,7 @@ func _on_newgame_post(difficulty, _season) -> void:
 	Log.log("[VTK] newgame-post: difficulty=" + str(diff))
 
 func patch_world_difficulty(diff: int) -> void:
-	var path := "user://World.tres"
+	var path := Paths.WORLD_SAVE
 	if not FileAccess.file_exists(path):
 		return
 	var world = load(path)

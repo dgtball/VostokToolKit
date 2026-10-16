@@ -150,7 +150,7 @@ func _process(_delta: float) -> void:
 	if scene != _scene_ref:
 		_scene_ref = scene
 		if _panel_open:
-			_set_panel_open(false)
+			set_panel_open(false)
 		return
 	if visible and not get_tree().paused:
 		_self_paused = true
@@ -238,7 +238,7 @@ func _is_toggle_event(event: InputEvent) -> bool:
 		return false
 	return event.keycode == _key_ui_toggle or event.physical_keycode == _key_ui_toggle
 
-func _set_panel_open(open: bool) -> void:
+func set_panel_open(open: bool) -> void:
 	_panel_open = open
 	visible = open
 	if open:
@@ -261,12 +261,12 @@ func _input(event: InputEvent) -> void:
 			return
 		if event.keycode == KEY_ESCAPE or event.physical_keycode == KEY_ESCAPE:
 			if visible:
-				_set_panel_open(false)
+				set_panel_open(false)
 			return
 		if _is_toggle_event(event):
 			if get_tree().current_scene == null:
 				return
-			_set_panel_open(not visible)
+			set_panel_open(not visible)
 			return
 		if get_viewport().gui_get_focus_control() is LineEdit:
 			return
@@ -349,8 +349,10 @@ func _load_items() -> void:
 	_info_cache.clear()
 	var db = get_node_or_null(Paths.DATABASE)
 	if not db:
+		Log.warn_once(Paths.DATABASE, "item catalog: Database node missing")
 		return
 	if not db.master:
+		Log.warn_once(Paths.DATABASE + "/master", "item catalog: Database.master missing")
 		return
 	for item in db.master.items:
 		if item and item.name != "":

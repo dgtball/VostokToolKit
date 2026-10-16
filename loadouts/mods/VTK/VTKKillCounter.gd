@@ -1,5 +1,6 @@
 extends Control
 const Paths = preload("res://mods/VTK/VTKPaths.gd")
+const Log = preload("res://mods/VTK/VTKLog.gd")
 
 var _enabled: bool = false
 var _label: Label = null
@@ -134,9 +135,15 @@ func _get_iface() -> Node:
 func _get_hooks() -> Node:
 	if _hooks_node != null and is_instance_valid(_hooks_node):
 		return _hooks_node
-	var parent = get_node_or_null("/root/VTKUI")
-	if parent != null:
-		_hooks_node = parent.get_node_or_null("VTKHooks")
+	var parent = get_node_or_null(Paths.UI_ROOT)
+	if parent == null:
+		# Промах раньше молча останавливал счётчик: флаг оставался включённым,
+		# узел жил, но считал ноль. Один след на путь.
+		Log.warn_once(Paths.UI_ROOT, "kill counter: VTKUI autoload missing")
+		return _hooks_node
+	_hooks_node = parent.get_node_or_null(Paths.HOOKS)
+	if _hooks_node == null:
+		Log.warn_once(Paths.UI_ROOT + "/" + Paths.HOOKS, "kill counter: VTKHooks missing")
 	return _hooks_node
 
 func _reset_counters() -> void:

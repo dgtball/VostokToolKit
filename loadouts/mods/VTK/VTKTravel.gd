@@ -178,10 +178,16 @@ func _teleport_internal(target_map: String, final_offset: Variant, dest_label: S
 
 
 func _hooks() -> Node:
-	var ui := get_node_or_null("/root/VTKUI")
-	if ui != null:
-		return ui.get_node_or_null("VTKHooks")
-	return null
+	var ui := get_node_or_null(Paths.UI_ROOT)
+	if ui == null:
+		# Телепорт без хуков работает, но теряет авто-экип и синхронизацию
+		# сейвов. Раньше промах гасил обе функции без следа.
+		Log.warn_once(Paths.UI_ROOT, "travel: VTKUI autoload missing")
+		return null
+	var h := ui.get_node_or_null(Paths.HOOKS)
+	if h == null:
+		Log.warn_once(Paths.UI_ROOT + "/" + Paths.HOOKS, "travel: VTKHooks missing")
+	return h
 
 
 func _save_before_transition(target_map: String, loader: Node) -> void:
@@ -231,9 +237,12 @@ func _current_map_name() -> String:
 
 
 func _close_interfaces() -> void:
-	var parent := get_parent()
-	if parent != null and is_instance_valid(parent) and parent.has_method("_set_panel_open"):
-		parent.call("_set_panel_open", false)
+	# Свою панель ищем по реестру, а не через get_parent(): контракт - публичный
+	# set_panel_open на автолоаде, а не приватный метод, до которого едут через
+	# того, кого сейчас случайно повесили на ноду.
+	var mod_ui := get_node_or_null(Paths.UI_ROOT)
+	if mod_ui != null and is_instance_valid(mod_ui) and mod_ui.has_method("set_panel_open"):
+		mod_ui.call("set_panel_open", false)
 	var ui := get_node_or_null(Paths.UI)
 	var iface := get_node_or_null(Paths.INTERFACE)
 	if iface != null and iface.has_method("Close"):

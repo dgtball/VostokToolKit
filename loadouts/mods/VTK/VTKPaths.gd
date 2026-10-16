@@ -1,7 +1,8 @@
 extends RefCounted
-# Единый реестр жёстких путей внутрь игры. Все - абсолютные NodePath от корня
-# дерева, поэтому резолвятся и через get_tree().root.get_node_or_null(...), и
-# через любой узел. При апдейте игры правится одно место, а не шесть файлов.
+# Единый реестр жёстких путей: игровая сцена, автолоады мода, опциональный
+# фреймворк и файлы сейвов. Узловые пути - абсолютные NodePath от корня дерева,
+# поэтому резолвятся и через get_tree().root.get_node_or_null(...), и через
+# любой узел. При апдейте игры правится одно место, а не шесть файлов.
 
 const INTERFACE := "/root/Map/Core/UI/Interface"
 const UI := "/root/Map/Core/UI"
@@ -12,8 +13,22 @@ const DATABASE := "/root/Database"
 const CAMERA_MANAGER := "/root/Map/Core/Camera/Manager"
 const NVG := "/root/Map/Core/UI/NVG"
 
+# Свои автолоады. UI_ROOT уезжал по трём файлам литералом и был найден только
+# по ссылке в аудите; HOOKS - единственная дочерняя нода, до которой доходят
+# лента, счётчик и телепорт.
+const UI_ROOT := "/root/VTKUI"
+const HOOKS := "VTKHooks"
+
+# Заголовочный фреймворк: RTVModLib кладёт себя в Engine.meta, без него
+# хуки ищут его автолоадом - оба варианта здесь, а не в _try_register.
+const RTVMODLIB := "/root/RTVModLib"
+const MML := "/root/MML"
+
 # Имя сейва трейдеров в user:// (V17).
 const TRADER_SAVE := "user://Traders.tres"
+# Сейв мира в user:// (V17): patch_world_difficulty правит difficulty
+# задним числом, чтобы permadeath пережил любое место в hook-порядке.
+const WORLD_SAVE := "user://World.tres"
 
 # Ресурсы игры.
 const GAME_DATA := "res://Resources/GameData.tres"

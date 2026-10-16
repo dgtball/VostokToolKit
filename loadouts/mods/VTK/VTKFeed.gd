@@ -1,5 +1,6 @@
 extends Control
 const Paths = preload("res://mods/VTK/VTKPaths.gd")
+const Log = preload("res://mods/VTK/VTKLog.gd")
 
 # Лента убийств. Чистая логика (цвета, сегменты, вытеснение, fade) — static,
 # чтобы тестировалась headless; рендер и игровые пути — только в экземпляре.
@@ -80,13 +81,18 @@ func _ready() -> void:
 func _connect_hooks() -> void:
 	if _hooks != null and is_instance_valid(_hooks):
 		return
-	var p = get_node_or_null("/root/VTKUI")
+	var p = get_node_or_null(Paths.UI_ROOT)
 	if p == null:
+		# Промах раньше просто отключал ленту. Причём тихо: и production, и debug
+		# молчали одинаково. warn_once печатает только при включённом Log.enabled.
+		Log.warn_once(Paths.UI_ROOT, "kill feed: VTKUI autoload missing")
 		return
-	var h = p.get_node_or_null("VTKHooks")
-	if h != null and h.has_signal("kill_event"):
-		_hooks = h
-		h.connect("kill_event", _on_kill_event)
+	var h = p.get_node_or_null(Paths.HOOKS)
+	if h == null or not h.has_signal("kill_event"):
+		Log.warn_once(Paths.UI_ROOT + "/" + Paths.HOOKS, "kill feed: VTKHooks.kill_event missing")
+		return
+	_hooks = h
+	h.connect("kill_event", _on_kill_event)
 
 func set_enabled(v: bool) -> void:
 	_enabled = v
@@ -217,7 +223,7 @@ func _weapon_texture(weapon: String) -> Texture2D:
 			hit = norm_weapon(String(item.resource_path).get_file().get_basename()) == w
 		if not hit:
 			continue
-		var ui = get_node_or_null("/root/VTKUI")
+		var ui = get_node_or_null(Paths.UI_ROOT)
 		var icon = null
 		if ui != null and ui.has_method("_item_icon"):
 			icon = ui.call("_item_icon", item)

@@ -318,7 +318,11 @@ static func apply_loadout(name: String, equip: bool) -> void:
 	if not interface:
 		Log.log("[VTK] apply_loadout: no Interface node")
 		return
-	var loader = root.get_node_or_null("Loader")
+	var loader = root.get_node_or_null(Paths.LOADER)
+	if loader == null:
+		# Ниже всё защищено null-проверками, так что промах раньше означал
+		# молчаливое отсутствие сообщений об успехе - теперь один след.
+		Log.warn_once(Paths.LOADER, "apply_loadout: Loader node missing")
 	var ig = interface.get("inventoryGrid")
 	if ig == null or not is_instance_valid(ig):
 		Log.log("[VTK] apply_loadout: no inventoryGrid")
