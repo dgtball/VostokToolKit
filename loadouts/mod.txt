@@ -1,7 +1,7 @@
 ﻿[mod]
 name="Vostok Toolkit"
 id="vostok-toolkit"
-version="4.17.20"
+version="4.17.22"
 
 [autoload]
 VTKUI="res://mods/VTK/VTKUI.gd"
@@ -10,3 +10,6 @@ VTKUI="res://mods/VTK/VTKUI.gd"
 res://Scripts/Context.gd = Update
 res://Scripts/Pickup.gd = Interact
 res://Scripts/Interface.gd = ContextTake, ContextSplit
+
+[updates]
+source="vostokmods:01a130a0-7fae-7214-bc07-7d33d99e3d70"

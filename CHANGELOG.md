@@ -4,6 +4,23 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.17.22] - 2026-10-16
+
+### Changed
+
+- The mod package is about 40% smaller.
+
+### Fixed
+
+- A loadout hotkey can now be reassigned while editing a loadout.
+- Stale item deposits from tasks that no longer exist are cleaned up.
+
+## [4.17.21] - 2026-10-16
+
+### Changed
+
+- Minor performance improvements and internal cleanup.
+
 ## [4.17.20] - 2026-10-16
 
 ### Changed
