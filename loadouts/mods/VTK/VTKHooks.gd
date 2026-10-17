@@ -260,11 +260,7 @@ func _season_day() -> int:
 	return 1
 
 func _season_offset_of(choice: String) -> int:
-	var key := choice.strip_edges().to_lower()
-	if key == "random":
-		return randi() % SEASONS.SEASONS.size()
-	var i := SEASONS.SEASONS.find(key)
-	return i if i >= 0 else 1
+	return SEASONS.start_offset_for(choice)
 
 func _season_config() -> ConfigRec:
 	var c: ConfigRec = ConfigRec.new()

@@ -4,6 +4,14 @@ extends RefCounted
 ## поэтому модуль покрыт headless-тестом test_seasons.gd.
 
 const SEASONS := ["spring", "summer", "autumn", "winter"]
+const DEFAULT_START_OFFSET := 1
+
+static func start_offset_for(choice: String) -> int:
+	var key := choice.strip_edges().to_lower()
+	if key == "random":
+		return randi() % SEASONS.size()
+	var i := SEASONS.find(key)
+	return i if i >= 0 else DEFAULT_START_OFFSET
 
 static func resolve_index(day: int, cycle_days: int, start_offset: int) -> int:
 	var cycle := cycle_days
