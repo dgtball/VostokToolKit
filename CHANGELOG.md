@@ -4,6 +4,19 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [5.0.1] - 2026-10-17
+
+### Fixed
+
+- Seasons in a Dynamic run now actually change when their time comes.
+
+## [5.0.0] - 2026-10-17
+
+### Added
+
+- A new Dynamic season mode for new runs: seasons cycle on their own as in-game days pass, with the world reacting accordingly (winter cold, frozen food, and so on).
+- MCM settings to enable the cycle, pick the starting season, and set how many days each season lasts.
+
 ## [4.17.23] - 2026-10-17
 
 ### Fixed

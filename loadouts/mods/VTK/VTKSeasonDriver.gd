@@ -13,12 +13,10 @@ func _init() -> void:
 	_last_index = -1
 
 static func _get_world() -> Node:
-	if not Engine.has_singleton("Root"):
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
 		return null
-	var root := Engine.get_singleton("Root")
-	if root == null:
-		return null
-	return root.get_node_or_null("/root/Simulation")
+	return tree.root.get_node_or_null("/root/Simulation")
 
 func restore() -> void:
 	_restored = true
