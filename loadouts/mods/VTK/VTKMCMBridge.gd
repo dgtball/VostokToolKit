@@ -44,7 +44,10 @@ func register(host: RefCounted, on_rebuild: Callable, on_key: Callable) -> void:
 	var KF := "04. KillFeed"
 	cfg.set_value("Bool", "kill_counter_enabled", {"name": "Kill counter", "default": true, "value": true, "category": KF, "menu_pos": 0, "tooltip": "Show the kill counter HUD line (Killed / Enemies / Nomads)."})
 	cfg.set_value("Bool", "kill_feed_enabled", {"name": "Kill feed", "default": true, "value": true, "category": KF, "menu_pos": 1, "tooltip": "Show the kill feed under the counter: killer, weapon/headshot icons, victim."})
-	var DBG := "05. Debug"
+	var SN := "05. Seasons"
+	cfg.set_value("Bool", "season_enabled", {"name": "Dynamic seasons", "default": true, "value": true, "category": SN, "menu_pos": 0, "tooltip": "Cycle spring, summer, autumn and winter by day during a run started with the Dynamic season in the New Game menu. Winter brings the real snow and cold; the other seasons only tint trees, grass and light."})
+	cfg.set_value("Dropdown", "season_start", {"name": "Starting season", "default": "summer", "value": "summer", "options": {"spring": "Spring", "summer": "Summer", "autumn": "Autumn", "winter": "Winter", "random": "Random"}, "category": SN, "menu_pos": 1, "tooltip": "Which season a fresh Dynamic run begins with. Random picks one for each new run."})
+	var DBG := "06. Debug"
 	cfg.set_value("Bool", "debug_log", {"name": "Mod debug log", "default": false, "value": false, "category": DBG, "menu_pos": 0, "tooltip": "Print mod diagnostics (item resolution, hooks, teleports, saves) to the game log. Off during normal play; turn on only to troubleshoot."})
 	cfg.set_value("Bool", "nvg_debug_probe", {"name": "NVG probe log", "default": false, "value": false, "category": DBG, "menu_pos": 1, "tooltip": "Write NVG/thermal probes to user://loadouts_debug.log and enable the F4 detection overlay. Leave off during normal play; turn on only to diagnose something."})
 	cfg.set_value("Info", "version", version())

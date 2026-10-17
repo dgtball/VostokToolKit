@@ -1,5 +1,5 @@
 extends RefCounted
-# Типизированный срез MCM-конфига: 19 ключей. Дефолты полей - это же, что
+# Типизированный срез MCM-конфига: 21 ключ. Дефолты полей - это же, что
 # лежит в регистрационных записях VTKMCMBridge (там плюс name/tooltip/menu_pos,
 # их в рекорд не тянем). Разбор - read(), он держит прежнюю семантику
 # _mcm_key_val: приоритет d["value"] внутри словаря, иначе примитив, иначе
@@ -26,6 +26,8 @@ var thermal_bot_preset: int = 0
 var thermal_far_distance: float = 45.0
 var nvg_noise: float = 4.0
 var nvg_white: float = 1.0
+var season_enabled: bool = true
+var season_start: String = "summer"
 
 
 func read(cfg: ConfigFile) -> void:
@@ -48,6 +50,8 @@ func read(cfg: ConfigFile) -> void:
 	thermal_far_distance = float(_val(cfg, "Float", "thermal_far_distance", thermal_far_distance))
 	nvg_noise = float(_val(cfg, "Float", "nvg_noise", nvg_noise))
 	nvg_white = float(_val(cfg, "Float", "nvg_white", nvg_white))
+	season_enabled = bool(_val(cfg, "Bool", "season_enabled", season_enabled))
+	season_start = str(_val(cfg, "Dropdown", "season_start", season_start))
 
 
 static func _val(cfg: ConfigFile, section: String, key: String, fallback: Variant) -> Variant:
