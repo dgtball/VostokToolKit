@@ -42,6 +42,8 @@ var _seen_deaths: Dictionary = {}
 
 var _gd_node = null
 
+# Ironman respawn drops you somewhere random out of these instead of always
+# Highway, so a death run can't be re-learned as one fixed route.
 const IRONMAN_MAPS := ["Highway", "School", "Outpost", "Apartments"]
 
 func _ready() -> void:
