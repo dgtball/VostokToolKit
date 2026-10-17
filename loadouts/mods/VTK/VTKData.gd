@@ -44,6 +44,28 @@ static func _root_node() -> Node:
 		return tree.root
 	return null
 
+# ---------- meta на TraderSave ----------
+# Леджер вкладов и состояние динамических сезонов живут метой на сохранении
+# торговцев (user://Traders.tres - активный слот). get_meta отдаёт Variant,
+# поэтому чтение фильтрует тип: чужой или битый ключ даёт пусто, а не падение.
+static func trader_meta(traders, key: String) -> Dictionary:
+	if traders == null:
+		return {}
+	var m = traders.get_meta(key, {})
+	return m if typeof(m) == TYPE_DICTIONARY else {}
+
+# Запись меты с сохранением ресурса. true только при OK: вызывающий решает,
+# откатывать ли своё состояние, если сейв не записался.
+static func trader_meta_write(traders, key: String, data: Dictionary) -> bool:
+	if traders == null:
+		return false
+	traders.set_meta(key, data)
+	var err := ResourceSaver.save(traders, Paths.TRADER_SAVE)
+	if err != OK:
+		Log.log("[VTK] trader meta save failed: " + key + " (code " + str(err) + ")")
+		return false
+	return true
+
 # ---------- storage ----------
 
 const BAK_SUFFIX := ".bak"

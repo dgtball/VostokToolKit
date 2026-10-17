@@ -229,8 +229,8 @@ func _season_resume() -> void:
 		_dyn_enabled = false
 		_dyn_last_idx = -1
 		return
-	_dyn_start_offset = int(m.get("start_offset", _dyn_start_offset))
-	_dyn_cycle_days = int(m.get("cycle_days", _dyn_cycle_days))
+	_dyn_start_offset = clampi(int(m.get("start_offset", _dyn_start_offset)), 0, SEASONS.SEASONS.size() - 1)
+	_dyn_cycle_days = maxi(1, int(m.get("cycle_days", _dyn_cycle_days)))
 	_dyn_enabled = true
 	_dyn_last_idx = -1
 	_season_apply()
@@ -274,20 +274,10 @@ func _season_config() -> ConfigRec:
 	return c
 
 func _season_meta() -> Dictionary:
-	var traders = _traders()
-	if traders == null:
-		return {}
-	var m = traders.get_meta(SEASON_META, {})
-	return m if typeof(m) == TYPE_DICTIONARY else {}
+	return VTKData.trader_meta(_traders(), SEASON_META)
 
 func _season_meta_write(data: Dictionary) -> void:
-	var traders = _traders()
-	if traders == null:
-		return
-	traders.set_meta(SEASON_META, data)
-	var err := ResourceSaver.save(traders, Paths.TRADER_SAVE)
-	if err != OK:
-		Log.log("[VTK] season meta save failed (code " + str(err) + ")")
+	VTKData.trader_meta_write(_traders(), SEASON_META, data)
 
 # --- Контекстное меню предмета: Destroy вне декора --------------------------
 # Удаление в игре — ванильная кнопка Destroy в Context (Panel/Margin/Buttons/
