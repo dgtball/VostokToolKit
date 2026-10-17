@@ -4,6 +4,12 @@ All notable changes to Vostok Toolkit are documented here.
 User-facing only: describe the visible effect, not the implementation (no hook names, files or functions).
 Format based on Keep a Changelog; versioning: MAJOR.MINOR.PATCH.
 
+## [4.17.23] - 2026-10-17
+
+### Fixed
+
+- The Restart button on the death screen now appears immediately and reliably (it could previously stay as the vanilla Load Game button).
+
 ## [4.17.22] - 2026-10-16
 
 ### Changed
