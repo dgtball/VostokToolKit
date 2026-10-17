@@ -17,6 +17,9 @@ const Notes = preload("res://mods/VTK/VTKNotes.gd")
 const VTKDeposits = preload("res://mods/VTK/VTKDeposits.gd")
 const VTKData = preload("res://mods/VTK/VTKData.gd")
 const EquipFlow = preload("res://mods/VTK/VTKEquip.gd")
+const ConfigRec := preload("res://mods/VTK/VTKConfig.gd")
+const SEASONS := preload("res://mods/VTK/VTKSeasons.gd")
+const SEASON_DRV := preload("res://mods/VTK/VTKSeasonDriver.gd")
 const HIT_WINDOW_MSEC := 15000
 const SEEN_DEATHS_TTL_MSEC := 600000
 const PLAYER_HITS_TTL_MSEC := 30000
@@ -42,6 +45,15 @@ var _seen_deaths: Dictionary = {}
 
 var _gd_node = null
 
+# Динамические сезоны: драйвер сцены поднимается лениво, только если забег начат
+# сезоном Dynamic (3) и настройка включена. Текущий сезон выводится из дня, а не
+# хранится: стартовый offset фиксируется один раз на старте забега.
+var _season_driver: Variant = null
+var _dyn_enabled := false
+var _dyn_start_offset := 1
+var _dyn_cycle_days := 30
+var _dyn_last_idx := -1
+
 # Ironman respawn drops you somewhere random out of these instead of always
 # Highway, so a death run can't be re-learned as one fixed route.
 const IRONMAN_MAPS := ["Highway", "School", "Outpost", "Apartments"]
@@ -62,6 +74,8 @@ func reset_kills() -> void:
 func _process(_delta: float) -> void:
 	if not _registered:
 		_try_register()
+	if _dyn_enabled:
+		_season_apply()
 
 func set_equip_enabled(on: bool) -> void:
 	_equip_on = on
@@ -139,6 +153,8 @@ func _do_register() -> void:
 # Compiler.Spawn() - точный момент готовности карты: контроллер уже расставлен
 # ванилой (Compiler.gd:205-220). Телепорт ждёт именно это, а не крутит кадры.
 func _on_compiler_spawn() -> void:
+	if _dyn_enabled:
+		_season_apply()
 	travel_arrived.emit()
 
 # Late Start (and any mod that saves the world from its own loader-newgame-post
@@ -148,7 +164,7 @@ func _on_compiler_spawn() -> void:
 # from a previous save. Left alone, a difficulty-3 run is persisted back as 1 and
 # LoadWorld no longer restores permadeath. Sync the live value and patch the saved
 # world so the chosen difficulty survives regardless of hook order.
-func _on_newgame_post(difficulty, _season) -> void:
+func _on_newgame_post(difficulty, season) -> void:
 	var diff := int(difficulty)
 	var gd = _resolve_gamedata()
 	if gd != null:
@@ -156,7 +172,8 @@ func _on_newgame_post(difficulty, _season) -> void:
 		if diff == 3:
 			gd.set("permadeath", true)
 	patch_world_difficulty(diff)
-	Log.log("[VTK] newgame-post: difficulty=" + str(diff))
+	_season_new_run(int(season))
+	Log.log("[VTK] newgame-post: difficulty=" + str(diff) + " season=" + str(int(season)))
 
 func patch_world_difficulty(diff: int) -> void:
 	var path := Paths.WORLD_SAVE
@@ -170,6 +187,107 @@ func patch_world_difficulty(diff: int) -> void:
 
 func _on_loadcharacter_post() -> void:
 	Log.log("[VTK] loadcharacter-post")
+	_season_resume()
+
+# --- Динамические сезоны ----------------------------------------------------
+# Идут только в забеге, начатом сезоном Dynamic (Menu передаёт season=3 в
+# Loader.NewGame). NewGame пересоздаёт Traders.tres, поэтому мета vtk_season
+# пишется на свежий файл сразу после старта и хранит только стартовые
+# параметры (случайный стартовый сезон фиксируется один раз). Текущий сезон
+# всегда выводится из Simulation.day, отдельно его хранить не нужно.
+const SEASON_META := "vtk_season"
+const MCM_CONFIG := "user://MCM/vostok-toolkit/config.ini"
+const DYNAMIC_SEASON := 3
+
+func _season_new_run(season: int) -> void:
+	_dyn_last_idx = -1
+	_dyn_enabled = false
+	if season != DYNAMIC_SEASON:
+		return
+	var cfg := _season_config()
+	if not cfg.season_enabled:
+		Log.log("[VTK] dynamic seasons: disabled by config")
+		return
+	_dyn_start_offset = _season_offset_of(str(cfg.season_start))
+	_dyn_cycle_days = 30
+	_dyn_enabled = true
+	_season_meta_write({
+		"dynamic": true,
+		"start_offset": _dyn_start_offset,
+		"cycle_days": _dyn_cycle_days,
+	})
+	_season_apply()
+	Log.log("[VTK] dynamic seasons: start_offset=" + str(_dyn_start_offset))
+
+# Загрузка сейва: хук newgame-post не звался, параметры забега берём из меты.
+# Пустая мета (чужой слот без динамики) состояние текущей сессии не трогает.
+func _season_resume() -> void:
+	var m := _season_meta()
+	if m.is_empty():
+		return
+	if not bool(m.get("dynamic", false)):
+		_dyn_enabled = false
+		_dyn_last_idx = -1
+		return
+	_dyn_start_offset = int(m.get("start_offset", _dyn_start_offset))
+	_dyn_cycle_days = int(m.get("cycle_days", _dyn_cycle_days))
+	_dyn_enabled = true
+	_dyn_last_idx = -1
+	_season_apply()
+
+func _season_apply() -> void:
+	if not _dyn_enabled:
+		return
+	if _season_driver == null:
+		_season_driver = SEASON_DRV.new()
+	var idx := SEASONS.resolve_index(_season_day(), _dyn_cycle_days, _dyn_start_offset)
+	if idx == _dyn_last_idx:
+		return
+	_season_driver.set_season(idx, true)
+	# Мир может быть ещё не поднят (start до Compiler.Spawn) - драйвер молча
+	# пропустит; тогда отметку не ставим и повторим на compiler-spawn-post.
+	if int(_season_driver._last_index) != idx:
+		return
+	_dyn_last_idx = idx
+	Log.log("[VTK] season -> " + str(SEASONS.SEASONS[idx]))
+
+func _season_day() -> int:
+	var sim = get_node_or_null(Paths.SIMULATION)
+	if sim != null:
+		var d = sim.get("day")
+		if d != null:
+			return int(d)
+	return 1
+
+func _season_offset_of(choice: String) -> int:
+	var key := choice.strip_edges().to_lower()
+	if key == "random":
+		return randi() % SEASONS.SEASONS.size()
+	var i := SEASONS.SEASONS.find(key)
+	return i if i >= 0 else 1
+
+func _season_config() -> ConfigRec:
+	var c: ConfigRec = ConfigRec.new()
+	var cf := ConfigFile.new()
+	if cf.load(MCM_CONFIG) == OK:
+		c.read(cf)
+	return c
+
+func _season_meta() -> Dictionary:
+	var traders = _traders()
+	if traders == null:
+		return {}
+	var m = traders.get_meta(SEASON_META, {})
+	return m if typeof(m) == TYPE_DICTIONARY else {}
+
+func _season_meta_write(data: Dictionary) -> void:
+	var traders = _traders()
+	if traders == null:
+		return
+	traders.set_meta(SEASON_META, data)
+	var err := ResourceSaver.save(traders, Paths.TRADER_SAVE)
+	if err != OK:
+		Log.log("[VTK] season meta save failed (code " + str(err) + ")")
 
 # --- Контекстное меню предмета: Destroy вне декора --------------------------
 # Удаление в игре — ванильная кнопка Destroy в Context (Panel/Margin/Buttons/
