@@ -16,6 +16,12 @@ const Editor := preload("res://mods/VTK/VTKEditor.gd")
 
 const UI_LAYER := 4095
 
+# New Game locks the Dynamic season behind an early-access gate (the Select
+# button ships disabled with the text "Locked"). The menu scene is rebuilt on
+# every visit, so the button is polled and unlocked instead of touched once.
+const MENU_POLL := 0.4
+const MENU_DYNAMIC_SELECT := "Modes/Season/Dynamic/Select"
+
 # Каталог предметов (список, индекс resource_path, кеши info и иконок) живёт в
 # VTKItemStore: сюда он попадает через _load_items, а читается отсюда Items.*.
 var _equip_cells: Array = []
@@ -52,8 +58,13 @@ var _panel_open: bool = false
 var _saved_mouse_mode: int = Input.MOUSE_MODE_CAPTURED
 var _self_paused: bool = false
 var _scene_ref: Node = null
+var _menu_poll := 0.0
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_menu_poll += delta
+	if _menu_poll >= MENU_POLL:
+		_menu_poll = 0.0
+		_unlock_dynamic_menu()
 	var scene = get_tree().current_scene
 	if scene != _scene_ref:
 		_scene_ref = scene
@@ -66,6 +77,20 @@ func _process(_delta: float) -> void:
 	elif not visible and get_tree().paused and _self_paused:
 		_self_paused = false
 		get_tree().paused = false
+
+# Меню игры - не наш узел, поэтому путь берётся у current_scene и глушится
+# get_node_or_null: вне меню узла нет, ветка молча выходит.
+func _unlock_dynamic_menu() -> void:
+	var scene = get_tree().current_scene
+	if scene == null:
+		return
+	var sel := scene.get_node_or_null(MENU_DYNAMIC_SELECT) as Button
+	if sel == null:
+		return
+	if sel.disabled:
+		sel.disabled = false
+	if sel.text == "Locked":
+		sel.text = "Select"
 
 var _late_initialized: bool = false
 
