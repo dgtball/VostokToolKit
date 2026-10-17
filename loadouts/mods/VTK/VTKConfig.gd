@@ -28,6 +28,7 @@ var nvg_noise: float = 4.0
 var nvg_white: float = 1.0
 var season_enabled: bool = true
 var season_start: String = "summer"
+var season_cycle_days: int = 30
 
 
 func read(cfg: ConfigFile) -> void:
@@ -52,6 +53,7 @@ func read(cfg: ConfigFile) -> void:
 	nvg_white = float(_val(cfg, "Float", "nvg_white", nvg_white))
 	season_enabled = bool(_val(cfg, "Bool", "season_enabled", season_enabled))
 	season_start = str(_val(cfg, "Dropdown", "season_start", season_start))
+	season_cycle_days = maxi(1, int(_val(cfg, "Int", "season_cycle_days", season_cycle_days)))
 
 
 static func _val(cfg: ConfigFile, section: String, key: String, fallback: Variant) -> Variant:

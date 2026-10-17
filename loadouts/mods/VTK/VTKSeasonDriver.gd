@@ -18,7 +18,7 @@ static func _get_world() -> Node:
 	var root := Engine.get_singleton("Root")
 	if root == null:
 		return null
-	return root.get_node_or_null("/root/World")
+	return root.get_node_or_null("/root/Simulation")
 
 func restore() -> void:
 	_restored = true
@@ -46,10 +46,6 @@ func set_season(index: int, is_dynamic_run: bool = true, cfg: Variant = null) ->
 		return
 	if index == 3:
 		_set_world_prop(world, "season", 2)
-		_set_world_prop(world, "winter", true)
-		_set_world_prop(world, "winterValue", 1.0)
 	else:
 		_set_world_prop(world, "season", 1)
-		_set_world_prop(world, "winter", false)
-		_set_world_prop(world, "winterValue", 0.0)
 	_last_index = index

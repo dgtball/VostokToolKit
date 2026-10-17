@@ -209,7 +209,7 @@ func _season_new_run(season: int) -> void:
 		Log.log("[VTK] dynamic seasons: disabled by config")
 		return
 	_dyn_start_offset = _season_offset_of(str(cfg.season_start))
-	_dyn_cycle_days = 30
+	_dyn_cycle_days = cfg.season_cycle_days
 	_dyn_enabled = true
 	_season_meta_write({
 		"dynamic": true,
