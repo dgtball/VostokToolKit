@@ -10,6 +10,7 @@ VTKUI="res://mods/VTK/VTKUI.gd"
 res://Scripts/Context.gd = Update
 res://Scripts/Pickup.gd = Interact
 res://Scripts/Interface.gd = ContextTake, ContextSplit
+res://Scripts/Death.gd = _ready, _on_load_pressed
 
 [updates]
 source="vostokmods:01a130a0-7fae-7214-bc07-7d33d99e3d70"

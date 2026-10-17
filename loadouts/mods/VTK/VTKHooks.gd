@@ -40,48 +40,12 @@ signal travel_arrived
 var _last_damager: Dictionary = {}
 var _seen_deaths: Dictionary = {}
 
-var _death_is_ironman: bool = false
-
-# The death screen ships its own "Load Game" button: live in a normal run,
-# greyed out under permadeath. We borrow that button instead of stacking our own
-# panel on top of it, and hand the original text/state/connections back when the
-# screen goes away.
-var _death_load_btn = null
-var _death_load_bound = null
-var _death_load_orig_text: String = ""
-var _death_load_orig_disabled: bool = false
-var _death_load_orig_conns: Array = []
-
-# Death.tscn is mounted asynchronously behind Loader's FadeInLoading, so the button
-# may take a few frames to appear. Give it up to DEATH_FIND_TIMEOUT_MS, then
-# leave the vanilla screen alone (single warning) instead of stacking our own UI.
-const DEATH_FIND_TIMEOUT_MS := 20000
-var _death_find_since: int = 0
-var _death_gave_up: bool = false
-const DEATH_PROBE_MS := 1000
-var _death_probe_at: int = 0
-# Сцена Death отслеживается событийно: SceneTree.scene_changed эмитится, когда
-# новая сцена уже добавлена и инициализирована, поэтому current_scene в
-# обработчике достоверна. Кадровый опрос с TTL больше не нужен - флаг читает
-# _death_scene_present, а обновляет _on_scene_changed.
-var _death_scene_flag: bool = false
-
-# The death screen was never handled at all: the whole handler rode the
-# controller-_physics_process hook, and Controller is a node inside /root/Map,
-# so it was freed with the map and _lib._caller went invalid before the Death
-# scene even mounted. Not one line of output reached the log. Poll from our own
-# _process instead -- this node lives on the autoload and outlives any map.
 var _gd_node = null
-var _death_latched: bool = false
-var _gd_missing_logged: bool = false
 
-# Ironman respawn drops you somewhere random out of these instead of always
-# Highway, so a death run can't be re-learned as one fixed route.
 const IRONMAN_MAPS := ["Highway", "School", "Outpost", "Apartments"]
 
 func _ready() -> void:
 	name = "VTKHooks"
-	get_tree().scene_changed.connect(_on_scene_changed)
 	Log.log("[VTK] Hooks node ready, RTVModLib=" + str(Engine.has_meta("RTVModLib")))
 
 func get_kill_count() -> int:
@@ -96,7 +60,6 @@ func reset_kills() -> void:
 func _process(_delta: float) -> void:
 	if not _registered:
 		_try_register()
-	_poll_death()
 
 func set_equip_enabled(on: bool) -> void:
 	_equip_on = on
@@ -117,40 +80,6 @@ func _resolve_gamedata() -> Variant:
 		if direct != null:
 			_gd_node = direct
 	return _gd_node
-
-func _poll_death() -> void:
-	var gd = _resolve_gamedata()
-	if gd == null and not _death_latched:
-		if not _gd_missing_logged:
-			_gd_missing_logged = true
-			Log.log("[VTK] poll: GameData resource unavailable; death screen idle")
-		return
-	var is_dead := _death_latched
-	var is_ironman := _death_latched
-	if gd != null:
-		# The game rewrites both flags the moment the Death scene mounts, so
-		# neither can carry the screen on its own. Read the mode on the first
-		# frame that reports it, then keep serving the screen off the mounted
-		# scene until it goes away again.
-		var dead_scene := _death_scene_present()
-		is_dead = bool(VTKData.prop(gd, "isDead", false)) or dead_scene
-		is_ironman = bool(VTKData.prop(gd, "permadeath", false)) or (_death_latched and dead_scene)
-		if is_dead and is_ironman and not _death_latched:
-			# Latch it: the flags live on the map's GameData, which is torn down
-			# on death, so the next frame may have no source left to read.
-			_death_latched = true
-			Log.log("[VTK] poll: death+ironman latched from " + str(gd.get_class()) + " isDead=" + str(bool(VTKData.prop(gd, "isDead", false))) + " permadeath=" + str(bool(VTKData.prop(gd, "permadeath", false))) + " death_scene=" + str(dead_scene))
-		elif not is_dead:
-			# Back in a live run (or on the main menu): release the latch so a
-			# missing GameData later cannot resurrect the death screen.
-			_death_latched = false
-			_gd_missing_logged = false
-		if _death_latched:
-			var pnow := Time.get_ticks_msec()
-			if pnow - _death_probe_at > DEATH_PROBE_MS:
-				_death_probe_at = pnow
-				Log.log("[VTK] poll: raw isDead=" + str(VTKData.prop(gd, "isDead", false)) + " permadeath=" + str(VTKData.prop(gd, "permadeath", false)) + " death_scene=" + str(dead_scene))
-	_handle_death_screen(gd, is_dead, is_ironman)
 
 func _try_register() -> void:
 	if Engine.has_meta("RTVModLib"):
@@ -188,6 +117,8 @@ func _do_register() -> void:
 	_hooks_deposits.append(_lib.hook("task-_on_complete_pressed", _on_task_complete_pressed))
 	_lib.hook("loader-newgame-post", _on_newgame_post)
 	_lib.hook("compiler-spawn-post", _on_compiler_spawn)
+	_lib.hook("death-_ready-post", _on_death_ready)
+	_lib.hook("death-_on_load_pressed", _on_death_load_pressed)
 	_hooks_equip.append(_lib.hook("loader-loadcharacter-post", _on_loadcharacter_post))
 	_hooks_context.append(_lib.hook("context-update-post", _on_context_update_post))
 	_hooks_context.append(_lib.hook("interface-contexttake", _on_context_take_replace))
@@ -1283,110 +1214,40 @@ func _on_task_complete_pressed() -> void:
 		_lib.skip_super()
 	_render_task_card(iface, card)
 
-func _handle_death_screen(gd, is_dead: bool, is_ironman: bool) -> void:
-	if not is_dead or not is_ironman:
-		_restore_load_button()
-		_death_find_since = 0
-		_death_gave_up = false
-		_death_is_ironman = false
+func _on_death_ready() -> void:
+	var death = _lib._caller if _lib else null
+	if death == null:
 		return
-
-	if _death_load_btn != null and is_instance_valid(_death_load_btn):
+	var pd = death.get_node_or_null("Main/Permadeath")
+	if pd == null:
+		Log.log("[VTK] death: Main/Permadeath not found; leaving vanilla death screen")
 		return
-
-	_death_is_ironman = is_ironman
-	var now := Time.get_ticks_msec()
-	if _death_find_since == 0:
-		_death_find_since = now
-		Log.log("[VTK] death screen tracking started @" + str(now))
-
-	# Only ever touch the Death scene. Walking the root re-found a dozen
-	# unrelated buttons ("Continue to Main Menu", JCM, the Settings tree) and
-	# buried the real one under hundreds of MCM lines.
-	var root := _death_scene_root()
-	if root == null:
+	if not pd.visible:
 		return
-
-	var load_btn := _find_load_button(root)
-	if load_btn != null:
-		_repurpose_load_button(load_btn, gd, root)
+	var btn = death.get_node_or_null("Main/Buttons/Load")
+	if btn == null:
+		Log.log("[VTK] death: Main/Buttons/Load not found; leaving vanilla death screen")
 		return
-
-	if _death_gave_up:
-		return
-
-	var waited := now - _death_find_since
-	if waited >= DEATH_FIND_TIMEOUT_MS:
-		_death_gave_up = true
-		Log.log("[VTK] No 'Load Game' button after " + str(waited) + "ms; leaving vanilla death screen")
-		return
-
-# The real Death scene, so the search never walks the whole Interface tree.
-# A dump taken over the root for four seconds showed only UI/MCM nodes and no
-# scene nodes at all, which is what the missing button actually looked like.
-func _death_scene_root() -> Node:
-	var cs = get_tree().current_scene
-	if cs != null and cs.name == "Death":
-		return cs
-	return get_tree().root.get_node_or_null("Death")
-
-# scene_changed сообщает о новой сцене, уже добавленной в дерево, поэтому
-# читаем текущую сцену прямо здесь; _death_scene_root() сохраняет прежнюю
-# двойную проверку (current_scene или /root/Death) без изменений поведения.
-func _on_scene_changed() -> void:
-	_death_scene_flag = _death_scene_root() != null
-
-func _death_scene_present() -> bool:
-	return _death_scene_flag
-
-func _find_load_button(root: Node) -> BaseButton:
-	var best: BaseButton = null
-	var stack: Array = [root]
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		if n is BaseButton:
-			var b := n as BaseButton
-			var t := String(b.text).strip_edges().to_lower()
-			if t == "load game":
-				return b
-			if best == null and b.visible and not b.disabled and (t.begins_with("load") or t == "continue"):
-				best = b
-		for c in n.get_children():
-			stack.push_back(c)
-	return best
-
-func _repurpose_load_button(btn: BaseButton, gd, root) -> void:
-	_death_load_btn = btn
-	_death_load_orig_text = btn.text
-	_death_load_orig_disabled = btn.disabled
-	_death_load_orig_conns = []
-	for c in btn.pressed.get_connections():
-		var cb = c["callable"]
-		_death_load_orig_conns.append(cb)
-		btn.pressed.disconnect(cb)
-	_death_load_bound = _on_restart_pressed.bind(gd, root)
-	btn.pressed.connect(_death_load_bound)
 	btn.text = "Restart"
 	btn.disabled = false
-	Log.log("[VTK] Death 'Load Game' button repurposed to Restart")
 
-func _restore_load_button() -> void:
-	if _death_load_btn == null:
+func _on_death_load_pressed() -> void:
+	var death = _lib._caller if _lib else null
+	if death == null:
 		return
-	if not is_instance_valid(_death_load_btn):
-		_death_load_btn = null
+	var pd = death.get_node_or_null("Main/Permadeath")
+	if pd == null:
+		Log.log("[VTK] death: Main/Permadeath not found; vanilla Load runs")
 		return
-	var btn := _death_load_btn as Button
-	if _death_load_bound != null and btn.pressed.is_connected(_death_load_bound):
-		btn.pressed.disconnect(_death_load_bound)
-	btn.text = _death_load_orig_text
-	btn.disabled = _death_load_orig_disabled
-	for cb in _death_load_orig_conns:
-		if not btn.pressed.is_connected(cb):
-			btn.pressed.connect(cb)
-	_death_load_btn = null
-	_death_load_bound = null
-	_death_load_orig_conns = []
+	if not pd.visible:
+		return
+	_lib.skip_super()
+	var blocker = death.get_node_or_null("Blocker")
+	if blocker != null:
+		blocker.mouse_filter = Control.MOUSE_FILTER_STOP
+	if death.has_method("PlayClick"):
+		death.PlayClick()
+	_on_restart_pressed(VTKData.prop(death, "gameData", null), death, true)
 
 func _resolve_start_season() -> int:
 	var sim = get_node_or_null(Paths.SIMULATION)
@@ -1396,21 +1257,16 @@ func _resolve_start_season() -> int:
 			return int(s)
 	return 1
 
-func _on_restart_pressed(gd, root) -> void:
+func _on_restart_pressed(gd, root, ironman: bool) -> void:
 	Log.log("[VTK] Restart: starting new game...")
-	_death_latched = false
 	_gd_node = null
-	_death_load_btn = null
-	_death_load_bound = null
-	_death_load_orig_conns = []
-	_death_gave_up = false
 	if gd == null:
 		Log.log("[VTK] Restart: no GameData, aborting")
 		return
 	gd.set("isDead", false)
 	gd.set("previousMap", "")
 	var start_map = "Cabin"
-	if _death_is_ironman:
+	if ironman:
 		start_map = IRONMAN_MAPS[randi() % IRONMAN_MAPS.size()]
 		gd.set("difficulty", 3)
 	gd.set("currentMap", start_map)
@@ -1419,7 +1275,7 @@ func _on_restart_pressed(gd, root) -> void:
 		Log.log("[VTK] Restart: ERROR - Loader not found")
 		return
 	var difficulty := 1
-	if _death_is_ironman:
+	if ironman:
 		difficulty = 3
 	elif gd.get("difficulty") != null:
 		difficulty = int(gd.get("difficulty"))
@@ -1428,4 +1284,4 @@ func _on_restart_pressed(gd, root) -> void:
 	# дублировать их здесь незачем. Рестарт без NewGame невозможен.
 	ldr.call("NewGame", difficulty, _resolve_start_season())
 	ldr.LoadScene(start_map)
-	Log.log("[VTK] Restart: loading " + start_map + " ironman=" + str(_death_is_ironman))
+	Log.log("[VTK] Restart: loading " + start_map + " ironman=" + str(ironman))
