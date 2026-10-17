@@ -1279,9 +1279,6 @@ func _on_restart_pressed(gd, root, ironman: bool) -> void:
 		difficulty = 3
 	elif gd.get("difficulty") != null:
 		difficulty = int(gd.get("difficulty"))
-	# Loader.NewGame() сам пересобирает World/Character/Traders, а режим карты
-	# (shelter/permadeath) выставляет LoadScene по имени сцены (Loader.gd:252-361);
-	# дублировать их здесь незачем. Рестарт без NewGame невозможен.
 	ldr.call("NewGame", difficulty, _resolve_start_season())
 	ldr.LoadScene(start_map)
 	Log.log("[VTK] Restart: loading " + start_map + " ironman=" + str(ironman))
